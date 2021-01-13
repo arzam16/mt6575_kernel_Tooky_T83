@@ -6,7 +6,7 @@
  *  Manage the dynamic fd arrays in the process files_struct.
  */
 
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/mmzone.h>
@@ -21,6 +21,13 @@
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
+
+/* #define FD_OVER_CHECK */
+#ifdef FD_OVER_CHECK
+#include <linux/xlog.h>
+#define FS_TAG "FS_TAG"
+#define fd_threshold  1024
+#endif
 
 struct fdtable_defer {
 	spinlock_t lock;
@@ -40,7 +47,7 @@ int sysctl_nr_open_max = 1024 * 1024; /* raised later */
  */
 static DEFINE_PER_CPU(struct fdtable_defer, fdtable_defer_list);
 
-static void *alloc_fdmem(unsigned int size)
+static void *alloc_fdmem(size_t size)
 {
 	/*
 	 * Very large allocations can stress page reclaim, so fall back to
@@ -142,7 +149,7 @@ static void copy_fdtable(struct fdtable *nfdt, struct fdtable *ofdt)
 static struct fdtable * alloc_fdtable(unsigned int nr)
 {
 	struct fdtable *fdt;
-	char *data;
+	void *data;
 
 	/*
 	 * Figure out how many fds we actually want to support in this fdtable.
@@ -172,14 +179,15 @@ static struct fdtable * alloc_fdtable(unsigned int nr)
 	data = alloc_fdmem(nr * sizeof(struct file *));
 	if (!data)
 		goto out_fdt;
-	fdt->fd = (struct file **)data;
-	data = alloc_fdmem(max_t(unsigned int,
+	fdt->fd = data;
+
+	data = alloc_fdmem(max_t(size_t,
 				 2 * nr / BITS_PER_BYTE, L1_CACHE_BYTES));
 	if (!data)
 		goto out_arr;
-	fdt->open_fds = (fd_set *)data;
+	fdt->open_fds = data;
 	data += nr / BITS_PER_BYTE;
-	fdt->close_on_exec = (fd_set *)data;
+	fdt->close_on_exec = data;
 	fdt->next = NULL;
 
 	return fdt;
@@ -275,11 +283,11 @@ static int count_open_files(struct fdtable *fdt)
 	int i;
 
 	/* Find the last open fd */
-	for (i = size/(8*sizeof(long)); i > 0; ) {
-		if (fdt->open_fds->fds_bits[--i])
+	for (i = size / BITS_PER_LONG; i > 0; ) {
+		if (fdt->open_fds[--i])
 			break;
 	}
-	i = (i+1) * 8 * sizeof(long);
+	i = (i + 1) * BITS_PER_LONG;
 	return i;
 }
 
@@ -306,8 +314,8 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	newf->next_fd = 0;
 	new_fdt = &newf->fdtab;
 	new_fdt->max_fds = NR_OPEN_DEFAULT;
-	new_fdt->close_on_exec = (fd_set *)&newf->close_on_exec_init;
-	new_fdt->open_fds = (fd_set *)&newf->open_fds_init;
+	new_fdt->close_on_exec = newf->close_on_exec_init;
+	new_fdt->open_fds = newf->open_fds_init;
 	new_fdt->fd = &newf->fd_array[0];
 	new_fdt->next = NULL;
 
@@ -350,10 +358,8 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	old_fds = old_fdt->fd;
 	new_fds = new_fdt->fd;
 
-	memcpy(new_fdt->open_fds->fds_bits,
-		old_fdt->open_fds->fds_bits, open_files/8);
-	memcpy(new_fdt->close_on_exec->fds_bits,
-		old_fdt->close_on_exec->fds_bits, open_files/8);
+	memcpy(new_fdt->open_fds, old_fdt->open_fds, open_files / 8);
+	memcpy(new_fdt->close_on_exec, old_fdt->close_on_exec, open_files / 8);
 
 	for (i = open_files; i != 0; i--) {
 		struct file *f = *old_fds++;
@@ -366,7 +372,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 			 * is partway through open().  So make sure that this
 			 * fd is available to the new process.
 			 */
-			FD_CLR(open_files - i, new_fdt->open_fds);
+			__clear_open_fd(open_files - i, new_fdt);
 		}
 		rcu_assign_pointer(*new_fds++, f);
 	}
@@ -379,11 +385,11 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	memset(new_fds, 0, size);
 
 	if (new_fdt->max_fds > open_files) {
-		int left = (new_fdt->max_fds-open_files)/8;
-		int start = open_files / (8 * sizeof(unsigned long));
+		int left = (new_fdt->max_fds - open_files) / 8;
+		int start = open_files / BITS_PER_LONG;
 
-		memset(&new_fdt->open_fds->fds_bits[start], 0, left);
-		memset(&new_fdt->close_on_exec->fds_bits[start], 0, left);
+		memset(&new_fdt->open_fds[start], 0, left);
+		memset(&new_fdt->close_on_exec[start], 0, left);
 	}
 
 	rcu_assign_pointer(newf->fdt, new_fdt);
@@ -419,11 +425,95 @@ struct files_struct init_files = {
 	.fdtab		= {
 		.max_fds	= NR_OPEN_DEFAULT,
 		.fd		= &init_files.fd_array[0],
-		.close_on_exec	= (fd_set *)&init_files.close_on_exec_init,
-		.open_fds	= (fd_set *)&init_files.open_fds_init,
+		.close_on_exec	= init_files.close_on_exec_init,
+		.open_fds	= init_files.open_fds_init,
 	},
 	.file_lock	= __SPIN_LOCK_UNLOCKED(init_task.file_lock),
 };
+
+#ifdef FD_OVER_CHECK
+#define FD_CHECK_NAME_SIZE 256
+// Declare a radix tree to construct fd set tree
+static RADIX_TREE(over_fd_tree, GFP_KERNEL);
+static LIST_HEAD(fd_listhead);
+struct over_fd_entry
+{
+	int num_of_fd;
+	char name[FD_CHECK_NAME_SIZE];
+	int hash;
+	struct list_head fd_link;
+};
+
+/*
+* Get File Name from FD value
+*/
+long get_file_name_from_fd(struct files_struct *files, int fd, int procid, struct over_fd_entry *res_name)
+{
+	char *tmp; 
+	char *pathname;
+	struct file *file; 
+	struct path path;  
+	spin_lock(&files->file_lock); 
+	file = fget(fd);
+	if (!file) { 
+        spin_unlock(&files->file_lock);     
+        return (long)NULL;
+	}  
+	memcpy(&path, &file->f_path, sizeof(struct path)); 
+	path_get(&file->f_path); 
+	spin_unlock(&files->file_lock);  
+	tmp = (char *)__get_free_page(GFP_TEMPORARY);  
+	if (!tmp) {     
+        return (long)NULL;
+	}  
+	pathname = d_path(&path, tmp, PAGE_SIZE); 
+	
+	path_put(&path); 
+	if (IS_ERR(pathname)) 
+	{     
+        free_page((unsigned long)tmp);     
+	    return PTR_ERR(pathname); 
+	}  /* do something here with pathname */  
+	if(pathname!=NULL)
+	{
+	    strncpy(res_name->name, pathname, FD_CHECK_NAME_SIZE);
+	}
+	free_page((unsigned long)tmp);
+	return 1;
+}
+
+unsigned int get_hash(char *name)
+{
+    return full_name_hash(name, strlen(name));
+}
+static struct over_fd_entry* fd_lookup(unsigned int hash)
+{
+    return radix_tree_lookup(&over_fd_tree, hash);
+}
+static void fd_insert(struct over_fd_entry *entry)
+{	
+	unsigned int hash = get_hash(entry->name);
+	struct over_fd_entry *find_entry = fd_lookup(hash);
+	
+	if(!find_entry)	// Can't find the element, just add the element
+	{
+		entry->num_of_fd = 1;
+		entry->hash = hash;		
+		list_add_tail(&entry->fd_link, &fd_listhead);
+		radix_tree_insert(&over_fd_tree, hash, (void *)entry);
+	}
+	else	// Cover the original element
+	{
+		find_entry->num_of_fd = find_entry->num_of_fd+1;
+		kfree(entry);
+	}
+}
+
+static void fd_delete(unsigned int hash)
+{
+	radix_tree_delete(&over_fd_tree, hash);
+}
+#endif
 
 /*
  * allocate a file descriptor, mark it busy.
@@ -434,6 +524,13 @@ int alloc_fd(unsigned start, unsigned flags)
 	unsigned int fd;
 	int error;
 	struct fdtable *fdt;
+#ifdef FD_OVER_CHECK
+	int i=0;
+	struct over_fd_entry *lentry;
+	long result;
+	int num_of_entry;
+	static DEFINE_MUTEX(over_fd_mutex);
+#endif
 
 	spin_lock(&files->file_lock);
 repeat:
@@ -443,8 +540,7 @@ repeat:
 		fd = files->next_fd;
 
 	if (fd < fdt->max_fds)
-		fd = find_next_zero_bit(fdt->open_fds->fds_bits,
-					   fdt->max_fds, fd);
+		fd = find_next_zero_bit(fdt->open_fds, fdt->max_fds, fd);
 
 	error = expand_files(files, fd);
 	if (error < 0)
@@ -460,11 +556,11 @@ repeat:
 	if (start <= files->next_fd)
 		files->next_fd = fd + 1;
 
-	FD_SET(fd, fdt->open_fds);
+	__set_open_fd(fd, fdt);
 	if (flags & O_CLOEXEC)
-		FD_SET(fd, fdt->close_on_exec);
+		__set_close_on_exec(fd, fdt);
 	else
-		FD_CLR(fd, fdt->close_on_exec);
+		__clear_close_on_exec(fd, fdt);
 	error = fd;
 #if 1
 	/* Sanity check */
@@ -476,6 +572,41 @@ repeat:
 
 out:
 	spin_unlock(&files->file_lock);
+#ifdef FD_OVER_CHECK
+	if(fd>=fd_threshold) {
+		// Initialize
+		mutex_lock(&over_fd_mutex);
+		//printk(KERN_ERR "(PID:%d)Max FD Number:%d", current->pid, fdt->max_fds);
+		for(i=0; i<fdt->max_fds; i++) {
+		    struct over_fd_entry *entry = (struct over_fd_entry*)kzalloc(sizeof(struct over_fd_entry), GFP_KERNEL);
+			if(!entry) {
+				xlog_printk(ANDROID_LOG_INFO, FS_TAG, "(PID:%d)Empty FD:%d", current->pid, i);
+			}
+			else {
+				memset(entry->name, 0, sizeof entry->name);
+				result = get_file_name_from_fd(files, i, current->pid, entry);
+				if(result==1) {	
+			    	fd_insert(entry);
+				}
+			}
+		}
+		for(;;) {
+			if(list_empty(&fd_listhead)) {
+		    	break;
+			}
+			lentry = list_entry((&fd_listhead)->next, struct over_fd_entry, fd_link);
+			num_of_entry = lentry->num_of_fd;
+			if(lentry != NULL && lentry->name!=NULL)
+				xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d ProcName:%s Num:%d)\n", current->pid, lentry->name, num_of_entry);
+			else
+				xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d ProcName:%s Num:%d)\n", current->pid, "NULL", num_of_entry);
+			list_del((&fd_listhead)->next);
+			fd_delete(lentry->hash);
+			kfree(lentry);
+		}	
+		mutex_unlock(&over_fd_mutex);
+	}
+#endif
 	return error;
 }
 

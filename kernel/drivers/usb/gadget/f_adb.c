@@ -114,6 +114,8 @@ static struct usb_descriptor_header *hs_adb_descs[] = {
 	NULL,
 };
 
+static void adb_ready_callback(void);
+static void adb_closed_callback(void);
 
 /* temporary variable used between adb_open() and adb_gadget_bind() */
 static struct adb_dev *_adb_dev;
@@ -211,7 +213,7 @@ static void adb_complete_out(struct usb_ep *ep, struct usb_request *req)
 	struct adb_dev *dev = _adb_dev;
 
 	dev->rx_done = 1;
-	if (req->status != 0)
+	if (req->status != 0 && req->status != -ECONNRESET)
 		dev->error = 1;
 
 	wake_up(&dev->read_wq);
@@ -350,7 +352,8 @@ requeue_req:
 	/* wait for a request to complete */
 	ret = wait_event_interruptible(dev->read_wq, dev->rx_done);
 	if (ret < 0) {
-		dev->error = 1;
+		if (ret != -ERESTARTSYS)
+			dev->error = 1;
 		r = ret;
 		usb_ep_dequeue(dev->ep_out, req);
 		goto done;
@@ -472,49 +475,77 @@ static struct miscdevice adb_device = {
 
 static int open_release_pair = 0;
 
+static spinlock_t open_lock;
+
 static int adb_open(struct inode *ip, struct file *fp)
 {
-	printk(KERN_INFO "%s %s %d: %p check adb_release %p \n", __FILE__, __func__, __LINE__, adb_fops.open, adb_fops.release);
-	dump_stack();
+	int ret = 0;
+	unsigned long flags;
+	
+	spin_lock_irqsave(&open_lock, flags);
+	
+	printk(KERN_INFO "[adb]adb_open start, adb_open: %p check adb_release %p, open_release_pair: %d \n", 
+		adb_fops.open, adb_fops.release, open_release_pair);
 
-	open_release_pair = open_release_pair + 1;
+	if (!_adb_dev){
+		xlog_printk(ANDROID_LOG_ERROR, XLOG_TAG, "[adb]adb_open _adb_dev is NULL, open_release_pair: %d \n", open_release_pair);
+		open_release_pair = 0 ;
+		ret = ENODEV;		
+		goto OPEN_END ;
+	}		
 
 	/*Workaround for being unable to call adb_release from adbd */
-	while (open_release_pair > 1)
+	if (open_release_pair > 0)
 	{
-		xlog_printk(ANDROID_LOG_ERROR, XLOG_TAG, "%s %s %d: open_release_pair count: %d \n", __FILE__, __func__, __LINE__, open_release_pair);
-		adb_release(ip, fp);
+		xlog_printk(ANDROID_LOG_WARN, XLOG_TAG, "[adb] open twice, %s %s %d: open_release_pair count: %d \n", __FILE__, __func__, __LINE__, open_release_pair);
+		ret = 0 ;
+		fp->private_data = _adb_dev;
+		goto OPEN_END ;
 	}
 
-	if (!_adb_dev)
-		return -ENODEV;
-
-	if (adb_lock(&_adb_dev->open_excl))
-	{
-		/* Workaround */
-		/* When adb_open fails, system may retry continuously and cause high CPU usage. */
-		/* So sleep some time to reduce adb retry times. */
-		msleep(150);
-		xlog_printk(ANDROID_LOG_ERROR, XLOG_TAG, "%s %s %d: Failed due to lock busy\n", __FILE__, __func__, __LINE__);
-		return -EBUSY;
-	}
-
+	open_release_pair ++;	
 	fp->private_data = _adb_dev;
-
 	/* clear the error latch */
 	_adb_dev->error = 0;
 
-	return 0;
+	adb_ready_callback();
+
+OPEN_END: 	
+	printk(KERN_INFO "[adb]adb_open end, open_release_pair: %d", open_release_pair) ;
+	
+	spin_unlock_irqrestore(&open_lock, flags);
+
+	return ret ;
 }
 
 static int adb_release(struct inode *ip, struct file *fp)
 {
-	printk(KERN_INFO "%s %s %d: %p check adb_open %p \n", __FILE__, __func__, __LINE__, adb_fops.release, adb_fops.open);
-	dump_stack();
+	int ret = 0 ;
+	unsigned long flags;
 
-	open_release_pair = open_release_pair - 1;
-	adb_unlock(&_adb_dev->open_excl);
-	return 0;
+	spin_lock_irqsave(&open_lock, flags);
+
+	printk(KERN_INFO "[adb]adb_release start, adb_open: %p check adb_release %p, open_release_pair: %d \n", 
+		adb_fops.open, adb_fops.release, open_release_pair);
+
+	if (open_release_pair < 1)
+	{
+		xlog_printk(ANDROID_LOG_WARN, XLOG_TAG, "[adb] close an unopened device, %s %s %d: open_release_pair count: %d \n", __FILE__, __func__, __LINE__, open_release_pair);
+		ret = -1 ;
+		goto RELEASE_END ;
+}
+
+	adb_closed_callback();
+
+	open_release_pair-- ;
+	
+RELEASE_END:
+
+	printk(KERN_INFO "[adb]adb_release end, open_release_pair: %d", open_release_pair) ;
+	
+	spin_unlock_irqrestore(&open_lock, flags);
+
+	return ret ; 
 }
 
 static int
@@ -578,21 +609,24 @@ static int adb_function_set_alt(struct usb_function *f,
 	struct usb_composite_dev *cdev = f->config->cdev;
 	int ret;
 
-	DBG(cdev, "%s %s %d: intf: %d alt: %d\n", __FILE__, __func__, __LINE__, intf, alt);
-	ret = usb_ep_enable(dev->ep_in,
-			ep_choose(cdev->gadget,
-				&adb_highspeed_in_desc,
-				&adb_fullspeed_in_desc));
+	DBG(cdev, "adb_function_set_alt intf: %d alt: %d\n", intf, alt);
+
+	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_in);
+	if (ret)
+		return ret;
+
+	ret = usb_ep_enable(dev->ep_in);
+	if (ret)
+		return ret;
+
+	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_out);
 	if (ret)
 	{
 		xlog_printk(ANDROID_LOG_ERROR, XLOG_TAG, "%s %s %d: usb_ep_enable in failed\n", __FILE__, __func__, __LINE__);
 		return ret;
 	}
 
-	ret = usb_ep_enable(dev->ep_out,
-			ep_choose(cdev->gadget,
-				&adb_highspeed_out_desc,
-				&adb_fullspeed_out_desc));
+	ret = usb_ep_enable(dev->ep_out);
 	if (ret) {
 		usb_ep_disable(dev->ep_in);
 		xlog_printk(ANDROID_LOG_ERROR, XLOG_TAG, "%s %s %d: usb_ep_enable out failed\n", __FILE__, __func__, __LINE__);
@@ -650,6 +684,8 @@ static int adb_setup(void)
 		return -ENOMEM;
 
 	spin_lock_init(&dev->lock);
+
+	spin_lock_init(&open_lock); 
 
 	init_waitqueue_head(&dev->read_wq);
 	init_waitqueue_head(&dev->write_wq);

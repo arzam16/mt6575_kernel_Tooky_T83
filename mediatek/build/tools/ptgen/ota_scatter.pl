@@ -18,6 +18,12 @@ while (<READ_FP>) {
     if ($_ =~ /^__NODL_BMTPOOL /) {
         next;
     }
+    if ($_ =~ /^__NODL_RSV_BMTPOOL /) {
+        next;
+    }
+    if ($_ =~ /^__NODL_RSV_OTP /) {
+        next;
+    }
     if ($_ =~ /^\n/) {
         next;
     }

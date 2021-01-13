@@ -53,6 +53,14 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
@@ -66,6 +74,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 
 #include <cust_mag.h>
 #include "akm8963.h"

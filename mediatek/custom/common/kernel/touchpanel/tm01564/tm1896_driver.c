@@ -1,5 +1,3 @@
-
-
 #include <linux/interrupt.h>
 #include <cust_eint.h>
 #include <linux/i2c.h>
@@ -33,6 +31,9 @@ static ssize_t update_firmware_store(struct kobject *kobj, struct kobj_attribute
 static int ts_firmware_file(void);
 static int i2c_update_firmware(struct i2c_client *client); 
 
+/* we changed the mode of these files and directories 
+ * the meet the requirements of Android Gingerbread CTS tests
+ */  
 static struct kobj_attribute update_firmware_attribute = {
 	.attr = {.name = "update_firmware", .mode = 0664},
 	.show = update_firmware_show,
@@ -970,6 +971,9 @@ static int ts_firmware_file(void)
 	return 0;	
 }
 
+/*
+ * The "update_firmware" file where a static variable is read from and written to.
+ */
 static ssize_t update_firmware_show(struct kobject *kobj, struct kobj_attribute *attr,char *buf)
 {
 	return 1;
@@ -1047,6 +1051,26 @@ static int tpd_resume(struct i2c_client *client)
 {
 	TPD_DEBUG("TPD wake up\n");
 
+/*
+#ifdef TPD_CLOSE_POWER_IN_SLEEP	
+	hwPowerOn(TPD_POWER_SOURCE,VOL_3300,"TP"); 
+#else
+#ifdef MT6573
+	mt_set_gpio_mode(GPIO_CTP_EN_PIN, GPIO_CTP_EN_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_EN_PIN, GPIO_DIR_OUT);
+	mt_set_gpio_out(GPIO_CTP_EN_PIN, GPIO_OUT_ONE);
+#endif	
+	msleep(100);
+
+	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ZERO);  
+    msleep(1);  
+    mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ONE);
+#endif
+*/
 	tpd_power(ts->client, 1);
 	tpd_clear_interrupt(ts->client);
 
@@ -1062,6 +1086,19 @@ static int tpd_suspend(struct i2c_client *client, pm_message_t message)
 
 	tpd_power(ts->client, 0);
 
+/*	 
+#ifdef TPD_CLOSE_POWER_IN_SLEEP	
+	hwPowerDown(TPD_POWER_SOURCE,"TP");
+#else
+i2c_smbus_write_i2c_block_data(i2c_client, 0xA5, 1, &data);  //TP enter sleep mode
+#ifdef MT6573
+mt_set_gpio_mode(GPIO_CTP_EN_PIN, GPIO_CTP_EN_PIN_M_GPIO);
+mt_set_gpio_dir(GPIO_CTP_EN_PIN, GPIO_DIR_OUT);
+mt_set_gpio_out(GPIO_CTP_EN_PIN, GPIO_OUT_ZERO);
+#endif
+
+#endif
+*/
 
 	 return 0;
  } 

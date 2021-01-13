@@ -1,4 +1,3 @@
-
 #include <mach/mt6516_pll.h>
 #include <mach/mt6516_typedefs.h> 
 #include <mach/mt6516_reg_base.h>

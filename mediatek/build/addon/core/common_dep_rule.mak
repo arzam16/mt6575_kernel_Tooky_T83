@@ -1,3 +1,41 @@
+# Copyright Statement:
+#
+# This software/firmware and related documentation ("MediaTek Software") are
+# protected under relevant copyright laws. The information contained herein
+# is confidential and proprietary to MediaTek Inc. and/or its licensors.
+# Without the prior written permission of MediaTek inc. and/or its licensors,
+# any reproduction, modification, use or disclosure of MediaTek Software,
+# and information contained herein, in whole or in part, shall be strictly prohibited.
+#
+# MediaTek Inc. (C) 2010. All rights reserved.
+#
+# BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+# THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+# RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
+# AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+# NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+# SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+# SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
+# THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
+# THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
+# CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
+# SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
+# STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+# CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+# AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+# OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
+# MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+#
+# The following software/firmware and/or related documentation ("MediaTek Software")
+# have been modified by MediaTek Inc. All revisions are subject to any receiver's
+# applicable license agreements with MediaTek Inc.
+
+#################################################################
+# for fm feature
+
+
 ifeq (MT5192_FM, $(strip $(MTK_FM_CHIP)))
   ifeq (no, $(strip $(MTK_MT519X_FM_SUPPORT)))
     $(call dep-err-seta-or-setb,MTK_MT519X_FM_SUPPORT,yes,MTK_FM_CHIP,non MT519X_FM)
@@ -64,10 +102,10 @@ endif
 ## The rule is as follow
 ## for MT6573, OP01 projects must build VideoPlayer and must not build VideoPlayer2
 ## for MT6573, non OP01 projects must build VideoPlayer2
-## for MT6575, same rule as MT6573
-## for non MT6573 (MT8320 MT6575), all projects should build VideoPlayer
+## for MT6575 MT6577, same rule as MT6573
+## for non MT6573 (MT8320 MT6575 MT6577), all projects should build VideoPlayer
 
-ifneq ($(findstring MT6573 MT6575,$(MTK_PLATFORM)),)
+ifneq ($(findstring MT6573 MT6575 MT6577,$(MTK_PLATFORM)),)
   ifneq ($(findstring OP01,$(OPTR_SPEC_SEG_DEF)),)
     ifeq (yes,$(strip $(MTK_VIDEOPLAYER2_APP)))
       $(call dep-err-seta-or-offb, OPTR_SPEC_SEG_DEF, none OP01, MTK_VIDEOPLAYER2_APP)
@@ -91,11 +129,11 @@ else
   ifneq ($(findstring MT8320,$(MTK_PLATFORM)),)
     ifdef MTK_VIDEOPLAYER_APP
       ifneq (yes,$(strip $(MTK_VIDEOPLAYER_APP)))
-        $(call dep-err-common, please turn on MTK_VIDEOPLAYER_APP on platform MT8320/MT6575)
+        $(call dep-err-common, please turn on MTK_VIDEOPLAYER_APP on platform MT8320)
       endif
     endif
     ifeq (yes,$(strip $(MTK_VIDEOPLAYER2_APP)))
-      $(call dep-err-common, please turn off MTK_VIDEOPLAYER2_APP on platform MT8320/MT6575)
+      $(call dep-err-common, please turn off MTK_VIDEOPLAYER2_APP on platform MT8320)
     endif
   endif
 endif
@@ -150,9 +188,11 @@ ifeq (1,$(strip $(MTK_SHARE_MODEM_SUPPORT)))
   endif
 endif
 
-ifeq (yes,$(strip $(GEMINI)))
-  ifneq (2,$(strip $(MTK_SHARE_MODEM_CURRENT)))
-    $(call dep-err-common, please set MTK_SHARE_MODEM_CURRENT=2 when GEMINI=yes)
+ifneq ($(strip $(MTK_DT_SUPPORT)),yes)
+  ifeq (yes,$(strip $(GEMINI)))
+    ifneq (2,$(strip $(MTK_SHARE_MODEM_CURRENT)))
+      $(call dep-err-common, please set MTK_SHARE_MODEM_CURRENT=2 when GEMINI=yes)
+    endif
   endif
 endif
 

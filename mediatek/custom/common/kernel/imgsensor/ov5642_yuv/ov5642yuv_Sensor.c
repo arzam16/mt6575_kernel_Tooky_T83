@@ -1,4 +1,63 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 03 15 2011 koli.lin
+ * [ALPS00034474] [Need Patch] [Volunteer Patch]
+ * Move sensor driver current setting to isp of middleware.
+ *
+ * 10 12 2010 koli.lin
+ * [ALPS00127101] [Camera] AE will flash
+ * [Camera]Create Vsync interrupt to handle the exposure time, sensor gain and raw gain control.
+ *
+ * 08 27 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Check in AD5820 Constant AF function.
+ *
+ * 08 26 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Add AD5820 Lens driver function.
+ * must disable SWIC and bus log, otherwise the lens initial time take about 30 second.(without log about 3 sec)
+ *
+ * 08 19 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Merge dual camera relative settings. Main OV5642, SUB O7675 ready.
+ *
+ * 08 18 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Mmodify ISP setting and add OV5642 sensor driver.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #define WINMO_USE           0
 
  #if WINMO_USE
@@ -45,6 +104,17 @@
 
 
 
+/*
+DBGPARAM dpCurSettings = {
+    TEXT("Sensor"), {
+        TEXT("Preview"),TEXT("Capture"),TEXT("Init"),TEXT("Error"),
+        TEXT("Gain"),TEXT("Shutter"),TEXT("Undef"),TEXT("Undef"),
+        TEXT("Undef"),TEXT("Undef"),TEXT("Undef"),TEXT("Undef"),
+        TEXT("Undef"),TEXT("Undef"),TEXT("Undef"),TEXT("Undef")},
+    0x00FF	// ZONE_INIT | ZONE_WARNING | ZONE_ERROR
+};
+
+*/
 kal_bool  OV5642YUV_MPEG4_encode_mode = KAL_FALSE;
 kal_uint16  OV5642YUV_sensor_gain_base=0x0;
 /* MAX/MIN Explosure Lines Used By AE Algorithm */
@@ -327,6 +397,22 @@ static kal_uint8 OV5642YUVGain2Reg(const kal_uint16 iGain)
 
 }
 
+/*************************************************************************
+* FUNCTION
+*    OV5642YUV_SetGain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*    the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 //! Due to the OV5642 set gain will happen race condition. 
 //! It need to use a critical section to protect it. 
 static atomic_t OV5642_SetGain_Flag; 
@@ -373,6 +459,22 @@ void OV5642YUV_SetGain(UINT16 iGain)
 }   /*  OV5642YUV_SetGain  */
 
 
+/*************************************************************************
+* FUNCTION
+*    read_OV5642YUV_gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 read_OV5642YUV_gain(void)
 {
 
@@ -406,6 +508,22 @@ void OV5642YUV_camera_para_to_sensor(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV5642YUV_sensor_to_camera_para
+*
+* DESCRIPTION
+*    // update camera_para from sensor register
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642YUV_sensor_to_camera_para(void)
 {
     kal_uint32    i;
@@ -420,6 +538,22 @@ void OV5642YUV_sensor_to_camera_para(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV5642YUV_get_sensor_group_count
+*
+* DESCRIPTION
+*    //
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_int32  OV5642YUV_get_sensor_group_count(void)
 {
     return GROUP_TOTAL_NUMS;
@@ -765,6 +899,9 @@ void OV5642YUV_set_5M_init(void);
 
 static UINT32 OV5642_FOCUS_AD5820_Init(void);
 
+/*******************************************************************************
+*
+********************************************************************************/
 static UINT32 OV5642YUV_Sensor_Init(void)
 {
     SENSORDB("lln:: OV5642YUV_Sensor_Init, use OV5642YUV_Sensor_Init_set_720P");
@@ -2258,6 +2395,22 @@ void OV5642YUV_dump_5M(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   OV5642YUVOpen
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 OV5642YUVOpen(void)
 {
@@ -2306,6 +2459,22 @@ UINT32 OV5642YUVOpen(void)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642YUV_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of OV5642 to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642YUV_SetShutter(kal_uint16 iShutter)
 {
 #if 0 
@@ -2327,6 +2496,22 @@ void OV5642YUV_SetShutter(kal_uint16 iShutter)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642YUV_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT16 OV5642YUV_read_shutter(void)
 {
     kal_uint8 temp_reg1, temp_reg2, temp_reg3;
@@ -2344,6 +2529,22 @@ UINT16 OV5642YUV_read_shutter(void)
     return (UINT16)temp_reg;
 }
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_night_mode
+*
+* DESCRIPTION
+*   This function night mode of OV5642.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642YUV_NightMode(kal_bool bEnable)
 {
     /************************************************************************/
@@ -2379,6 +2580,22 @@ void OV5642YUV_NightMode(kal_bool bEnable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642YUVClose
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642YUVClose(void)
 {
     //  CISModulePowerOn(FALSE);
@@ -2389,6 +2606,22 @@ UINT32 OV5642YUVClose(void)
     return ERROR_NONE;
 }	/* OV5642YUVClose() */
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_FOCUS_AD5820_Init
+*
+* DESCRIPTION
+*   This function is to load micro code for AF function
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static u8 AD5820_Config[] = {    
      0x02,
      0x00,
@@ -13067,6 +13300,23 @@ void OV5642YUV_Set_Mirror_Flip(kal_uint8 image_mirror)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642YUVPreview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642YUVPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -13460,6 +13710,22 @@ UINT32 OV5642YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
 
 }
 
+/*************************************************************************
+* FUNCTION
+*   OV5642YUVGetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642YUVGetSensorID(UINT32 *sensorID) 
 {
     int  retry = 3; 

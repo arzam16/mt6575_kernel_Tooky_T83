@@ -1,4 +1,3 @@
-
 #include <cust_acc.h>
 #include <mach/mt6516_pll.h>
 static struct acc_hw cust_acc_hw = {

@@ -1,4 +1,39 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 //#include <windows.h>
 //#include <memory.h>
 //#include <nkintr.h>
@@ -28,6 +63,7 @@
 #include <linux/fs.h>
 #include <asm/atomic.h>
 #include <asm/io.h>
+#include <asm/system.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
@@ -59,6 +95,7 @@ extern int iWriteRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u16 i2cId);
 static int sensor_id_fail = 0; 
 static kal_uint32 zoom_factor = 0; 
 
+static DEFINE_SPINLOCK(s5k5cagx_drv_lock);
 
 inline S5K5CAGX_read_cmos_sensor(kal_uint32 addr)
 {
@@ -82,6 +119,9 @@ inline int S5K5CAGX_write_cmos_sensor(u16 addr, u32 para)
 //s_porting add
 
 
+/*******************************************************************************
+* // Adapter for Winmo typedef 
+********************************************************************************/
 #define WINMO_USE 0
 
 #define Sleep(ms) mdelay(ms)
@@ -89,6 +129,9 @@ inline int S5K5CAGX_write_cmos_sensor(u16 addr, u32 para)
 #define TEXT
 
 
+/*******************************************************************************
+* // End Adapter for Winmo typedef 
+********************************************************************************/
 
 //e_porting add
 //e_porting add
@@ -195,6 +238,23 @@ MSDK_SENSOR_CONFIG_STRUCT S5K5CAGXSensorConfigData;
 //   return iGetByte;
 //}   /*  S5K5CAGX_read_cmos_sensor()  */
 
+/*************************************************************************
+* FUNCTION
+*	 S5K5CAGX_write_reg
+*
+* DESCRIPTION
+*	This function set the register of  S5K5CAGX.
+*
+* PARAMETERS
+*	addr : the register index of  S5K5CAGX
+*  para : setting parameter of the specified register of  S5K5CAGX
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void  S5K5CAGX_write_reg(kal_uint32 addr, kal_uint32 para)
 {
 
@@ -203,6 +263,22 @@ void  S5K5CAGX_write_reg(kal_uint32 addr, kal_uint32 para)
 
 }	/*  S5K5CAGX_write_reg() */
 
+/*************************************************************************
+* FUNCTION
+*	 S5K5CAGX_read_cmos_sensor
+*
+* DESCRIPTION
+*	This function read parameter of specified register from  S5K5CAGX.
+*
+* PARAMETERS
+*	addr : the register index of  S5K5CAGX
+*
+* RETURNS
+*	the data that read from  S5K5CAGX
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint32  S5K5CAGX_read_reg(kal_uint32 addr)
 {
 
@@ -211,6 +287,16 @@ kal_uint32  S5K5CAGX_read_reg(kal_uint32 addr)
 
 }	/*  S5K5CAGX_read_reg() */
 
+/*****************************************************************************
+ * FUNCTION
+ *  S5K5CAGX_select_page
+ * DESCRIPTION
+ *
+ * PARAMETERS
+ *  shutter     [IN]
+ * RETURNS
+ *  void
+ *****************************************************************************/
 void S5K5CAGX_select_page(kal_uint16 page)
 {
 	S5K5CAGX_write_cmos_sensor(0xFC, page);
@@ -258,6 +344,17 @@ void S5K5CAGX_set_isp_driving_current(kal_uint8 current)
 {
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  S5K5CAGX_set_dummy
+ * DESCRIPTION
+ *
+ * PARAMETERS
+ *  pixels      [IN]
+ *  lines       [IN]
+ * RETURNS
+ *  void
+ *****************************************************************************/
 void S5K5CAGX_set_dummy(kal_uint16 dummy_pixels, kal_uint16 dummy_lines)
 {
 		/****************************************************
@@ -272,6 +369,16 @@ void S5K5CAGX_set_dummy(kal_uint16 dummy_pixels, kal_uint16 dummy_lines)
 		S5K5CAGX_write_cmos_sensor(0x0F12, dummy_lines); 	// Extra V-Blanking
 }   /* S5K5CAGX_set_dummy */
 
+/*****************************************************************************
+ * FUNCTION
+ *  S5K5CAGX_Initialize_Setting
+ * DESCRIPTION
+ *
+ * PARAMETERS
+ *  void
+ * RETURNS
+ *  void
+ *****************************************************************************/
 void S5K5CAGX_Initialize_Setting(void)
 	{
 
@@ -3498,6 +3605,16 @@ void S5K5CAGX_Initialize_Setting(void)
 }
 
 
+/*****************************************************************************
+ * FUNCTION
+ *  S5K5CAGX_PV_Mode
+ * DESCRIPTION
+ *
+ * PARAMETERS
+ *  void
+ * RETURNS
+ *  void
+ *****************************************************************************/
 void S5K5CAGX_PV_Mode(void)
 	{
 		//================================================================
@@ -3524,6 +3641,16 @@ void S5K5CAGX_PV_Mode(void)
 
 
 
+/*****************************************************************************
+ * FUNCTION
+ *  S5K5CAGX_CAP_Mode
+ * DESCRIPTION
+ *
+ * PARAMETERS
+ *  void
+ * RETURNS
+ *  void
+ *****************************************************************************/
 void S5K5CAGX_CAP_Mode2(void)
 	{
 			S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
@@ -3561,6 +3688,23 @@ void S5K5CAGX_CAP_Mode(void)
 	}
 
 
+/*void S5K5CAGX_AE_AWB_Enable(kal_bool enable)
+{
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);	
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2);		// REG_TC_DBG_AutoAlgEnBits
+		
+	if (enable)
+	{
+		// Enable AE/AWB
+		S5K5CAGX_write_cmos_sensor(0x0F12, 0x077F);		// Enable aa_all, ae, awb.
+	}
+	else
+	{
+		// Disable AE/AWB
+		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0770);		// Disable aa_all, ae, awb.
+	}
+
+}*/
 static void S5K5CAGX_set_AE_mode(kal_bool AE_enable)
 {
 #if 0
@@ -3609,6 +3753,22 @@ static void S5K5CAGX_set_AWB_mode(kal_bool AWB_enable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGX_night_mode
+*
+* DESCRIPTION
+*	This function night mode of S5K5CAGX.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void S5K5CAGX_night_mode(kal_bool enable)
 {
 	/*----------------------------------------------------------------*/
@@ -3652,8 +3812,10 @@ void S5K5CAGX_night_mode(kal_bool enable)
 			S5K5CAGX_write_cmos_sensor(0x002A, 0x168E);
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0A00); // #evt1_lt_uMaxAnGain4
 		}	
+		spin_lock(&s5k5cagx_drv_lock);
 
 		S5K5CAGX_night_mode_enable = KAL_TRUE;
+		spin_unlock(&s5k5cagx_drv_lock);
 	}
 	else
 	{
@@ -3678,8 +3840,9 @@ void S5K5CAGX_night_mode(kal_bool enable)
 			S5K5CAGX_write_cmos_sensor(0x002A, 0x168E);
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800); //04CC// #evt1_lt_uMaxAnGain4 
 		}	
-
+        spin_lock(&s5k5cagx_drv_lock);
 		S5K5CAGX_night_mode_enable = KAL_FALSE;
+		spin_unlock(&s5k5cagx_drv_lock);
 	}
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0240);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevOpenAfterChange
@@ -3690,6 +3853,22 @@ void S5K5CAGX_night_mode(kal_bool enable)
 
 }	/* S5K5CAGX_night_mode */
 
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGX_GetSensorID
+*
+* DESCRIPTION
+*	This function get the sensor ID
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static kal_uint32 S5K5CAGX_GetSensorID(kal_uint32 *sensorID)
 {
     volatile signed char i;
@@ -3714,6 +3893,22 @@ static kal_uint32 S5K5CAGX_GetSensorID(kal_uint32 *sensorID)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGXOpen
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 S5K5CAGXOpen(void)
 {
 	volatile signed char i;
@@ -3735,6 +3930,22 @@ UINT32 S5K5CAGXOpen(void)
 	return ERROR_NONE;
 }	/* S5K5CAGXOpen() */
 
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGXClose
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 S5K5CAGXClose(void)
 {
 //	CISModulePowerOn(FALSE);
@@ -3743,22 +3954,44 @@ UINT32 S5K5CAGXClose(void)
 	return ERROR_NONE;
 }	/* S5K5CAGXClose() */
 
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGXPreview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 S5K5CAGXPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
+    spin_lock(&s5k5cagx_drv_lock);
 	S5K5CAGX_sensor_cap_state = KAL_FALSE;
     S5K5CAGX_PV_dummy_pixels = 0x0400;
 	S5K5CAGX_PV_dummy_lines = 0;
+	spin_unlock(&s5k5cagx_drv_lock);
 	if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		// MPEG4 Encode Mode
 	{
+        spin_lock(&s5k5cagx_drv_lock);
 		S5K5CAGX_MPEG4_encode_mode = KAL_TRUE;		
 		S5K5CAGX_MJPEG_encode_mode = KAL_FALSE;
+		spin_unlock(&s5k5cagx_drv_lock);
 	}
 	else
 	{
+        spin_lock(&s5k5cagx_drv_lock);
 		S5K5CAGX_MPEG4_encode_mode = KAL_FALSE;		
 		S5K5CAGX_MJPEG_encode_mode = KAL_FALSE;
-		
+		spin_unlock(&s5k5cagx_drv_lock);
 	}
 	S5K5CAGX_PV_Mode();
 	S5K5CAGX_set_mirror(sensor_config_data->SensorImageMirror);
@@ -3777,7 +4010,9 @@ UINT32 S5K5CAGXCapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	kal_uint16 PV_line_len = 0;
 	kal_uint16 CAP_line_len = 0;
 
+    spin_lock(&s5k5cagx_drv_lock);
     S5K5CAGX_sensor_cap_state = KAL_TRUE;
+     spin_unlock(&s5k5cagx_drv_lock);
 
 	// Webcam mode, just set the grab only, and make sure the AE/AWB is turn on.
 
@@ -4082,7 +4317,9 @@ BOOL S5K5CAGX_set_param_wb(UINT16 para)
 		switch (para)
 		{
 		    case AWB_MODE_OFF:
+				spin_lock(&s5k5cagx_drv_lock);
                 S5K5CAGX_AWB_ENABLE = KAL_FALSE; 
+				spin_unlock(&s5k5cagx_drv_lock);
                 S5K5CAGX_set_AWB_mode(S5K5CAGX_AWB_ENABLE);
             break;     
 			case AWB_MODE_AUTO:
@@ -4312,15 +4549,21 @@ UINT32 S5K5CAGXYUVSensorSetting(FEATURE_ID iCmd, UINT16 iPara)
 	break;
     case FID_AE_SCENE_MODE:  	
       if (iPara == AE_MODE_OFF) {
+	  	  spin_lock(&s5k5cagx_drv_lock);
           S5K5CAGX_AE_ENABLE = KAL_FALSE; 
+		  spin_unlock(&s5k5cagx_drv_lock);
       }
       else {
+	  	  spin_lock(&s5k5cagx_drv_lock);
           S5K5CAGX_AE_ENABLE = KAL_TRUE; 
+		  spin_unlock(&s5k5cagx_drv_lock);
       }
       S5K5CAGX_set_AE_mode(S5K5CAGX_AE_ENABLE);
     break; 
 	case FID_ZOOM_FACTOR:
+		 spin_lock(&s5k5cagx_drv_lock);
 	    zoom_factor = iPara; 		
+		 spin_unlock(&s5k5cagx_drv_lock);
 	break; 
 	default:
 	break;
@@ -4331,7 +4574,9 @@ UINT32 S5K5CAGXYUVSensorSetting(FEATURE_ID iCmd, UINT16 iPara)
 
 UINT32 S5K5CAGXYUVSetVideoMode(UINT16 u2FrameRate)
 {
+    spin_lock(&s5k5cagx_drv_lock);
     S5K5CAGX_VEDIO_encode_mode = KAL_TRUE; 
+	spin_unlock(&s5k5cagx_drv_lock);
 	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0288);	//#REG_0TC_PCFG_usMaxFrTimeMsecMult10 
 
@@ -4406,6 +4651,17 @@ kal_uint16 S5K5CAGXReadAwbBGain()
 }
 #if defined(MT6575)
 
+/*************************************************************************
+* FUNCTION
+*    S5K5CAGXGetEvAwbRef
+*
+* DESCRIPTION
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void S5K5CAGXGetEvAwbRef(UINT32 pSensorAEAWBRefStruct/*PSENSOR_AE_AWB_REF_STRUCT Ref*/)
 {
     PSENSOR_AE_AWB_REF_STRUCT Ref = (PSENSOR_AE_AWB_REF_STRUCT)pSensorAEAWBRefStruct;
@@ -4422,6 +4678,17 @@ static void S5K5CAGXGetEvAwbRef(UINT32 pSensorAEAWBRefStruct/*PSENSOR_AE_AWB_REF
     Ref->SensorAwbGainRef.AwbRefCWFBgain = 164; /* 1.28125x, 128 base */
 	#endif
 }
+/*************************************************************************
+* FUNCTION
+*    S5K5CAGXGetCurAeAwbInfo
+*
+* DESCRIPTION
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void S5K5CAGXGetCurAeAwbInfo(UINT32 pSensorAEAWBCurStruct/*PSENSOR_AE_AWB_CUR_STRUCT Info*/)
 {
     PSENSOR_AE_AWB_CUR_STRUCT Info = (PSENSOR_AE_AWB_CUR_STRUCT)pSensorAEAWBCurStruct;
@@ -4481,7 +4748,9 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 		case SENSOR_FEATURE_SET_FLASHLIGHT:
 		break;
 		case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
+			spin_lock(&s5k5cagx_drv_lock);
 			S5K5CAGX_isp_master_clock=*pFeatureData32;
+			spin_unlock(&s5k5cagx_drv_lock);
 		break;
 		case SENSOR_FEATURE_SET_REGISTER:
 			S5K5CAGX_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
@@ -4538,10 +4807,10 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 		    break; 
 		#if defined(MT6575)
 		case SENSOR_FEATURE_GET_EV_AWB_REF:
-			 S5K5CAGXGetEvAwbRef(pFeatureData32);
+			 S5K5CAGXGetEvAwbRef(*pFeatureData32);
 				break;
   		case SENSOR_FEATURE_GET_SHUTTER_GAIN_AWB_GAIN:
-			   S5K5CAGXGetCurAeAwbInfo(pFeatureData32);	
+			   S5K5CAGXGetCurAeAwbInfo(*pFeatureData32);
 			break;
 		#endif
 		case SENSOR_FEATURE_CHECK_SENSOR_ID:

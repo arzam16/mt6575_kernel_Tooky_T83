@@ -1,4 +1,84 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ * 
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ *
+ * 03 15 2011 koli.lin
+ * [ALPS00034474] [Need Patch] [Volunteer Patch]
+ * Move sensor driver current setting to isp of middleware.
+ *
+ * 10 12 2010 koli.lin
+ * [ALPS00127101] [Camera] AE will flash
+ * [Camera]Create Vsync interrupt to handle the exposure time, sensor gain and raw gain control.
+ *
+ * 08 27 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Check in AD5820 Constant AF function.
+ *
+ * 08 26 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Add AD5820 Lens driver function.
+ * must disable SWIC and bus log, otherwise the lens initial time take about 30 second.(without log about 3 sec)
+ *
+ * 08 19 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Merge dual camera relative settings. Main OV5642, SUB O7675 ready.
+ *
+ * 08 18 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Mmodify ISP setting and add OV5642 sensor driver.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -264,6 +344,22 @@ static kal_uint8 OV5642MIPIRGBGain2Reg(const kal_uint16 iGain)
     return iReg;
 }
 
+/*************************************************************************
+* FUNCTION
+*    OV5642MIPIRGB_SetGain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*    the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 //! Due to the OV5642 set gain will happen race condition. 
 //! It need to use a critical section to protect it. 
 static atomic_t OV5642_SetGain_Flag; 
@@ -310,6 +406,22 @@ void OV5642MIPIRGB_SetGain(UINT16 iGain)
 }   /*  OV5642MIPIRGB_SetGain  */
 
 
+/*************************************************************************
+* FUNCTION
+*    read_OV5642MIPIRGB_gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 read_OV5642MIPIRGB_gain(void)
 {
 
@@ -343,6 +455,22 @@ void OV5642MIPIRGB_camera_para_to_sensor(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV5642MIPIRGB_sensor_to_camera_para
+*
+* DESCRIPTION
+*    // update camera_para from sensor register
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642MIPIRGB_sensor_to_camera_para(void)
 {
     kal_uint32 i;
@@ -357,6 +485,22 @@ void OV5642MIPIRGB_sensor_to_camera_para(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV5642MIPIRGB_get_sensor_group_count
+*
+* DESCRIPTION
+*    //
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_int32  OV5642MIPIRGB_get_sensor_group_count(void)
 {
     return GROUP_TOTAL_NUMS;
@@ -1711,6 +1855,22 @@ static void OV5642MIPIRGB_Sensor_Init(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   OV5642MIPIRGBOpen
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 OV5642MIPIRGBOpen(void)
 {
@@ -1742,6 +1902,22 @@ UINT32 OV5642MIPIRGBOpen(void)
     return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*   OV5642MIPIRGBGetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642MIPIRGBGetSensorID(UINT32 *sensorID) 
 {
     int  retry = 3; 
@@ -1763,6 +1939,22 @@ UINT32 OV5642MIPIRGBGetSensorID(UINT32 *sensorID)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642MIPIRGB_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of OV5642 to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642MIPIRGB_SetShutter(kal_uint16 iShutter)
 {
 #if 0 
@@ -1783,6 +1975,22 @@ void OV5642MIPIRGB_SetShutter(kal_uint16 iShutter)
     return;
 }   /*  OV5642MIPIRGB_SetShutter   */
 
+/*************************************************************************
+* FUNCTION
+*   OV5642MIPIRGB_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT16 OV5642MIPIRGB_read_shutter(void)
 {
 
@@ -1801,6 +2009,22 @@ UINT16 OV5642MIPIRGB_read_shutter(void)
     return (UINT16)temp_reg;
 }
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_night_mode
+*
+* DESCRIPTION
+*   This function night mode of OV5642.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642MIPIRGB_NightMode(kal_bool bEnable)
 {
     /************************************************************************/
@@ -1835,11 +2059,43 @@ void OV5642MIPIRGB_NightMode(kal_bool bEnable)
 	return;
 }/*	OV5642MIPIRGB_NightMode */
 
+/*************************************************************************
+* FUNCTION
+*   OV5642MIPIRGBClose
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642MIPIRGBClose(void)
 {
     return ERROR_NONE;
 }	/* OV5642MIPIRGBClose() */
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_FOCUS_AD5820_Init
+*
+* DESCRIPTION
+*   This function is to load micro code for AF function
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static u8 AD5820_Config[] = {    
      0x02,
      0x00,
@@ -13290,6 +13546,23 @@ void OV5642MIPIRGB_Set_Mirror_Flip(kal_uint8 image_mirror)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642MIPIRGBPreview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642MIPIRGBPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                             MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {

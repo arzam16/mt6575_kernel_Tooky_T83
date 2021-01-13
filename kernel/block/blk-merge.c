@@ -161,6 +161,83 @@ new_segment:
 				sg->page_link &= ~0x02;
 				sg = sg_next(sg);
 			}
+//#undef FEATURE_STORAGE_PID_LOGGER
+#if defined(FEATURE_STORAGE_PID_LOGGER)              
+			do {
+				extern spinlock_t g_locker;
+				extern unsigned char *page_logger;
+				
+				extern struct struct_pid_logger g_pid_logger[PID_ID_CNT];
+				if(page_logger) { 
+					struct page_pid_logger *tmp_logger;
+					int page_offset;
+					int index, mmcqd_index;
+					pid_t current_pid=0;
+					
+					page_offset = (unsigned long)((bvec->bv_page) - mem_map);
+					tmp_logger =((struct page_pid_logger *)page_logger) + page_offset;
+					//tmp_locker =((struct page_pid_locker *)page_logger_lock) + page_offset;
+					//printk(KERN_INFO"hank merge pid1:%u pid2:%u bv_page:%x mem_map:%x pfn:%d %s \n", tmp_logger->pid1, tmp_logger->pid2, bvec->bv_page, mem_map, (unsigned long)((bvec->bv_page) - mem_map), q->backing_dev_info.name);
+					current_pid = current->pid;
+
+					//find the exactly pid record array
+					for( mmcqd_index=0; mmcqd_index<PID_ID_CNT; mmcqd_index++) {
+						//printk(KERN_INFO"hank merge mmcqd_index:%d qcurrent_pid:%d current_pid:%d", mmcqd_index, g_pid_logger[mmcqd_index].current_pid, current_pid);
+						if( g_pid_logger[mmcqd_index].current_pid==0 || g_pid_logger[mmcqd_index].current_pid == current_pid ) {
+							g_pid_logger[mmcqd_index].current_pid = current_pid;
+							break;
+						}		
+					}
+					//no match array
+					if( mmcqd_index == PID_ID_CNT )
+						break;
+					if( tmp_logger->pid1 != 0xFFFF) {
+						spin_lock(&g_locker);
+						for( index=0; index<PID_LOGGER_COUNT; index++) {
+							if( tmp_logger->pid1 == 0xFFFF)
+								break;
+							if( (g_pid_logger[mmcqd_index].pid_logger[index] == 0 || g_pid_logger[mmcqd_index].pid_logger[index] == tmp_logger->pid1)) {
+								g_pid_logger[mmcqd_index].pid_logger[index] = tmp_logger->pid1;
+								if (rq->cmd_flags & REQ_WRITE) {
+									g_pid_logger[mmcqd_index].pid_logger_counter[index]++;
+									g_pid_logger[mmcqd_index].pid_logger_length[index]+=bvec->bv_len;
+								}else {
+									g_pid_logger[mmcqd_index].pid_logger_r_counter[index]++;
+									g_pid_logger[mmcqd_index].pid_logger_r_length[index]+=bvec->bv_len;
+								}
+								tmp_logger->pid1 = 0XFFFF;
+								break;
+							}
+							
+						}
+						spin_unlock(&g_locker);
+					}
+					if( tmp_logger->pid2 != 0xFFFF) {
+						spin_lock(&g_locker);
+						for( index=0; index<PID_LOGGER_COUNT; index++) {
+							if( tmp_logger->pid2 == 0xFFFF)
+								break;
+							if( (g_pid_logger[mmcqd_index].pid_logger[index] == 0 || g_pid_logger[mmcqd_index].pid_logger[index] == tmp_logger->pid2)) {
+								g_pid_logger[mmcqd_index].pid_logger[index] = tmp_logger->pid2;
+								if (rq->cmd_flags & REQ_WRITE) {
+									g_pid_logger[mmcqd_index].pid_logger_counter[index]++;
+									g_pid_logger[mmcqd_index].pid_logger_length[index]+=bvec->bv_len;
+								}else {
+									g_pid_logger[mmcqd_index].pid_logger_r_counter[index]++;
+									g_pid_logger[mmcqd_index].pid_logger_r_length[index]+=bvec->bv_len;
+								}
+								tmp_logger->pid2 = 0XFFFF;
+								break;
+							}
+							
+						}
+						spin_unlock(&g_locker);
+					}
+					
+				}
+			} while (0);
+						
+#endif
 
 			sg_set_page(sg, bvec->bv_page, nbytes, bvec->bv_offset);
 			nsegs++;
@@ -470,4 +547,41 @@ int blk_attempt_req_merge(struct request_queue *q, struct request *rq,
 			  struct request *next)
 {
 	return attempt_merge(q, rq, next);
+}
+
+bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
+{
+	if (!rq_mergeable(rq))
+		return false;
+
+	/* don't merge file system requests and discard requests */
+	if ((bio->bi_rw & REQ_DISCARD) != (rq->bio->bi_rw & REQ_DISCARD))
+		return false;
+
+	/* don't merge discard requests and secure discard requests */
+	if ((bio->bi_rw & REQ_SECURE) != (rq->bio->bi_rw & REQ_SECURE))
+		return false;
+
+	/* different data direction or already started, don't merge */
+	if (bio_data_dir(bio) != rq_data_dir(rq))
+		return false;
+
+	/* must be same device and not a special request */
+	if (rq->rq_disk != bio->bi_bdev->bd_disk || rq->special)
+		return false;
+
+	/* only merge integrity protected bio into ditto rq */
+	if (bio_integrity(bio) != blk_integrity_rq(rq))
+		return false;
+
+	return true;
+}
+
+int blk_try_merge(struct request *rq, struct bio *bio)
+{
+	if (blk_rq_pos(rq) + blk_rq_sectors(rq) == bio->bi_sector)
+		return ELEVATOR_BACK_MERGE;
+	else if (blk_rq_pos(rq) - bio_sectors(bio) == bio->bi_sector)
+		return ELEVATOR_FRONT_MERGE;
+	return ELEVATOR_NO_MERGE;
 }

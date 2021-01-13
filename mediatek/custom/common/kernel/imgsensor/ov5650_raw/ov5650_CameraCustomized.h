@@ -1,4 +1,42 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.h
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Header file of camera customized parameters.
+ *
+ *
+ * Author:
+ * -------
+ *   
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 03 02 2012 hao.wang
+ * [ALPS00246237] SP OV5650 Sensor Driver check in
+ * .
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 
 #ifndef __CAMERA_CUSTOMIZED_H
 #define __CAMERA_CUSTOMIZED_H

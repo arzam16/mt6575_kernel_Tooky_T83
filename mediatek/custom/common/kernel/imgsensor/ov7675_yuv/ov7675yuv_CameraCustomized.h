@@ -24,6 +24,10 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
  *
  * Feb 9 2010 mtk80461
  * [DUMA00154355] JPeg Orientation feature check in

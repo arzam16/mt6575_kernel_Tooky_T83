@@ -84,7 +84,7 @@ struct binder_version {
 /* This is the current protocol version. */
 #define BINDER_CURRENT_PROTOCOL_VERSION 7
 
-#define BINDER_WRITE_READ   		_IOWR('b', 1, struct binder_write_read)
+#define BINDER_WRITE_READ		_IOWR('b', 1, struct binder_write_read)
 #define	BINDER_SET_IDLE_TIMEOUT		_IOW('b', 3, int64_t)
 #define	BINDER_SET_MAX_THREADS		_IOW('b', 5, size_t)
 #define	BINDER_SET_IDLE_PRIORITY	_IOW('b', 6, int)
@@ -112,7 +112,6 @@ enum transaction_flags {
 	TF_ROOT_OBJECT	= 0x04,	/* contents are the component's root object */
 	TF_STATUS_CODE	= 0x08,	/* contents are a 32-bit status code */
 	TF_ACCEPT_FDS	= 0x10,	/* allow replies with file descriptors */
-	TF_AGGRESSIVE_RT_PI = 0x20,
 };
 
 struct binder_transaction_data {

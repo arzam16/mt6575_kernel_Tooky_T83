@@ -1,5 +1,3 @@
-
- 
 #include "tpd.h"
 #include <linux/interrupt.h>
 #include <cust_eint.h>
@@ -12,32 +10,17 @@
 #include <linux/delay.h>
 
 #include "tpd_custom_ft5206.h"
-#ifdef MT6575
-#include <mach/mt6575_pm_ldo.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_boot.h>
-#endif
+
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_boot.h>
 
 #include "cust_gpio_usage.h"
+
+ 
+ 
 extern struct tpd_device *tpd;
-
-#define TP_UPGRADE 0
-#define FTS_PACKET_LENGTH 128
-
-
-#if TP_UPGRADE
-static unsigned char CTPM_FW_MUD[]=
-{
-	#include "firmware_mud_v0x0e.h"
-};
-static unsigned char CTPM_FW_JUNDA[]=
-{
-	#include "firmware_junda_v0x11.h"
-};
-
- char version[2][10] = {"Mud", "Junda"};
-#endif
-
+ 
 struct i2c_client *i2c_client = NULL;
 struct task_struct *thread = NULL;
  
@@ -46,7 +29,7 @@ static DECLARE_WAIT_QUEUE_HEAD(waiter);
  
 static void tpd_eint_interrupt_handler(void);
  
- 
+#ifdef MT6575 
  extern void mt65xx_eint_unmask(unsigned int line);
  extern void mt65xx_eint_mask(unsigned int line);
  extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
@@ -54,15 +37,21 @@ static void tpd_eint_interrupt_handler(void);
  extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 									  kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
 									  kal_bool auto_umask);
+#endif
+#ifdef MT6577
+	extern void mt65xx_eint_unmask(unsigned int line);
+	extern void mt65xx_eint_mask(unsigned int line);
+	extern void mt65xx_eint_set_hw_debounce(unsigned int eint_num, unsigned int ms);
+	extern unsigned int mt65xx_eint_set_sens(unsigned int eint_num, unsigned int sens);
+	extern void mt65xx_eint_registration(unsigned int eint_num, unsigned int is_deb_en, unsigned int pol, void (EINT_FUNC_PTR)(void), unsigned int is_auto_umask);
+#endif
 
  
 static int __devinit tpd_probe(struct i2c_client *client, const struct i2c_device_id *id);
-static int tpd_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+static int tpd_detect (struct i2c_client *client, struct i2c_board_info *info);
 static int __devexit tpd_remove(struct i2c_client *client);
 static int touch_event_handler(void *unused);
-unsigned char fts_ctpm_get_panel_factory_setting(void);
-static int read_reg(u8 addr, unsigned char *pdata);
-
+ 
 
 static int tpd_flag = 0;
 static int point_num = 0;
@@ -110,11 +99,13 @@ static int tpd_calmat_local[8]     = TPD_CALIBRATION_MATRIX;
 static int tpd_def_calmat_local[8] = TPD_CALIBRATION_MATRIX;
 #endif
 
-//#define VELOCITY_CUSTOM_FT5206
+#define VELOCITY_CUSTOM_FT5206
 #ifdef VELOCITY_CUSTOM_FT5206
 #include <linux/device.h>
 #include <linux/miscdevice.h>
 #include <asm/uaccess.h>
+
+// for magnify velocity********************************************
 
 #ifndef TPD_VELOCITY_CUSTOM_X
 #define TPD_VELOCITY_CUSTOM_X 10
@@ -123,8 +114,6 @@ static int tpd_def_calmat_local[8] = TPD_CALIBRATION_MATRIX;
 #define TPD_VELOCITY_CUSTOM_Y 10
 #endif
 
-
-// for magnify velocity********************************************
 #define TOUCH_IOC_MAGIC 'A'
 
 #define TPD_GET_VELOCITY_CUSTOM_X _IO(TOUCH_IOC_MAGIC,0)
@@ -134,6 +123,15 @@ int g_v_magnify_x =TPD_VELOCITY_CUSTOM_X;
 int g_v_magnify_y =TPD_VELOCITY_CUSTOM_Y;
 static int tpd_misc_open(struct inode *inode, struct file *file)
 {
+/*
+	file->private_data = adxl345_i2c_client;
+
+	if(file->private_data == NULL)
+	{
+		printk("tpd: null pointer!!\n");
+		return -EINVAL;
+	}
+	*/
 	return nonseekable_open(inode, file);
 }
 /*----------------------------------------------------------------------------*/
@@ -150,7 +148,7 @@ static long tpd_unlocked_ioctl(struct file *file, unsigned int cmd,
 {
 	//struct i2c_client *client = (struct i2c_client*)file->private_data;
 	//struct adxl345_i2c_data *obj = (struct adxl345_i2c_data*)i2c_get_clientdata(client);	
-	char strbuf[256];
+	//char strbuf[256];
 	void __user *data;
 	
 	long err = 0;
@@ -231,9 +229,10 @@ static struct miscdevice tpd_misc_device = {
 #endif
 
 struct touch_info {
-    int y[4];
-    int x[4];
-    int p[4];
+    int y[3];
+    int x[3];
+    int p[3];
+    int id[3];
     int count;
 };
  
@@ -260,10 +259,12 @@ struct touch_info {
 static  void tpd_down(int x, int y, int p) {
 	// input_report_abs(tpd->dev, ABS_PRESSURE, p);
 	 input_report_key(tpd->dev, BTN_TOUCH, 1);
-	 input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 1);
+	 input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 20);
 	 input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
 	 input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
 	 //printk("D[%4d %4d %4d] ", x, y, p);
+	 /* track id Start 0 */
+       input_report_abs(tpd->dev, ABS_MT_TRACKING_ID, p); 
 	 input_mt_sync(tpd->dev);
      if (FACTORY_BOOT == get_boot_mode()|| RECOVERY_BOOT == get_boot_mode())
      {   
@@ -295,14 +296,14 @@ static  void tpd_up(int x, int y,int *count) {
 
  }
 
-  static int tpd_touchinfo(struct touch_info *cinfo, struct touch_info *pinfo)
+ static int tpd_touchinfo(struct touch_info *cinfo, struct touch_info *pinfo)
  {
 
 	int i = 0;
+	
+	char data[30] = {0};
 
-	char data[40] = {0};
-
-	u16 high_byte,low_byte;
+    u16 high_byte,low_byte;
 	u8 report_rate =0;
 
 	p_point_num = point_num;
@@ -310,10 +311,19 @@ static  void tpd_up(int x, int y,int *count) {
 	i2c_smbus_read_i2c_block_data(i2c_client, 0x00, 8, &(data[0]));
 	i2c_smbus_read_i2c_block_data(i2c_client, 0x08, 8, &(data[8]));
 	i2c_smbus_read_i2c_block_data(i2c_client, 0x10, 8, &(data[16]));
-	i2c_smbus_read_i2c_block_data(i2c_client, 0x18, 8, &(data[24]));
-	i2c_smbus_read_i2c_block_data(i2c_client, 0xa6, 1, &(data[33]));
+	i2c_smbus_read_i2c_block_data(i2c_client, 0xa6, 1, &(data[24]));
 	i2c_smbus_read_i2c_block_data(i2c_client, 0x88, 1, &report_rate);
+	//TPD_DEBUG("FW version=%x]\n",data[24]);
+	
+	//TPD_DEBUG("received raw data from touch panel as following:\n");
+	//TPD_DEBUG("[data[0]=%x,data[1]= %x ,data[2]=%x ,data[3]=%x ,data[4]=%x ,data[5]=%x]\n",data[0],data[1],data[2],data[3],data[4],data[5]);
+	//TPD_DEBUG("[data[9]=%x,data[10]= %x ,data[11]=%x ,data[12]=%x]\n",data[9],data[10],data[11],data[12]);
+	//TPD_DEBUG("[data[15]=%x,data[16]= %x ,data[17]=%x ,data[18]=%x]\n",data[15],data[16],data[17],data[18]);
 
+
+    //    
+	 //we have  to re update report rate
+    // TPD_DMESG("report rate =%x\n",report_rate);
 	 if(report_rate < 8)
 	 {
 	   report_rate = 0x8;
@@ -321,50 +331,61 @@ static  void tpd_up(int x, int y,int *count) {
 	   {
 		   TPD_DMESG("I2C read report rate error, line: %d\n", __LINE__);
 	   }
-	 }	 
+	 }
+	 
 	
 	/* Device Mode[2:0] == 0 :Normal operating Mode*/
-	if(data[0] & 0x70 != 0) return false; 
+	if((data[0] & 0x70) != 0) return false; 
 
 	/*get the number of the touch points*/
 	point_num= data[2] & 0x0f;
+	
+	//TPD_DEBUG("point_num =%d\n",point_num);
+	
+//	if(point_num == 0) return false;
+
+	   //TPD_DEBUG("Procss raw data...\n");
 
 		
-	for(i = 0; i < point_num; i++)
-	{
-		cinfo->p[i] = data[3+6*i] >> 6; //event flag 
+		for(i = 0; i < point_num; i++)
+		{
+			cinfo->p[i] = data[3+6*i] >> 6; //event flag 
+                   cinfo->id[i] = data[3+6*i+2]>>4; //touch id
+	       /*get the X coordinate, 2 bytes*/
+			high_byte = data[3+6*i];
+			high_byte <<= 8;
+			high_byte &= 0x0f00;
+			low_byte = data[3+6*i + 1];
+			cinfo->x[i] = high_byte |low_byte;
 
-		/*get the X coordinate, 2 bytes*/
-		high_byte = data[3+6*i];
-		high_byte <<= 8;
-		high_byte &= 0x0f00;
-		low_byte = data[3+6*i + 1];
-		cinfo->x[i] = high_byte |low_byte;
+				//cinfo->x[i] =  cinfo->x[i] * 480 >> 11; //calibra
+		
+			/*get the Y coordinate, 2 bytes*/
+			
+			high_byte = data[3+6*i+2];
+			high_byte <<= 8;
+			high_byte &= 0x0f00;
+			low_byte = data[3+6*i+3];
+			cinfo->y[i] = high_byte |low_byte;
 
-		//cinfo->x[i] =  cinfo->x[i] * 480 >> 11; //calibra
-
-		/*get the Y coordinate, 2 bytes*/
-
-		high_byte = data[3+6*i+2];
-		high_byte <<= 8;
-		high_byte &= 0x0f00;
-		low_byte = data[3+6*i+3];
-		cinfo->y[i] = high_byte |low_byte;
-
-		//cinfo->y[i]=  cinfo->y[i] * 800 >> 11;
-
-		cinfo->count++;
-
-	}
+			  //cinfo->y[i]=  cinfo->y[i] * 800 >> 11;
+		
+			cinfo->count++;
+			
+		}
+		//TPD_DEBUG(" cinfo->x[0] = %d, cinfo->y[0] = %d, cinfo->p[0] = %d\n", cinfo->x[0], cinfo->y[0], cinfo->p[0]);	
+		//TPD_DEBUG(" cinfo->x[1] = %d, cinfo->y[1] = %d, cinfo->p[1] = %d\n", cinfo->x[1], cinfo->y[1], cinfo->p[1]);		
+		//TPD_DEBUG(" cinfo->x[2]= %d, cinfo->y[2]= %d, cinfo->p[2] = %d\n", cinfo->x[2], cinfo->y[2], cinfo->p[2]);	
 		  
 	 return true;
 
- };;
+ };
 
  static int touch_event_handler(void *unused)
  {
   
     struct touch_info cinfo, pinfo;
+	 int i=0;
 
 	 struct sched_param param = { .sched_priority = RTPM_PRIO_TPD };
 	 sched_setscheduler(current, SCHED_RR, &param);
@@ -382,26 +403,19 @@ static  void tpd_up(int x, int y,int *count) {
 
 		  if (tpd_touchinfo(&cinfo, &pinfo)) 
 		  {
-//		    printk("point_num = %d, cinfo.x = %d, cinfo.y = %d\n",point_num, cinfo.x[0], cinfo.y[0]);
+		    //TPD_DEBUG("point_num = %d\n",point_num);
 			TPD_DEBUG_SET_TIME;
-		  
-            if(point_num >0) 
+			if(point_num >0) 
 			{
-                tpd_down(cinfo.x[0], cinfo.y[0], 1);
-                if(point_num>1)
-             	{
-			 	tpd_down(cinfo.x[1], cinfo.y[1], 1);
-			    if(point_num >2) 
-			    	{
-					tpd_down(cinfo.x[2], cinfo.y[2], 1);
-					if(point_num >3)
-						tpd_down(cinfo.x[3], cinfo.y[3], 1);
-			    	}
-		}
-                input_sync(tpd->dev);
-				//TPD_DEBUG("press --->\n");
-				
-            } 
+			    for(i =0; i<point_num && i<3; i++)//only support 3 point
+			    {
+
+			         tpd_down(cinfo.x[i], cinfo.y[i], cinfo.id[i]);
+			       
+			    }
+			    input_sync(tpd->dev);
+			}
+
 			else  
             {
 			    tpd_up(cinfo.x[0], cinfo.y[0], 0);
@@ -411,12 +425,22 @@ static  void tpd_up(int x, int y,int *count) {
             }
         }
 
+        if(tpd_mode==12)
+        {
+           //power down for desence debug
+           //power off, need confirm with SA
+           hwPowerDown(MT65XX_POWER_LDO_VGP2,  "TP");
+           hwPowerDown(MT65XX_POWER_LDO_VGP,  "TP");
+	    msleep(20);
+          
+        }
+
  }while(!kthread_should_stop());
  
 	 return 0;
  }
  
- static int tpd_detect (struct i2c_client *client, int kind, struct i2c_board_info *info) 
+ static int tpd_detect (struct i2c_client *client, struct i2c_board_info *info) 
  {
 	 strcpy(info->type, TPD_DEVICE);	
 	  return 0;
@@ -425,366 +449,11 @@ static  void tpd_up(int x, int y,int *count) {
  static void tpd_eint_interrupt_handler(void)
  {
 	 //TPD_DEBUG("TPD interrupt has been triggered\n");
+	 TPD_DEBUG_PRINT_INT;
 	 tpd_flag = 1;
 	 wake_up_interruptible(&waiter);
-
+	 
  }
-
-#if TP_UPGRADE
-
-static int write_reg(u8 addr, u8 para)
-{
-	char buf[3];
-	int ret = -1;
-
-	buf[0] = addr;
-	buf[1] = para;
-	ret = i2c_master_send(i2c_client, buf, 2);
-	if (ret < 0){
-		pr_err("write reg failed! %#x ret: %d", buf[0], ret);
-		return -1;
-	}
-	return 0;
-}
-
-static int read_reg(u8 addr, unsigned char *pdata)
-{
-	int ret;
-	unsigned char buf[2];
-	struct  i2c_msg msgs[2];
-
-	buf[0] = addr;               //register address
-
-	i2c_master_send(i2c_client, &buf[0], 1);
-	ret = i2c_master_recv(i2c_client, &buf[0], 1);
-	if (ret < 0)
-		pr_err("msg %s i2c read error: %d\n", __func__, ret);
-
-	*pdata = buf[0];
-	return ret;
-}
-
-u8 cmd_write(u8 btcmd,u8 btPara1,u8 btPara2,u8 btPara3,u8 num)
-{
-	u8 write_cmd[4] = {0};
-	i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
-	write_cmd[0] = btcmd;
-	write_cmd[1] = btPara1;
-	write_cmd[2] = btPara2;
-	write_cmd[3] = btPara3;
-	return i2c_master_send(i2c_client, write_cmd, num);
-}
-
-
-int  fts_ctpm_fw_upgrade(unsigned char* pbt_buf, long unsigned int dw_lenth)
-{
-	unsigned char reg_val[3] = {0};
-	int i = 0;
-
-	int  packet_number;
-	int  j;
-	int  temp;
-	int  lenght;
-	unsigned char  packet_buf[FTS_PACKET_LENGTH + 6];
-	unsigned char  auc_i2c_write_buf[10];
-	unsigned char bt_ecc;
-	int      i_ret;
-
-	/*********Step 1:Reset  CTPM *****/
-	/*write 0xaa to register 0xfc*/
-	write_reg(0xfc,0xaa);
-	mdelay(50);
-	/*write 0x55 to register 0xfc*/
-	write_reg(0xfc,0x55);
-	printk("Step 1: Reset CTPM test\n");
-
-	mdelay(30);   
-
-	/*********Step 2:Enter upgrade mode *****/
-	auc_i2c_write_buf[0] = 0x55;
-	auc_i2c_write_buf[1] = 0xaa;
-	do
-	{
-		i ++;
-	//	i_ret = ft5306_i2c_txdata(auc_i2c_write_buf, 2);
-		i_ret = i2c_master_send(i2c_client, auc_i2c_write_buf, 2);
-		mdelay(5);
-	}while(i_ret <= 0 && i < 5 );
-	printk("Step 2: Enter upgrade mode\n");
-	
-	/*********Step 3:check READ-ID***********************/        
-	cmd_write(0x90,0x00,0x00,0x00,4);
-	i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
-	i2c_master_recv(i2c_client, &reg_val, 2);
-	printk("Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0],reg_val[1]);
-	//byte_read(reg_val,2);
-	if (reg_val[0] == 0x79 && reg_val[1] == 0x3)
-	{
-		printk("Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0],reg_val[1]);
-	}
-	else
-	{
-		return 2;
-		//i_is_new_protocol = 1;
-	}
-
-	/*********Step 4:erase app*******************************/
-	cmd_write(0x61,0x00,0x00,0x00,1);
-
-	mdelay(1500);
-	//cmd_write(0x63, 0x00, 0x00, 0x00, 1);
-	//mdelay(100);
-	printk("Step 4: erase. \n");
-
-	/*********Step 5:write firmware(FW) to ctpm flash*********/
-	i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
-	bt_ecc = 0;
-	printk("Step 5: start upgrade. \n");
-	dw_lenth = dw_lenth - 8;
-	printk("Packet length = %d\n", dw_lenth);
-	packet_number = (dw_lenth) / FTS_PACKET_LENGTH;
-	packet_buf[0] = 0xbf;
-	packet_buf[1] = 0x00;
-	for (j=0;j<packet_number;j++)
-	{
-		temp = j * FTS_PACKET_LENGTH;
-		packet_buf[2] = (u8)(temp>>8);
-		packet_buf[3] = (u8)temp;
-		lenght = FTS_PACKET_LENGTH;
-		packet_buf[4] = (u8)(lenght>>8);
-		packet_buf[5] = (u8)lenght;
-
-		for (i=0;i<FTS_PACKET_LENGTH;i++)
-		{
-			packet_buf[6+i] = pbt_buf[j*FTS_PACKET_LENGTH + i];
-			bt_ecc ^= packet_buf[6+i];
-		}
-		i2c_master_send(i2c_client, packet_buf, FTS_PACKET_LENGTH + 6);
-		mdelay(50);
-		if ((j * FTS_PACKET_LENGTH % 1024) == 0)
-		{
-			printk("[FT520X] upgrade the 0x%x th byte.\n", ((unsigned int)j) * FTS_PACKET_LENGTH);
-		}
-	}
-
-	if ((dw_lenth) % FTS_PACKET_LENGTH > 0)
-	{
-		temp = packet_number * FTS_PACKET_LENGTH;
-		packet_buf[2] = (u8)(temp>>8);
-		packet_buf[3] = (u8)temp;
-
-		temp = (dw_lenth) % FTS_PACKET_LENGTH;
-		packet_buf[4] = (u8)(temp>>8);
-		packet_buf[5] = (u8)temp;
-
-		for (i=0;i<temp;i++)
-		{
-			packet_buf[6+i] = pbt_buf[ packet_number*FTS_PACKET_LENGTH + i]; 
-			bt_ecc ^= packet_buf[6+i];
-		}
-		i2c_master_send(i2c_client, packet_buf, temp+6);
-		mdelay(30);
-	}
-
-	//send the last six byte
-	for (i = 0; i<6; i++)
-	{
-		packet_buf[0] = 0xbf;
-		packet_buf[1] = 0x00;
-		temp = 0x6ffa + i;
-		packet_buf[2] = (u8)(temp>>8);
-		packet_buf[3] = (u8)temp;
-		temp =1;
-		packet_buf[4] = (u8)(temp>>8);
-		packet_buf[5] = (u8)temp;
-		packet_buf[6] = pbt_buf[ dw_lenth + i]; 
-		bt_ecc ^= packet_buf[6];
-
-		i2c_master_send(i2c_client, packet_buf, 7);    
-
-		mdelay(40);
-	}
-
-	/*********Step 6: read out checksum***********************/
-	/*send the operation head*/
-	cmd_write(0xcc,0x00,0x00,0x00,1);
-	i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
-	i2c_master_recv(i2c_client, &reg_val, 1);
-	printk("[FT520X] Step 6:  ecc read 0x%x, new firmware 0x%x. \n", reg_val[0], bt_ecc);
-	if(reg_val[0] != bt_ecc)
-	{
-		printk("5 check sum error!!\n");
-		return 5;
-	}
-
-	/*********Step 7: reset the new FW***********************/
-	cmd_write(0x07,0x00,0x00,0x00,1);
-	printk("[FT520X] Step 7: reset the new FW. \n");
-	
-	/*********Step 8: calibration TP ***********************/
-	mdelay(300);          //—” ±100ms
-
-	return 0;
-}
-
-int fts_ctpm_auto_clb(void)
-{
-    unsigned char uc_temp[1];
-    unsigned char i ;
-
-    printk("[FTS] start auto CLB.\n");
-    msleep(200);
-    write_reg(0, 0x40);  
-    mdelay(100);   //make sure already enter factory mode
-    write_reg(2, 0x4);  //write command to start calibration
-    mdelay(300);
-    for(i=0;i<100;i++)
-    {
-        read_reg(0,uc_temp);
-        if ( ((uc_temp[0]&0x70)>>4) == 0x0)  //return to normal mode, calibration finish
-        {
-            break;
-        }
-        mdelay(200);
-        printk("[FTS] waiting calibration %d\n",i);
-        
-    }
-    printk("[FTS] calibration OK.\n");
-    
-    msleep(300);
-    write_reg(0, 0x40);  //goto factory mode
-    mdelay(100);   //make sure already enter factory mode
-    write_reg(2, 0x5);  //store CLB result
-    mdelay(300);
-    write_reg(0, 0x0); //return to normal mode 
-    msleep(300);
-    printk("[FTS] store CLB result OK.\n");
-    return 0;
-}
-
-int fts_ctpm_fw_upgrade_with_i_file(unsigned char *buf, long unsigned int  length)
-{
-	unsigned char*     pbt_buf = NULL;
-	int i_ret;
-	//=========FW upgrade========================*/
-	pbt_buf = buf;
-	/*call the upgrade function*/
-	i_ret =  fts_ctpm_fw_upgrade(pbt_buf, length);
-	if (i_ret != 0)
-	{
-		printk("[FTS] upgrade failed i_ret = %d.\n", i_ret);
-	}
- 	  else
-	{
-  		printk("[FTS] upgrade successfully.\n");
-   		fts_ctpm_auto_clb();  //start auto CLB
-	 }
-
-   	return i_ret;
-}
-
-unsigned char fts_ctpm_get_upg_ver(unsigned char* buff, unsigned long int length)
-{
-//	unsigned int ui_sz;
-//	ui_sz = sizeof(length);
-	if (length > 2)
-	{
-		return buff[length - 2];
-	}
-	else
-	{
-		//TBD, error handling?
-		return 0xff; //default value
-	}
-}
-
-
-//return factory ID
-unsigned char fts_ctpm_get_panel_factory_setting(void)
-{
-    unsigned char uc_i2c_addr;             //I2C slave address (8 bit address)
-    unsigned char uc_io_voltage;           //IO Voltage 0---3.3v;	1----1.8v
-    unsigned char uc_panel_factory_id;     //TP panel factory ID
-
-    unsigned char buf[128];
-    unsigned char reg_val[2] = {0};
-    unsigned char  auc_i2c_write_buf[10];
-    unsigned char  packet_buf[128 + 6];
-    int i = 0;
-    int      i_ret;
-
-    uc_i2c_addr = 0x70;
-    uc_io_voltage = 0x0;
-    uc_panel_factory_id = 0x5a;
-
-    /*********Step 1:Reset  CTPM *****/
-    /*write 0xaa to register 0xfc*/
-    write_reg(0xfc,0xaa);
-    mdelay(50);
-     /*write 0x55 to register 0xfc*/
-    write_reg(0xfc,0x55);
-    printk("[FTS] Step 1: Reset CTPM test\n");
-   
-    mdelay(30);   
-
-    /*********Step 2:Enter upgrade mode *****/
-    auc_i2c_write_buf[0] = 0x55;
-    auc_i2c_write_buf[1] = 0xaa;
-    do
-    {
-		i ++;
-	//	i_ret = ft5306_i2c_txdata(auc_i2c_write_buf, 2);
-		i_ret = i2c_master_send(i2c_client, auc_i2c_write_buf, 2);
-		mdelay(5);
-	}while(i_ret <= 0 && i < 5 );
-	printk("[FT520X] Step 2: Enter upgrade mode\n");
-	
-    /*********Step 3:check READ-ID***********************/        
-    cmd_write(0x90,0x00,0x00,0x00,4);
-	i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
-	i2c_master_recv(i2c_client, &reg_val, 2);
-	printk("[FT520X] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0],reg_val[1]);
-	//byte_read(reg_val,2);
-	if (reg_val[0] == 0x79 && reg_val[1] == 0x3)
-	{
-		printk("[FT520X] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0],reg_val[1]);
-	}
-	else
-	{
-		return 2;
-		//i_is_new_protocol = 1;
-	}
-
-    //cmd_write(0xcd,0x0,0x00,0x00,1);
-    //byte_read(reg_val,1);
-    //printk("bootloader version = 0x%x\n", reg_val[0]);
-
-    /* --------- read current project setting  ---------- */
-    //set read start address
-    buf[0] = 0x3;
-    buf[1] = 0x0;
-    buf[2] = 0x78;
-    buf[3] = 0x0;
-  //  i2c_master_send(i2c_client, &buf[0], 4);
-    cmd_write(0x3,0x0,0x78,0x0,4);
-    i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
-    i2c_master_recv(i2c_client, &buf, 8);
-
-    printk("[FTS] old setting: uc_i2c_addr = 0x%x, uc_io_voltage = %d, uc_panel_factory_id = 0x%x\n",
-        buf[0],  buf[2], buf[4]);
-   
-    /********* reset the new FW***********************/
-    cmd_write(0x07,0x00,0x00,0x00,1);
-
-    msleep(200);
-
-    return buf[4];
-    
-}
-
-#endif
-
- 
  static int __devinit tpd_probe(struct i2c_client *client, const struct i2c_device_id *id)
  {	 
 	int retval = TPD_OK;
@@ -792,46 +461,47 @@ unsigned char fts_ctpm_get_panel_factory_setting(void)
 	u8 report_rate=0;
 	int err=0;
 	int reset_count = 0;
-	unsigned char i;
-#if TP_UPGRADE
-	unsigned char bufff[8] = {0}, buff[8] = {0};
-#endif
 
 reset_proc:   
 	i2c_client = client;
 
-	printk("\nxxxxxxxxxxxxxxxxx%sxxxxxxxxxxxxxxxxxx\n", __FUNCTION__);
+   
+#ifdef TPD_POWER_SOURCE_CUSTOM
+		//power on, need confirm with SA
+		hwPowerOn(TPD_POWER_SOURCE_CUSTOM, VOL_2800, "TP");
+#else
+            hwPowerOn(MT65XX_POWER_LDO_VGP2, VOL_2800, "TP");
+            hwPowerOn(MT65XX_POWER_LDO_VGP, VOL_1800, "TP");   
+#endif
 
-//WK pin high
-	mt_set_gpio_mode(GPIO53, 0);
-	mt_set_gpio_dir(GPIO53, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO53, GPIO_OUT_ONE);
 
-//RST pin low
-	mt_set_gpio_mode(GPIO54, 0);
-	mt_set_gpio_dir(GPIO54, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO54, GPIO_OUT_ZERO);
+	#ifdef TPD_CLOSE_POWER_IN_SLEEP	 
+	hwPowerDown(TPD_POWER_SOURCE,"TP");
+	hwPowerOn(TPD_POWER_SOURCE,VOL_3300,"TP");
+	msleep(100);
+	#else
+	
+	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ZERO);  
+	msleep(1);
+	TPD_DMESG(" ft5306 reset\n");
+	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ONE);
+	#endif
 
-//power on, need confirm with SA
-	hwPowerOn(MT65XX_POWER_LDO_VGP2, VOL_3000, "TP");
-
-	mdelay(1);
-//RST pin to high
-	mt_set_gpio_out(GPIO54, GPIO_OUT_ONE);
-
-//INT pin
 	mt_set_gpio_mode(GPIO_CTP_EINT_PIN, GPIO_CTP_EINT_PIN_M_EINT);
-	mt_set_gpio_dir(GPIO_CTP_EINT_PIN, GPIO_DIR_IN);
-	mt_set_gpio_pull_enable(GPIO_CTP_EINT_PIN, GPIO_PULL_ENABLE);
-	mt_set_gpio_pull_select(GPIO_CTP_EINT_PIN, GPIO_PULL_UP);
-
-	mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
-	mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
-	mt65xx_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_EN, CUST_EINT_TOUCH_PANEL_POLARITY, tpd_eint_interrupt_handler, 1); 
-	mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
-
-//200ms is needed
-	mdelay(200);
+    mt_set_gpio_dir(GPIO_CTP_EINT_PIN, GPIO_DIR_IN);
+    mt_set_gpio_pull_enable(GPIO_CTP_EINT_PIN, GPIO_PULL_ENABLE);
+    mt_set_gpio_pull_select(GPIO_CTP_EINT_PIN, GPIO_PULL_UP);
+ 
+	  mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
+	  mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
+	  mt65xx_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_EN, CUST_EINT_TOUCH_PANEL_POLARITY, tpd_eint_interrupt_handler, 1); 
+	  mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+ 
+	msleep(100);
  
 	if((i2c_smbus_read_i2c_block_data(i2c_client, 0x00, 1, &data))< 0)
 	{
@@ -856,45 +526,6 @@ reset_proc:
 	    }
 		   
 	}
-
-
-//updating
-#if TP_UPGRADE
-
-	for(i=0; i<5; i++){
-		buff[0] = fts_ctpm_get_panel_factory_setting();
-		if((buff[0]==0x53)||(buff[0]==0x85))
-			break;
-	}
-	read_reg(0xa6, bufff);		//firmware ID(0x??)
-	printk("xxxxx%s's firmware version is 0x%2x xxxxxxxxxxxx\n", buff[0]==0x53?version[0] : version[1], bufff[0]);
-
-
-	if(buff[0] == 0x53)				//for mud
-	{
-		if((bufff[0] == 0xa6)||(fts_ctpm_get_upg_ver(CTPM_FW_MUD, sizeof(CTPM_FW_MUD)) > bufff[0])){
-			printk("Different version, we need version 0x%2x, while now is 0x%2x\n", 
-								fts_ctpm_get_upg_ver(CTPM_FW_MUD, sizeof(CTPM_FW_MUD)), bufff[0]);
-			printk("updating MUD!!!!\n");
-			fts_ctpm_fw_upgrade_with_i_file(CTPM_FW_MUD, sizeof(CTPM_FW_MUD));
-			if(read_reg(0xa6,bufff)<0){
-			printk(KERN_ERR"tp upgrade error!\n");
-			}
-		printk("xxxxxxxxxMUD: after upgrade : new firmware is %2xxxxxxxxxxx\n", bufff[0]);
-		}
-	}else if(buff[0] == 0x85){		//for junda
-		if((bufff[0] == 0xa6)||(fts_ctpm_get_upg_ver(CTPM_FW_JUNDA, sizeof(CTPM_FW_JUNDA)) > bufff[0])){
-			printk("Different version, we need version 0x%2x, while now is 0x%2x\n", 
-								fts_ctpm_get_upg_ver(CTPM_FW_JUNDA, sizeof(CTPM_FW_JUNDA)), bufff[0]);
-			printk("updating Junda!!!!\n");
-			fts_ctpm_fw_upgrade_with_i_file(CTPM_FW_JUNDA, sizeof(CTPM_FW_JUNDA));
-			if(read_reg(0xa6,bufff)<0){
-			printk(KERN_ERR"tp upgrade error!\n");
-			}
-		printk("xxxxxxxxxJunda: after upgrade : new firmware is %2xxxxxxxxxxx\n", bufff[0]);
-		}
-	}
-#endif
 
 	tpd_load_status = 1;
 
@@ -966,55 +597,54 @@ reset_proc:
     return 0; 
  }
 
- static int tpd_resume(struct i2c_client *client)
+ static void tpd_resume( struct early_suspend *h )
  {
-	printk("xxxxxxxxxTPD wake upxxxxxxxxxxxx\n");
-
-//	hwPowerOn(MT65XX_POWER_LDO_VGP2, VOL_3000, "TP");
-
-//rst pin
-	mt_set_gpio_mode(GPIO54, 0);
-	mt_set_gpio_dir(GPIO54, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO54, GPIO_OUT_ONE);
-	mt_set_gpio_out(GPIO54, GPIO_OUT_ZERO);
-	mdelay(5);
-        mt_set_gpio_out(GPIO54, GPIO_OUT_ONE);
-	mdelay(200);
-
-#if 0
-#ifdef TPD_CLOSE_POWER_IN_SLEEP	
-	hwPowerOn(TPD_POWER_SOURCE,VOL_3300,"TP"); 
-#else
-#ifdef MT6573
-	mt_set_gpio_mode(GPIO_CTP_EN_PIN, GPIO_CTP_EN_PIN_M_GPIO);
-	mt_set_gpio_dir(GPIO_CTP_EN_PIN, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO_CTP_EN_PIN, GPIO_OUT_ONE);
-#endif	
-	msleep(100);
-
-	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
-	mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ZERO);  
-	msleep(1);  
-	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
-	mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ONE);
-#endif
-#endif
-	mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);  
-
-	return 0;
- }
+  //int retval = TPD_OK;
+  char data;
  
- static int tpd_suspend(struct i2c_client *client, pm_message_t message)
- {
-	printk("xxxxxxxxxxxx %s xxxxxxxxxxxxxx\n", __FUNCTION__);
-	unsigned char data = 0x03;
-	mt65xx_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
-	i2c_smbus_write_i2c_block_data(i2c_client, 0xA5, 1, &data);  //TP enter sleep mode
-//	hwPowerDown(MT65XX_POWER_LDO_VGP2, "TP");
+   TPD_DMESG("TPD wake up\n");
+#ifdef TPD_CLOSE_POWER_IN_SLEEP	
+	hwPowerOn(TPD_POWER_SOURCE,VOL_3300,"TP");
 
-	return 0;
+#else
+
+	mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ZERO);  
+    msleep(1);  
+    mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
+    mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ONE);
+#endif
+   mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);  
+	
+       msleep(20);
+	if((i2c_smbus_read_i2c_block_data(i2c_client, 0x00, 1, &data))< 0)
+	{
+		TPD_DMESG("resume I2C transfer error, line: %d\n", __LINE__);
+
+	}
+	tpd_up(0,0,0);
+	input_sync(tpd->dev);
+	TPD_DMESG("TPD wake up done\n");
+	 //return retval;
+ }
+
+ static void tpd_suspend( struct early_suspend *h )
+ {
+	// int retval = TPD_OK;
+	 static char data = 0x3;
+ 
+	 TPD_DMESG("TPD enter sleep\n");
+	 mt65xx_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+#ifdef TPD_CLOSE_POWER_IN_SLEEP	
+	hwPowerDown(TPD_POWER_SOURCE,"TP");
+#else
+i2c_smbus_write_i2c_block_data(i2c_client, 0xA5, 1, &data);  //TP enter sleep mode
+
+#endif
+        TPD_DMESG("TPD enter sleep done\n");
+	 //return retval;
  } 
 
 

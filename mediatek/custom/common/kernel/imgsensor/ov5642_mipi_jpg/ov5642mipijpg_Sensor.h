@@ -1,4 +1,46 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   ov5642_Sensor.h
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Header file of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 08 19 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Merge dual camera relative settings. Main OV5642, SUB O7675 ready.
+ *
+ * 08 18 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Mmodify ISP setting and add OV5642 sensor driver.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 /* SENSOR FULL SIZE */
 #ifndef __SENSOR_H
 #define __SENSOR_H

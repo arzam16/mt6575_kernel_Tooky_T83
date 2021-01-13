@@ -1,4 +1,17 @@
-
+/* drivers/i2c/chips/mma7450l.c - MMA7450L motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -33,6 +46,12 @@
 #include <mach/mt6575_gpio.h>
 #include <mach/mt6575_pm_ldo.h>
 #endif
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
 
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
@@ -46,6 +65,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 
 #include <cust_acc.h>
 #include <linux/hwmsensor.h>
@@ -69,9 +91,11 @@
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id mma7450l_i2c_id[] = {{MMA7450L_DEV_NAME,0},{}};
 /*the adapter id will be available in customization*/
-static unsigned short mma7450l_force[] = {0x00, MMA7450L_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const mma7450l_forces[] = { mma7450l_force, NULL };
-static struct i2c_client_address_data mma7450l_addr_data = { .forces = mma7450l_forces,};
+static struct i2c_board_info __initdata i2c_mma7450l={ I2C_BOARD_INFO("MMA7450L", MMA7450L_I2C_SLAVE_ADDR>>1)};
+
+//static unsigned short mma7450l_force[] = {0x00, MMA7450L_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const mma7450l_forces[] = { mma7450l_force, NULL };
+//static struct i2c_client_address_data mma7450l_addr_data = { .forces = mma7450l_forces,};
 
 /*----------------------------------------------------------------------------*/
 static int mma7450l_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
@@ -141,7 +165,7 @@ struct mma7450l_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver mma7450l_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+        //.owner          = THIS_MODULE,
         .name           = MMA7450L_DEV_NAME,
     },
 	.probe      		= mma7450l_i2c_probe,
@@ -152,7 +176,7 @@ static struct i2c_driver mma7450l_i2c_driver = {
     .resume             = mma7450l_resume,
 #endif
 	.id_table = mma7450l_i2c_id,
-	.address_data = &mma7450l_addr_data,
+	//.address_data = &mma7450l_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -272,6 +296,82 @@ static void MMA7450L_power(struct acc_hw *hw, unsigned int on)
 	power_on = on;    
 }
 /*----------------------------------------------------------------------------*/
+/*
+//this function here use to set resolution and choose sensitivity
+static int MMA7450L_SetDataResolution(struct i2c_client *client ,u8 dataresolution)
+{
+    GSE_LOG("fwq set resolution  dataresolution= %d!\n", dataresolution);
+	int err;
+	u8  dat, reso;
+    u8 databuf[10];    
+    int res = 0;
+	struct mma7450l_i2c_data *obj = i2c_get_clientdata(client);
+
+	if(hwmsen_read_byte_sr(client, MMA7450L_REG_CTL_REG2, databuf))
+	{
+		GSE_ERR("read power ctl register err!\n");
+		return -1;
+	}
+	GSE_LOG("fwq read MMA7450L_REG_CTL_REG2 =%x in %s \n",databuf[0],__FUNCTION__);
+	if(dataresolution == MMA7450L_10BIT_RES)
+	{
+		databuf[0] |= MMA7450L_10BIT_RES;
+	}
+	else
+	{
+		databuf[0] &= (~MMA7450L_10BIT_RES);//8 bit resolution
+	}
+	databuf[1] = databuf[0];
+	databuf[0] = MMA7450L_REG_CTL_REG2;
+	
+
+	res = i2c_master_send(client, databuf, 0x2);
+	if(res <= 0)
+	{
+		GSE_LOG("set resolution  failed!\n");
+		return -1;
+	}
+	else
+	{
+		GSE_LOG("set resolution mode ok %x!\n", databuf[1]);
+	}
+	
+    //choose sensitivity depend on resolution and detect range
+	//read detect range
+	if(err = hwmsen_read_byte_sr(client, MMA7450L_REG_XYZ_DATA_CFG, &dat))
+	{
+		GSE_ERR("read detect range  fail!!\n");
+		return err;
+	}
+	reso  = (dataresolution & MMA7450L_10BIT_RES) ? (0x00) : (0x03);
+	
+	
+    if(dat & MMA7450L_RANGE_2G)
+    {
+      reso = reso + MMA7450L_RANGE_2G;
+    }
+	if(dat & MMA7450L_RANGE_4G)
+    {
+      reso = reso + MMA7450L_RANGE_4G;
+    }
+	if(dat & MMA7450L_RANGE_8G)
+    {
+      reso = reso + MMA7450L_RANGE_8G;
+    }
+
+	if(reso < sizeof(mma7450l_data_resolution)/sizeof(mma7450l_data_resolution[0]))
+	{        
+		obj->reso = &mma7450l_data_resolution[reso];
+		GSE_LOG("reso=%x!! OK \n",reso);
+		return 0;
+	}
+	else
+	{   
+	    GSE_ERR("choose sensitivity  fail!!\n");
+		return -EINVAL;
+	}
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int MMA7450L_ReadData(struct i2c_client *client, s16 data[MMA7450L_AXES_NUM])
 {
@@ -313,6 +413,13 @@ static int MMA7450L_ReadData(struct i2c_client *client, s16 data[MMA7450L_AXES_N
 			GSE_LOG("raw from reg(SR) [%08X %08X %08X] => [%5d %5d %5d]\n", data[MMA7450L_AXIS_X], data[MMA7450L_AXIS_Y], data[MMA7450L_AXIS_Z],
 		                               data[MMA7450L_AXIS_X], data[MMA7450L_AXIS_Y], data[MMA7450L_AXIS_Z]);
 		}
+/*
+		if(atomic_read(&priv->trace) & ADX_TRC_RAWDATA)
+		{
+			GSE_LOG("raw >>6it:[%08X %08X %08X] => [%5d %5d %5d]\n", data[MMA7450L_AXIS_X], data[MMA7450L_AXIS_Y], data[MMA7450L_AXIS_Z],
+		                               data[MMA7450L_AXIS_X], data[MMA7450L_AXIS_Y], data[MMA7450L_AXIS_Z]);
+		}
+		*/
 #ifdef CONFIG_MMA7450L_LOWPASS
 		if(atomic_read(&priv->filter))
 		{
@@ -654,6 +761,31 @@ static int MMA7450L_SetPowerMode(struct i2c_client *client, bool enable)
 }
 /*----------------------------------------------------------------------------*/
 //set detect range
+/*
+
+static int MMA7450L_SetDataFormat(struct i2c_client *client, u8 dataformat)
+{
+    
+	struct mma7450l_i2c_data *obj = i2c_get_clientdata(client);
+	u8 databuf[10];    
+	int res = 0;
+
+	memset(databuf, 0, sizeof(u8)*10);    
+	databuf[0] = MMA7450L_REG_XYZ_DATA_CFG;    
+	databuf[1] = dataformat;
+
+	res = i2c_master_send(client, databuf, 0x2);
+
+	if(res <= 0)
+	{
+		return MMA7450L_ERR_I2C;
+	}
+
+	return 0;
+
+	//return MMA7450L_SetDataResolution(obj,dataformat);    
+}
+*/
 /*----------------------------------------------------------------------------*/
 
 static int MMA7450L_SetBWRate(struct i2c_client *client, u8 bwrate)
@@ -689,6 +821,26 @@ static int MMA7450L_SetBWRate(struct i2c_client *client, u8 bwrate)
 }
 
 /*----------------------------------------------------------------------------*/
+/*
+static int MMA7450L_SetIntEnable(struct i2c_client *client, u8 intenable)
+{
+	u8 databuf[10];    
+	int res = 0;
+
+	memset(databuf, 0, sizeof(u8)*10);    
+	databuf[0] = MMA7450L_REG_CTL_REG4;    
+	databuf[1] = intenable;
+
+	res = i2c_master_send(client, databuf, 0x2);
+
+	if(res <= 0)
+	{
+		return MMA7450L_ERR_I2C;
+	}
+	
+	return MMA7450L_SUCCESS;    
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int MMA7450L_Init(struct i2c_client *client, int reset_cali)
 {
@@ -1009,6 +1161,18 @@ static int MMA7450L_JudgeTestResult(struct i2c_client *client, s32 prv[MMA7450L_
 		GSE_LOG("fwq ptr null\n");
         return -EINVAL;
     }
+/*
+    if (((nxt[MMA7450L_AXIS_X] - prv[MMA7450L_AXIS_X]) > (*ptr)[MMA7450L_AXIS_X].max) ||
+        ((nxt[MMA7450L_AXIS_X] - prv[MMA7450L_AXIS_X]) < (*ptr)[MMA7450L_AXIS_X].min)) {
+        GSE_ERR("X is over range\n");
+        res = -EINVAL;
+    }
+    if (((nxt[MMA7450L_AXIS_Y] - prv[MMA7450L_AXIS_Y]) > (*ptr)[MMA7450L_AXIS_Y].max) ||
+        ((nxt[MMA7450L_AXIS_Y] - prv[MMA7450L_AXIS_Y]) < (*ptr)[MMA7450L_AXIS_Y].min)) {
+        GSE_ERR("Y is over range\n");
+        res = -EINVAL;
+    }
+	*/
     if (((nxt[MMA7450L_AXIS_Z] - prv[MMA7450L_AXIS_Z]) > (*ptr)[MMA7450L_AXIS_Z].max) ||
         ((nxt[MMA7450L_AXIS_Z] - prv[MMA7450L_AXIS_Z]) < (*ptr)[MMA7450L_AXIS_Z].min)) {
         GSE_ERR("Z is over range\n");
@@ -1206,6 +1370,12 @@ static ssize_t store_selftest_value(struct device_driver *ddri, char *buf, size_
 	MMA7450L_InitSelfTest(client);
 	msleep(20);
 	GSE_LOG("SELFTEST:\n");  
+/*
+	MMA7450L_ReadData(client, nxt[0].raw);
+	GSE_LOG("nxt[0].raw[MMA7450L_AXIS_X]: %d\n", nxt[0].raw[MMA7450L_AXIS_X]);
+	GSE_LOG("nxt[0].raw[MMA7450L_AXIS_Y]: %d\n", nxt[0].raw[MMA7450L_AXIS_Y]);
+	GSE_LOG("nxt[0].raw[MMA7450L_AXIS_Z]: %d\n", nxt[0].raw[MMA7450L_AXIS_Z]);
+	*/
 	for(idx = 0; idx < num; idx++)
 	{
 		if(res = MMA7450L_ReadData(client, nxt[idx].raw))
@@ -1220,6 +1390,30 @@ static ssize_t store_selftest_value(struct device_driver *ddri, char *buf, size_
 	}
 
 	//softrestet
+/*
+	memset(databuf, 0, sizeof(u8)*10);    
+	databuf[0] = MMA7450L_REG_CTL_REG2;//set self test    
+	if(hwmsen_read_byte_sr(client, MMA7450L_REG_CTL_REG2, databuf))
+	{
+		GSE_ERR("read power ctl2 register err!\n");
+		return MMA7450L_ERR_I2C;
+	}
+
+	databuf[0] &=~0x40;//clear original    	
+	databuf[0] |= 0x40; 
+	
+	databuf[1]= databuf[0];
+	databuf[0]= MMA7450L_REG_CTL_REG2;
+
+	res = i2c_master_send(client, databuf, 0x2);
+	if(res <= 0)
+	{
+	    GSE_LOG("fwq softrest error\n");
+		return MMA7450L_ERR_I2C;
+	}
+
+	// 
+	*/
 	MMA7450L_Init(client, 0);
 
 	avg_nxt[MMA7450L_AXIS_X] /= num;
@@ -1559,6 +1753,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int mma7450l_open(struct inode *inode, struct file *file)
 {
 	file->private_data = mma7450l_i2c_client;
@@ -1577,8 +1774,10 @@ static int mma7450l_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int mma7450l_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
-       unsigned long arg)
+//static int mma7450l_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+      // unsigned long arg)
+static int mma7450l_unlocked_ioctl(struct file *file, unsigned int cmd,
+       unsigned long arg)       
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
 	struct mma7450l_i2c_data *obj = (struct mma7450l_i2c_data*)i2c_get_clientdata(client);	
@@ -1762,10 +1961,10 @@ static int mma7450l_ioctl(struct inode *inode, struct file *file, unsigned int c
 
 /*----------------------------------------------------------------------------*/
 static struct file_operations mma7450l_fops = {
-	.owner = THIS_MODULE,
+	//.owner = THIS_MODULE,
 	.open = mma7450l_open,
 	.release = mma7450l_release,
-	.ioctl = mma7450l_ioctl,
+	.unlocked_ioctl = mma7450l_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice mma7450l_device = {
@@ -2016,7 +2215,7 @@ static int mma7450l_probe(struct platform_device *pdev)
 	GSE_FUN();
 
 	MMA7450L_power(hw, 1);
-	mma7450l_force[0] = hw->i2c_num;
+	//mma7450l_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&mma7450l_i2c_driver))
 	{
 		GSE_ERR("add driver error\n");
@@ -2040,7 +2239,7 @@ static struct platform_driver mma7450l_gsensor_driver = {
 	.remove     = mma7450l_remove,    
 	.driver     = {
 		.name  = "gsensor",
-		.owner = THIS_MODULE,
+		//.owner = THIS_MODULE,
 	}
 };
 
@@ -2048,6 +2247,7 @@ static struct platform_driver mma7450l_gsensor_driver = {
 static int __init mma7450l_init(void)
 {
 	GSE_FUN();
+	i2c_register_board_info(0, &i2c_mma7450l, 1);
 	if(platform_driver_register(&mma7450l_gsensor_driver))
 	{
 		GSE_ERR("failed to register driver");

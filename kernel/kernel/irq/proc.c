@@ -438,9 +438,6 @@ int show_interrupts(struct seq_file *p, void *v)
 		seq_printf(p, "%*s", prec + 8, "");
 		for_each_online_cpu(j)
 			seq_printf(p, "CPU%-8d", j);
-		seq_printf(p, "%3s", ":");
-		seq_printf(p, "%18s:", "ISR_name");
-		seq_printf(p, "%15s:%10s:%10s:%10s", "Total(ns)", "act_counts", "max", "min");
 		seq_putc(p, '\n');
 	}
 
@@ -465,35 +462,20 @@ int show_interrupts(struct seq_file *p, void *v)
 		else if (desc->irq_data.chip->name)
 			seq_printf(p, " %8s", desc->irq_data.chip->name);
 		else
-			seq_printf(p, " %8s", ":");
+			seq_printf(p, " %8s", "-");
 	} else {
 		seq_printf(p, " %8s", "None");
 	}
 #ifdef CONFIG_GENERIC_IRQ_SHOW_LEVEL
-	seq_printf(p, " %16s", irqd_is_level_type(&desc->irq_data) ? "Level" : "Edge");
+	seq_printf(p, " %-8s", irqd_is_level_type(&desc->irq_data) ? "Level" : "Edge");
 #endif
 	if (desc->name)
-		seq_printf(p, "%16s", desc->name);
+		seq_printf(p, "-%-8s", desc->name);
 
 	if (action) {
-		seq_printf(p, "  %16s", action->name);
-#ifdef CONFIG_MTPROF_IRQ_DURATION
-		seq_printf(p, ":%15llu:%10lu", action->duration, action->count);
-		action->count == 0?
-		    seq_printf(p, ":%10s:%10s", "0", "0"):
-		    seq_printf(p, ":%10llu:%10llu", action->dur_max, action->dur_min);
-
-		for (action = action->next; action; action = action->next){
-		    seq_printf(p, "\n%24s%18s", " ", action->name);
-		    seq_printf(p, ":%15llu:%10lu", action->duration, action->count);
-		    action->count == 0?
-			seq_printf(p, ":%10s:%10s", "0", "0"):
-			seq_printf(p, ":%10llu:%10llu", action->dur_max, action->dur_min);
-		}
-#else
+		seq_printf(p, "  %s", action->name);
 		while ((action = action->next) != NULL)
 			seq_printf(p, ", %s", action->name);
-#endif
 	}
 
 	seq_putc(p, '\n');

@@ -1,4 +1,8 @@
-
+/*
+ * MD218A voice coil motor driver
+ *
+ *
+ */
 
 #include <linux/i2c.h>
 #include <linux/delay.h>

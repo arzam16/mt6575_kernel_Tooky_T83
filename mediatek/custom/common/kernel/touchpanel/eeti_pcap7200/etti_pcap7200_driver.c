@@ -1,4 +1,3 @@
-
 #include <linux/i2c.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>

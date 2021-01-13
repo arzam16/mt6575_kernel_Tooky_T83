@@ -30,9 +30,18 @@
 #include "tmbslHdmiTx_types.h"
 #include "tmbslTDA9989_Functions.h"
 #include "tmbslTDA9989_local.h"
+#ifndef TMFL_TDA19989 
 #define TMFL_TDA19989 
+#endif
+
+#ifndef TMFL_NO_RTOS 
 #define TMFL_NO_RTOS 
+#endif
+
+#ifndef TMFL_LINUX_OS_KERNEL_DRIVER
 #define TMFL_LINUX_OS_KERNEL_DRIVER
+#endif
+
 
 /*============================================================================*/
 /*                   MACRO DEFINITIONS                                        */

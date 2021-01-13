@@ -1,4 +1,17 @@
-
+/* BMA150 motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -27,12 +40,31 @@
 #include <mach/mt6573_gpio.h>
 #include <mach/mt6573_pll.h>
 #endif
+#ifdef MT6575
+#include <mach/mt6575_devs.h>
+#include <mach/mt6575_typedefs.h>
+#include <mach/mt6575_gpio.h>
+#include <mach/mt6575_pm_ldo.h>
+#endif
+
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
 
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
 #endif
 
 #ifdef MT6573
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+#ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+#ifdef MT6577
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
@@ -62,9 +94,11 @@
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id bma150_i2c_id[] = {{BMA150_DEV_NAME,0},{}};
 /*the adapter id will be available in customization*/
-static unsigned short bma150_force[] = {0x00, BMA150_I2C_SLAVE_WRITE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const bma150_forces[] = { bma150_force, NULL };
-static struct i2c_client_address_data bma150_addr_data = { .forces = bma150_forces,};
+static struct i2c_board_info __initdata i2c_bma150={ I2C_BOARD_INFO("BMA150", BMA150_I2C_SLAVE_WRITE_ADDR>>1)};
+
+//static unsigned short bma150_force[] = {0x00, BMA150_I2C_SLAVE_WRITE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const bma150_forces[] = { bma150_force, NULL };
+//static struct i2c_client_address_data bma150_addr_data = { .forces = bma150_forces,};
 
 /*----------------------------------------------------------------------------*/
 static int bma150_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
@@ -129,7 +163,7 @@ struct bma150_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver bma150_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+       // .owner          = THIS_MODULE,
         .name           = BMA150_DEV_NAME,
     },
 	.probe      		= bma150_i2c_probe,
@@ -140,7 +174,7 @@ static struct i2c_driver bma150_i2c_driver = {
     .resume             = bma150_resume,
 #endif
 	.id_table = bma150_i2c_id,
-	.address_data = &bma150_addr_data,
+	//.address_data = &bma150_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -217,6 +251,8 @@ static int BMA150_SetDataResolution(struct bma150_i2c_data *obj)
  	obj->reso = &bma150_data_resolution[0];
 	return 0;
 	
+/*if you changed the measure range, for example call: BMA150_SetDataFormat(client, BMA150_RANGE_4G), 
+you must set the right value to bma150_data_resolution*/
 
 }
 /*----------------------------------------------------------------------------*/
@@ -1443,6 +1479,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int bma150_open(struct inode *inode, struct file *file)
 {
 	file->private_data = bma150_i2c_client;
@@ -1461,8 +1500,10 @@ static int bma150_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int bma150_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
-       unsigned long arg)
+//static int bma150_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+    //   unsigned long arg)
+static int bma150_unlocked_ioctl(struct file *file, unsigned int cmd,
+       unsigned long arg)       
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
 	struct bma150_i2c_data *obj = (struct bma150_i2c_data*)i2c_get_clientdata(client);	
@@ -1622,10 +1663,10 @@ static int bma150_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 
 /*----------------------------------------------------------------------------*/
 static struct file_operations bma150_fops = {
-	.owner = THIS_MODULE,
+	//.owner = THIS_MODULE,
 	.open = bma150_open,
 	.release = bma150_release,
-	.ioctl = bma150_ioctl,
+	.unlocked_ioctl = bma150_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice bma150_device = {
@@ -1868,7 +1909,7 @@ static int bma150_probe(struct platform_device *pdev)
 	GSE_FUN();
 
 	BMA150_power(hw, 1);
-	bma150_force[0] = hw->i2c_num;
+	//bma150_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&bma150_i2c_driver))
 	{
 		GSE_ERR("add driver error\n");
@@ -1892,7 +1933,7 @@ static struct platform_driver bma150_gsensor_driver = {
 	.remove     = bma150_remove,    
 	.driver     = {
 		.name  = "gsensor",
-		.owner = THIS_MODULE,
+		//.owner = THIS_MODULE,
 	}
 };
 
@@ -1900,6 +1941,7 @@ static struct platform_driver bma150_gsensor_driver = {
 static int __init bma150_init(void)
 {
 	GSE_FUN();
+	i2c_register_board_info(0, &i2c_bma150, 1);
 	if(platform_driver_register(&bma150_gsensor_driver))
 	{
 		GSE_ERR("failed to register driver");

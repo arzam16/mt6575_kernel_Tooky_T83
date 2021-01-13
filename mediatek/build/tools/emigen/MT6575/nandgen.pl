@@ -1,4 +1,73 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
+#
+#*****************************************************************************
+#  Copyright Statement:
+#  --------------------
+#  This software is protected by Copyright and the information contained
+#  herein is confidential. The software may not be copied and the information
+#  contained herein may not be used or disclosed except with the written
+#  permission of MediaTek Inc. (C) 2008
+#
+#  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+#  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+#  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
+#  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+#  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+#  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+#  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+#  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
+#  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
+#  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
+#  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
+#
+#  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
+#  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+#  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+#  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
+#  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+#
+#  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
+#  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
+#  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
+#  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
+#  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
+#
+#****************************************************************************/
+#*
+#* Filename:
+#* ---------
+#*   ptgen.pl
+#*
+#* Project:
+#* --------
+#*
+#*
+#* Description:
+#* ------------
+#*   This script will ...
+#*        
+#*
+#* Author:
+#* -------
+#*
+#*============================================================================
+#*             HISTORY
+#* Below this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
+#*------------------------------------------------------------------------------
+#* $Revision$
+#* $Modtime$
+#* $Log$
+#*
+#*
+#*------------------------------------------------------------------------------
+#* Upper this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
+#*============================================================================
+#****************************************************************************/
+
+#****************************************************************************
+# Included Modules
+#****************************************************************************
 use File::Basename;
 
 my $os = &OsName();
@@ -47,6 +116,7 @@ my $PAGESIZE_FIELD ;
 my $TIMING_FIELD ;
 my $CACHEREAD_FIELD ;
 my $RANDOMREAD_FIELD ;
+my $SPARESIZE_FIELD ;
 
 # define for columns
 my $COLUMN_VENDOR                   = 0 ;
@@ -65,15 +135,19 @@ my $COLUMN_PAGESIZE                 = $COLUMN_BLOCKSIZE + 1 ;
 my $COLUMN_TIMING                   = $COLUMN_PAGESIZE + 1 ;
 my $COLUMN_CACHEREAD                = $COLUMN_TIMING + 1 ;
 my $COLUMN_RANDOMREAD               = $COLUMN_CACHEREAD + 1 ;
+my $COLUMN_SPARESIZE                = $COLUMN_RANDOMREAD + 1;
 
 my $NAND_LIST_DEFINE_H_NAME         = $ARGV[0] ;
 my $MEMORY_DEVICE_LIST_XLS          = $ARGV[1];
 my $PLATFORM                        = $ARGV[2]; # MTxxxx
 my $PROJECT                         = $ARGV[3];
 my $PAGE_SIZE                       = $ARGV[4] ;
+my $FULL_PROJECT = $ENV{FULL_PROJECT};
 
 my $STORAGE_TYPE                    = "NAND" ;
 my $start_row = 3;
+
+my $CUSTOM_OUT_COMMON = "mediatek/custom/out/$FULL_PROJECT/common";
 
 print "header: $NAND_LIST_DEFINE_H_NAME, excel: $MEMORY_DEVICE_LIST_XLS, PLATFORM: $PLATFORM, PROJECT: $PROJECT, page size: $PAGE_SIZE\n" ;
 
@@ -124,8 +198,8 @@ sub GenNANDHeaderFile ()
 
                 if ($i eq $iter)
                 {
-                    print NAND_LIST_DEFINE_H_NAME "\t{$ID_FIELD[$iter], $EXTID_FIELD[$iter], $ADDRCYCLE_FIELD[$iter], $IOWIDTH_FIELD[$iter], $TOTALSIZE_FIELD[$iter], $BLOCKSIZE_FIELD[$iter], $PAGESIZE_FIELD[$iter], $TIMING_FIELD[$iter], " ; 
-                    print "\t{$ID_FIELD[$iter], $EXTID_FIELD[$iter], $ADDRCYCLE_FIELD[$iter], $IOWIDTH_FIELD[$iter], $TOTALSIZE_FIELD[$iter], $BLOCKSIZE_FIELD[$iter], $PAGESIZE_FIELD[$iter], $TIMING_FIELD[$iter], " ; 
+                    print NAND_LIST_DEFINE_H_NAME "\t{$ID_FIELD[$iter], $EXTID_FIELD[$iter], $ADDRCYCLE_FIELD[$iter], $IOWIDTH_FIELD[$iter], $TOTALSIZE_FIELD[$iter], $BLOCKSIZE_FIELD[$iter], $PAGESIZE_FIELD[$iter], $SPARESIZE_FIELD[$iter], $TIMING_FIELD[$iter], " ; 
+                    print "\t{$ID_FIELD[$iter], $EXTID_FIELD[$iter], $ADDRCYCLE_FIELD[$iter], $IOWIDTH_FIELD[$iter], $TOTALSIZE_FIELD[$iter], $BLOCKSIZE_FIELD[$iter], $PAGESIZE_FIELD[$iter], $SPARESIZE_FIELD[$iter], $TIMING_FIELD[$iter], " ; 
                     printf NAND_LIST_DEFINE_H_NAME "\"%.13s\", ",$NAME_FIELD[$iter] ;
                     if ($CACHEREAD_FIELD[$iter] eq "YES")
                     {
@@ -155,13 +229,18 @@ sub GenNANDHeaderFile ()
         # die $message ;
     }
     
-    print NAND_LIST_DEFINE_H_NAME "\t{0x0000, 0x000000, 0, 0, 0, 0, 0, 0, \"xxxxxxxxxx\", 0},\n" ;
+    print NAND_LIST_DEFINE_H_NAME "\t{0x0000, 0x000000, 0, 0, 0, 0, 0, 0,0, \"xxxxxxxxxx\", 0},\n" ;
     print NAND_LIST_DEFINE_H_NAME "};\n" ;
     
     print NAND_LIST_DEFINE_H_NAME "\n\n" ;
     print NAND_LIST_DEFINE_H_NAME "#endif\n" ;
     
     close NAND_LIST_DEFINE_H_NAME ;
+
+	unless(-e $CUSTOM_OUT_COMMON){
+		{`mkdir -p $CUSTOM_OUT_COMMON`;}	
+	}
+	{`cp $NAND_LIST_DEFINE_H_NAME $CUSTOM_OUT_COMMON`;}
 }
 
 sub ReadNANDExcelFile
@@ -211,6 +290,7 @@ sub ReadNANDExcelFile
             $TIMING_FIELD[$row-1] = &xls_cell_value($sheet, $read_row, $COLUMN_TIMING) ;
             $CACHEREAD_FIELD[$row-1] = &xls_cell_value($sheet, $read_row, $COLUMN_CACHEREAD) ;
             $RANDOMREAD_FIELD[$row-1] = &xls_cell_value($sheet, $read_row, $COLUMN_RANDOMREAD) ;
+	    $SPARESIZE_FIELD[$row-1] = &xls_cell_value($sheet, $read_row, $COLUMN_SPARESIZE) ;
 	        # debug
             print "$NAME_FIELD[$row-1], $PROJECT_FIELD[$row-1] $ID_FIELD1[$row-1] $ID_FIELD2[$row-1] $ID_FIELD[$row-1]\n" ;
             # debug
@@ -236,6 +316,40 @@ sub ReadNANDExcelFile
 sub copyright_file_header
 {
     my $template = <<"__TEMPLATE";
+/* Copyright Statement:
+ *
+ * This software/firmware and related documentation ("MediaTek Software") are
+ * protected under relevant copyright laws. The information contained herein
+ * is confidential and proprietary to MediaTek Inc. and/or its licensors.
+ * Without the prior written permission of MediaTek inc. and/or its licensors,
+ * any reproduction, modification, use or disclosure of MediaTek Software,
+ * and information contained herein, in whole or in part, shall be strictly prohibited.
+ */
+/* MediaTek Inc. (C) 2010. All rights reserved.
+ *
+ * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+ * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+ * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
+ * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+ * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+ * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+ * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
+ * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
+ * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
+ * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
+ * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
+ * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+ * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+ * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+ * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
+ * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+ *
+ * The following software/firmware and/or related documentation ("MediaTek Software")
+ * have been modified by MediaTek Inc. All revisions are subject to any receiver's
+ * applicable license agreements with MediaTek Inc.
+ */
 __TEMPLATE
 
    return $template;
@@ -247,14 +361,14 @@ __TEMPLATE
 # input:       no input
 #****************************************************************************************
 sub OsName {
-  my $os = `set os`;
-  if(!defined $os) { 
+ # my $os = `set os`;
+ # if(!defined $os) { 
     $os = "linux";
-  } 
-  else {
-    die "does not support windows now!!" ;
-    $os = "windows";
-  }
+ # } 
+ # else {
+  #  die "does not support windows now!!" ;
+   # $os = "windows";
+  #}
 }
 #*************************************************************************************************
 # subroutine:  gen_pm

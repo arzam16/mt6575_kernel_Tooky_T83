@@ -1,4 +1,47 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 04 26 2012 guoqing.liu
+ * [ALPS00271165] [FPB&ICS Done]modify sensor driver for MT6577
+ * modify for mt6577 sensor driver
+ *
+ * 01 04 2012 hao.wang
+ * [ALPS00109603] getsensorid func check in
+ * .
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -7,6 +50,7 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <asm/system.h>
 //#include <mach/mt6516_pll.h>
 
 #include "kd_camera_hw.h"
@@ -38,6 +82,8 @@ typedef struct
   UINT16  iBanding;
   UINT16  iMirror;
   UINT16  iFrameRate;
+  //0    :No-Fix FrameRate 
+  //other:Fixed FrameRate
 } MT9V114Status;
 MT9V114Status MT9V114CurrentStatus;
 
@@ -45,6 +91,7 @@ MT9V114Status MT9V114CurrentStatus;
 static kal_bool MT9V114_AWB_ENABLE = KAL_TRUE; 
 static kal_bool MT9V114_AE_ENABLE = KAL_TRUE; 
 
+static DEFINE_SPINLOCK(mt9v114yuv_drv_lock);
 
 
 extern int iReadRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u8 * a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
@@ -54,7 +101,7 @@ kal_uint16 MT9V114_write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
 	char puSendCmd[4] = {(char)(addr >> 8) , (char)(addr & 0xFF) ,(char)(para >> 8),(char)(para & 0xFF)};
 	
 	iWriteRegI2C(puSendCmd , 4,MT9V114_WRITE_ID);
-
+	return 0;
 }
 
 kal_uint16 MT9V114_read_cmos_sensor(kal_uint32 addr)
@@ -66,6 +113,9 @@ kal_uint16 MT9V114_read_cmos_sensor(kal_uint32 addr)
 }
 
 
+/*******************************************************************************
+* // Adapter for Winmo typedef 
+********************************************************************************/
 #define WINMO_USE 0
 
 #define Sleep(ms) mdelay(ms)
@@ -492,7 +542,7 @@ void MT9V114InitialSetting(void)
 
 }
 
-void MT9V114ReadRegs()
+void MT9V114ReadRegs(void)
 {
 	UINT32	curReg = 0;
 	UINT16	regVal[400];
@@ -507,27 +557,65 @@ void MT9V114ReadRegs()
 
 static kal_uint16 MT9V114_power_on(void)
 {
+	kal_uint16 id=0;
+   spin_lock(&mt9v114yuv_drv_lock);
 	MT9V114Sensor.sensor_id = 0;
-	MT9V114Sensor.sensor_id = MT9V114_read_cmos_sensor(MT9V114_ID_REG);
-
-   	
+   spin_unlock(&mt9v114yuv_drv_lock);
+	id = MT9V114_read_cmos_sensor(MT9V114_ID_REG);
+	spin_lock(&mt9v114yuv_drv_lock);
+    MT9V114Sensor.sensor_id=id;
+   	spin_unlock(&mt9v114yuv_drv_lock);
 	SENSORDB("[MT9V114]MT9V114Sensor.sensor_id =%x\n",MT9V114Sensor.sensor_id);
 	return MT9V114Sensor.sensor_id;
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114InitialPara
+*
+* DESCRIPTION
+*	This function initialize the global status of  MT9V114
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static void MT9V114InitialPara(void)
 {
   /*Initial status setting 
   Can be better by sync with MT9V114InitialSetting*/
+  spin_lock(&mt9v114yuv_drv_lock);
   MT9V114CurrentStatus.iNightMode = 0xFFFF;
   MT9V114CurrentStatus.iWB = AWB_MODE_AUTO;
   MT9V114CurrentStatus.iEffect = MEFFECT_OFF;
   MT9V114CurrentStatus.iBanding = AE_FLICKER_MODE_50HZ;
   MT9V114CurrentStatus.iEV = AE_EV_COMP_n03;
   MT9V114CurrentStatus.iMirror = IMAGE_NORMAL;
-  MT9V114CurrentStatus.iFrameRate = 30;
+  MT9V114CurrentStatus.iFrameRate = 0;//No Fix FrameRate
+  spin_unlock(&mt9v114yuv_drv_lock);
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114Open
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9V114Open(void)
 {
      SENSORDB("[Enter]:MT9V114 Open func");
@@ -570,6 +658,22 @@ UINT32 MT9V114GetSensorID(UINT32 *sensorID)
 }	/* MT9V114Open() */
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114Close
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9V114Close(void)
 {
 
@@ -606,7 +710,9 @@ static void MT9V114_HVMirror(kal_uint8 image_mirror)
         MT9V114_write_cmos_sensor(0x3254, 0x0000);
 		break;
 	}
+	spin_lock(&mt9v114yuv_drv_lock);
 	MT9V114CurrentStatus.iMirror= image_mirror;
+	spin_unlock(&mt9v114yuv_drv_lock);
 }
 
 void MT9V114_night_mode(kal_bool enable)
@@ -615,23 +721,47 @@ void MT9V114_night_mode(kal_bool enable)
         return;
 	  SENSORDB("[Enter]MT9V114 night mode func:enable = %d\n",enable);
 
-	if(enable)
+	if (0 == MT9V114CurrentStatus.iFrameRate)
+	//only for preview mode 
+	//video mode will only set 30 or 15 fps
 	{
-	    MT9V114_write_cmos_sensor(0x098E, 0x2076);// MCU_ADDRESS [AE_MAX_INDEX]
-        MT9V114_write_cmos_sensor(0xa076, 0x0014);// MCU_DATA_0 //FAE: night mode min:5fps
-    	MT9V114_write_cmos_sensor(0xa078, 0x0018);// MCU_ADDRESS [AE_INDEX_TH23]
-	}
+	    if(enable)
+	    {
+	        MT9V114_write_cmos_sensor(0x098E, 0x2076);// MCU_ADDRESS [AE_MAX_INDEX]
+          MT9V114_write_cmos_sensor(0xa076, 0x0014);// MCU_DATA_0 //FAE: night mode min:5fps
+    	    MT9V114_write_cmos_sensor(0xa078, 0x0018);// MCU_ADDRESS [AE_INDEX_TH23]
+	    }
 	else
-    {
-		MT9V114_write_cmos_sensor(0x098E, 0x2076);  
+      {
+		    MT9V114_write_cmos_sensor(0x098E, 0x2076);  
         //MT9V114_write_cmos_sensor(0xa076, 0x000A);  
         //MT9V114_write_cmos_sensor(0xa078, 0x000C); 
         MT9V114_write_cmos_sensor(0xa076, 0x0006);  //FAE:normal min: 16.7fps
         MT9V114_write_cmos_sensor(0xa078, 0x0008); //60hz
-	}
+	    }
+  }
+	spin_lock(&mt9v114yuv_drv_lock);
 	MT9V114CurrentStatus.iNightMode = enable;
+	spin_unlock(&mt9v114yuv_drv_lock);
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114Preview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static UINT32 MT9V114Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -649,6 +779,9 @@ static UINT32 MT9V114Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	image_window->ExposureWindowWidth = MT9V114_IMAGE_SENSOR_VGA_WIDTH - 2 * StartX ;
 	image_window->ExposureWindowHeight = MT9V114_IMAGE_SENSOR_VGA_HEIGHT - 2 * StartY;
 
+  spin_lock(&mt9v114yuv_drv_lock);
+  MT9V114CurrentStatus.iFrameRate = 0;
+  spin_unlock(&mt9v114yuv_drv_lock);
 	SENSORDB("[Exit]:MT9V114 preview func\n");
     return ERROR_NONE; 
 }	/* MT9V114_Preview */
@@ -664,6 +797,9 @@ UINT32 MT9V114Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	image_window->GrabStartY = StartY;
 	image_window->ExposureWindowWidth = MT9V114_IMAGE_SENSOR_VGA_WIDTH - 2 * StartX;
 	image_window->ExposureWindowHeight = MT9V114_IMAGE_SENSOR_VGA_HEIGHT - 2 * StartY;
+  spin_lock(&mt9v114yuv_drv_lock);
+  MT9V114CurrentStatus.iFrameRate = 0;
+  spin_unlock(&mt9v114yuv_drv_lock);
 
     SENSORDB("[Exit]:MT9V114 capture func:\n");	
     return ERROR_NONE; 
@@ -734,9 +870,9 @@ UINT32 MT9V114GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].ISOSupported=TRUE;
 	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].BinningEnable=TRUE;
 
-	pSensorInfo->CaptureDelayFrame = 3; 
-	pSensorInfo->PreviewDelayFrame = 3; 
-	pSensorInfo->VideoDelayFrame = 3; 
+	pSensorInfo->CaptureDelayFrame = 4; 
+	pSensorInfo->PreviewDelayFrame = 4; 
+	pSensorInfo->VideoDelayFrame = 4; 
 	pSensorInfo->SensorMasterClockSwitch = 0; 
        pSensorInfo->SensorDrivingCurrent = ISP_DRIVING_8MA;   		
 	switch (ScenarioId)
@@ -837,6 +973,22 @@ void MT9V114_set_AWB_mode(kal_bool AWB_enable)
     }
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114_set_param_wb
+*
+* DESCRIPTION
+*	wb setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V114_set_param_wb(UINT16 para)
 {
     if(MT9V114CurrentStatus.iWB == para)
@@ -847,12 +999,16 @@ BOOL MT9V114_set_param_wb(UINT16 para)
     switch (para)
     {   
     case AWB_MODE_OFF:
+		spin_lock(&mt9v114yuv_drv_lock);
         MT9V114_AWB_ENABLE = KAL_FALSE; 
+		spin_unlock(&mt9v114yuv_drv_lock);
         MT9V114_set_AWB_mode(MT9V114_AWB_ENABLE);
         SENSORDB(" AWB_MODE_OFF\n");
         break;             
     case AWB_MODE_AUTO:
+		spin_lock(&mt9v114yuv_drv_lock);
         MT9V114_AWB_ENABLE = KAL_TRUE; 
+		spin_unlock(&mt9v114yuv_drv_lock);
         MT9V114_set_AWB_mode(MT9V114_AWB_ENABLE);         
         SENSORDB(" AWB_MODE_AUTO\n");
 
@@ -899,11 +1055,29 @@ BOOL MT9V114_set_param_wb(UINT16 para)
     default:
         return FALSE;
     }
+	spin_lock(&mt9v114yuv_drv_lock);
     MT9V114CurrentStatus.iWB = para;
+	spin_unlock(&mt9v114yuv_drv_lock);
 
     return TRUE;	
 } /* MT9V114_set_param_wb */
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114_set_param_effect
+*
+* DESCRIPTION
+*	effect setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V114_set_param_effect(UINT16 para)
 {
    if(MT9V114CurrentStatus.iEffect == para)
@@ -961,11 +1135,29 @@ BOOL MT9V114_set_param_effect(UINT16 para)
 		default:
 			return FALSE;
 	}
+   spin_lock(&mt9v114yuv_drv_lock);
   MT9V114CurrentStatus.iEffect = para;
+  spin_unlock(&mt9v114yuv_drv_lock);
 	return TRUE;
 
 } /* MT9V114_set_param_effect */
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114_set_param_banding
+*
+* DESCRIPTION
+*	banding setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V114_set_param_banding(UINT16 para)
 {
 	if(MT9V114CurrentStatus.iBanding == para)
@@ -988,18 +1180,35 @@ BOOL MT9V114_set_param_banding(UINT16 para)
 	    default:
 	        return FALSE;
 	}
-	
+	spin_lock(&mt9v114yuv_drv_lock);
   MT9V114CurrentStatus.iBanding = para;
+  spin_unlock(&mt9v114yuv_drv_lock);
 	return TRUE;
 } /* MT9V114_set_param_banding */
 
 
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9V114_set_param_exposure
+*
+* DESCRIPTION
+*	exposure setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V114_set_param_exposure(UINT16 para)
 {
 
-	kal_uint16 base_target = 0;
+	//kal_uint16 base_target = 0;
   if(MT9V114CurrentStatus.iEV == para)
       return TRUE;
 	SENSORDB("[Enter]MT9V114 set_param_exposure func:para = %d\n",para);
@@ -1037,8 +1246,9 @@ BOOL MT9V114_set_param_exposure(UINT16 para)
 		default:
 			return FALSE;
 	}
-	
+	spin_lock(&mt9v114yuv_drv_lock);
   MT9V114CurrentStatus.iEV = para;
+  spin_unlock(&mt9v114yuv_drv_lock);
 	return TRUE;
 	
 } /* MT9V114_set_param_exposure */
@@ -1061,12 +1271,12 @@ void MT9V114_set_AE_mode(kal_bool AE_enable)
         MT9V114_write_cmos_sensor(0x9001, temp_AE_reg &~ 0x0100);
     }	
 
-    MT9V114_write_cmos_sensor(0x098E, 0x9001);
+    //MT9V114_write_cmos_sensor(0x098E, 0x9001);
     SENSORDB("2  0x9001=0x%x\n",MT9V114_read_cmos_sensor(0x9001)); // MCU_DATA_0
 }
 
 UINT32 MT9V114YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
-{  
+{
     SENSORDB("[Enter]MT9V114YUVSensorSetting func:cmd = %d\n",iCmd);
 
     switch (iCmd) {
@@ -1094,15 +1304,21 @@ UINT32 MT9V114YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
         break;
     case FID_AE_SCENE_MODE: 
         if (iPara == AE_MODE_OFF) {
+			spin_lock(&mt9v114yuv_drv_lock);
             MT9V114_AE_ENABLE = KAL_FALSE; 
+			spin_unlock(&mt9v114yuv_drv_lock);
         }
         else {
+			spin_lock(&mt9v114yuv_drv_lock);
             MT9V114_AE_ENABLE = KAL_TRUE; 
+			spin_unlock(&mt9v114yuv_drv_lock);
         }
         MT9V114_set_AE_mode(MT9V114_AE_ENABLE);
         break; 
     case FID_ZOOM_FACTOR:
+		spin_lock(&mt9v114yuv_drv_lock);
         MT9V114Sensor.Digital_Zoom_Factor= iPara; 		
+		spin_unlock(&mt9v114yuv_drv_lock);
         break; 
     default:
         break;
@@ -1112,12 +1328,13 @@ UINT32 MT9V114YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
 
 UINT32 MT9V114YUVSetVideoMode(UINT16 u2FrameRate)
 {
-    SENSORDB("[Enter]MT9V114 Set Video Mode:FrameRate= %d\n",u2FrameRate);
+    SENSORDB("[Enter]MT9V114 Set Video Mode:FrameRate= %d Current FrameRate = %d\n",u2FrameRate,MT9V114CurrentStatus.iFrameRate);
 
     if(MT9V114CurrentStatus.iFrameRate == u2FrameRate)
       return TRUE;
 	if (u2FrameRate == 30)
     {
+    	SENSORDB("Set FrameRate: 30fps\n");
     	MT9V114_write_cmos_sensor(0x098E, 0xA01A);
     	MT9V114_write_cmos_sensor(0xA01A, 0x0003);
     	MT9V114_write_cmos_sensor(0xA076, 0x0003);
@@ -1130,6 +1347,7 @@ UINT32 MT9V114YUVSetVideoMode(UINT16 u2FrameRate)
     }
     else if (u2FrameRate == 15)       
     {
+		SENSORDB("Set FrameRate: 15fps\n");
 		MT9V114_write_cmos_sensor(0x098E, 0xA01A);
 		MT9V114_write_cmos_sensor(0xA01A, 0x0003);
 		MT9V114_write_cmos_sensor(0xA076, 0x0006);
@@ -1143,8 +1361,11 @@ UINT32 MT9V114YUVSetVideoMode(UINT16 u2FrameRate)
     else 
     {
         printk("Wrong frame rate setting \n");
+        return FALSE;
     }   
-
+    spin_lock(&mt9v114yuv_drv_lock);
+    MT9V114CurrentStatus.iFrameRate = u2FrameRate;
+		spin_unlock(&mt9v114yuv_drv_lock);
 	
     return TRUE;
 }
@@ -1177,7 +1398,7 @@ void MT9V114GetExifInfo(UINT32 exifAddr)
 UINT32 MT9V114FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 							 UINT8 *pFeaturePara,UINT32 *pFeatureParaLen)
 {
-    UINT16 u2Temp = 0; 
+    //UINT16 u2Temp = 0; 
     UINT16 *pFeatureReturnPara16=(UINT16 *) pFeaturePara;
     UINT16 *pFeatureData16=(UINT16 *) pFeaturePara;
     UINT32 *pFeatureReturnPara32=(UINT32 *) pFeaturePara;

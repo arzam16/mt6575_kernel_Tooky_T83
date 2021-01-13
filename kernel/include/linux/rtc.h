@@ -202,7 +202,8 @@ struct rtc_device
 	struct hrtimer pie_timer; /* sub second exp, so needs hrtimer */
 	int pie_enabled;
 	struct work_struct irqwork;
-
+	/* Some hardware can't support UIE mode */
+	int uie_unsupported;
 
 #ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
 	struct work_struct uie_task;
@@ -231,6 +232,13 @@ extern int rtc_read_alarm(struct rtc_device *rtc,
 			struct rtc_wkalrm *alrm);
 extern int rtc_set_alarm(struct rtc_device *rtc,
 				struct rtc_wkalrm *alrm);
+
+extern int rtc_set_alarm_poweron(struct rtc_device *rtc,
+				struct rtc_wkalrm *alrm);
+//extern void Set_IPO_flag(void);
+//extern void Clr_IPO_flag(void);
+
+				
 extern int rtc_initialize_alarm(struct rtc_device *rtc,
 				struct rtc_wkalrm *alrm);
 extern void rtc_update_irq(struct rtc_device *rtc,

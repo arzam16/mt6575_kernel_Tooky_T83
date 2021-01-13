@@ -28,12 +28,17 @@ enum {
     DEBUG_SUSPEND = 1U << 2,
     DEBUG_VERBOSE = 1U << 3,
 };
-static int debug_mask = DEBUG_USER_STATE;
+static int debug_mask = DEBUG_USER_STATE|DEBUG_SUSPEND|DEBUG_VERBOSE;
+//static int debug_mask = DEBUG_USER_STATE;
 module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-int Earlysuspend_debug_mask = DEBUG_USER_STATE;
+int earlysuspend_debug_mask = 0;
 int early_suspend_count = 0;
 int forbid_id = 0x0;
+
+#define _TAG_PM_M "[Ker_PM]"
+#define pm_warn(fmt, ...)	\
+	if (earlysuspend_debug_mask) pr_warn("[%s][%s]" fmt, _TAG_PM_M, __func__, ##__VA_ARGS__);
 
 static DEFINE_MUTEX(early_suspend_lock);
 static LIST_HEAD(early_suspend_handlers);
@@ -44,6 +49,13 @@ static DECLARE_WORK(early_sys_sync_work, early_sys_sync);
 static DECLARE_WORK(early_suspend_work, early_suspend);
 static DECLARE_WORK(late_resume_work, late_resume);
 static DEFINE_SPINLOCK(state_lock);
+
+//
+struct wake_lock sys_sync_wake_lock;
+struct workqueue_struct *suspend_work_queue;
+struct workqueue_struct *sys_sync_work_queue;
+suspend_state_t requested_suspend_state = PM_SUSPEND_MEM;
+
 enum {
     SUSPEND_REQUESTED = 0x1,
     SUSPENDED = 0x2,
@@ -83,9 +95,9 @@ EXPORT_SYMBOL(unregister_early_suspend);
 static void early_sys_sync(struct work_struct *work)
 {
     wake_lock(&sys_sync_wake_lock);
-    pr_info("[sys_sync work] start\n");
+    pm_warn("++\n");
     sys_sync();
-    pr_info("[sys_sync work] done\n");
+    pm_warn("--\n");
     wake_unlock(&sys_sync_wake_lock);
 }
 
@@ -94,6 +106,8 @@ static void early_suspend(struct work_struct *work)
     struct early_suspend *pos;
     unsigned long irqflags;
     int abort = 0, count = 0;
+
+    pr_warn("@@@@@@@@@@@@@@@@@@@@@@@\n@@@__early_suspend__@@@\n@@@@@@@@@@@@@@@@@@@@@@@\n");
 
     mutex_lock(&early_suspend_lock);
     spin_lock_irqsave(&state_lock, irqflags);
@@ -104,20 +118,20 @@ static void early_suspend(struct work_struct *work)
     spin_unlock_irqrestore(&state_lock, irqflags);
 
     if (abort) {
-        if (Earlysuspend_debug_mask & DEBUG_SUSPEND)
-            pr_info("[early_suspend]: abort, state %d\n", state);
+        if (earlysuspend_debug_mask & DEBUG_SUSPEND)
+            pm_warn("abort, state %d\n", state);
         mutex_unlock(&early_suspend_lock);
         goto abort;
     }
 
-    pr_info("[early_suspend]: early_suspend_count = %d, forbid_id = 0x%x\n", early_suspend_count, forbid_id);
-    if (Earlysuspend_debug_mask & DEBUG_SUSPEND)
-        pr_info("[early_suspend]: call handlers\n");
+    pr_warn("early_suspend_count = %d, forbid_id = 0x%x\n", early_suspend_count, forbid_id);
+    if (earlysuspend_debug_mask & DEBUG_SUSPEND)
+        pm_warn("call handlers\n");
     list_for_each_entry(pos, &early_suspend_handlers, link) {
         if (pos->suspend != NULL) {
             if (!(forbid_id & (0x1 << count))) {
-                //if (Earlysuspend_debug_mask & DEBUG_VERBOSE)
-                    pr_info("[early_suspend]: handlers %d: [%pf], level: %d\n", count, pos->suspend, pos->level);
+                //if (earlysuspend_debug_mask & DEBUG_VERBOSE)
+                    pr_warn("ES handlers %d: [%pf], level: %d\n", count, pos->suspend, pos->level);
                 pos->suspend(pos);
             }
             count++; 
@@ -128,12 +142,9 @@ static void early_suspend(struct work_struct *work)
     /* Remove sys_sync from early_suspend, and use work queue to complete sys_sync */
 
 abort:
-    spin_lock_irqsave(&state_lock, irqflags);
-    if (state == SUSPEND_REQUESTED_AND_SUSPENDED) {
-        pr_info("[early_suspend]: wake_unlock(main)\n");
-        wake_unlock(&main_wake_lock);
-    }
-    spin_unlock_irqrestore(&state_lock, irqflags);
+	if (state == SUSPEND_REQUESTED_AND_SUSPENDED)
+		//wake_unlock(&main_wake_lock);
+		pm_autosleep_set_state(PM_SUSPEND_MEM);
 }
 
 static void late_resume(struct work_struct *work)
@@ -143,6 +154,10 @@ static void late_resume(struct work_struct *work)
     int abort = 0;
     int completed = 0, count=0;
     
+    pr_warn("@@@@@@@@@@@@@@@@@@@@@@@\n@@@__late_resume__@@@\n@@@@@@@@@@@@@@@@@@@@@@@\n");
+
+    pm_autosleep_set_state(PM_SUSPEND_ON);
+
     mutex_lock(&early_suspend_lock);
     spin_lock_irqsave(&state_lock, irqflags);
     if (state == SUSPENDED)
@@ -152,29 +167,29 @@ static void late_resume(struct work_struct *work)
     spin_unlock_irqrestore(&state_lock, irqflags);
 
     if (abort) {
-        if (Earlysuspend_debug_mask & DEBUG_SUSPEND)
-            pr_info("[late_resume]: abort, state %d\n", state);
+        if (earlysuspend_debug_mask & DEBUG_SUSPEND)
+            pm_warn("abort, state %d\n", state);
         goto abort;
     }
-    pr_info("[late_resume]: early_suspend_count = %d, forbid_id = 0x%x\n", early_suspend_count, forbid_id);
-    if (Earlysuspend_debug_mask & DEBUG_SUSPEND)
-        pr_info("[late_resume]: call handlers\n");
+    pr_warn("early_suspend_count = %d, forbid_id = 0x%x\n", early_suspend_count, forbid_id);
+    if (earlysuspend_debug_mask & DEBUG_SUSPEND)
+        pm_warn("call handlers\n");
     list_for_each_entry_reverse(pos, &early_suspend_handlers, link) {
-        if (!completed && pos->level < EARLY_SUSPEND_LEVEL_DISABLE_FB) {
+        if (!completed && pos->level < EARLY_SUSPEND_LEVEL_STOP_DRAWING) {
             complete(&fb_drv_ready);
             completed = 1;
         }
         if (pos->resume != NULL) {
             if (!(forbid_id & (0x1 << (early_suspend_count-count-1)))) {
-                //if (Earlysuspend_debug_mask & DEBUG_VERBOSE)
-                    pr_info("[late_resume]: handlers %d: [%pf], level: %d\n", count, pos->resume, pos->level);
+                //if (earlysuspend_debug_mask & DEBUG_VERBOSE)
+                    pr_warn("LR handlers %d: [%pf], level: %d\n", count, pos->resume, pos->level);
                 pos->resume(pos);
             }
             count++; 
         }
     }
-    if (Earlysuspend_debug_mask & DEBUG_SUSPEND)
-        pr_info("[late_resume]: done\n");
+    if (earlysuspend_debug_mask & DEBUG_SUSPEND)
+        pm_warn("done\n");
 abort:
     if (!completed)
         complete(&fb_drv_ready);
@@ -189,12 +204,12 @@ void request_suspend_state(suspend_state_t new_state)
 
     spin_lock_irqsave(&state_lock, irqflags);
     old_sleep = state & SUSPEND_REQUESTED;
-    if (Earlysuspend_debug_mask & DEBUG_USER_STATE) {
+    if (earlysuspend_debug_mask & DEBUG_USER_STATE) {
         struct timespec ts;
         struct rtc_time tm;
         getnstimeofday(&ts);
         rtc_time_to_tm(ts.tv_sec, &tm);
-        pr_info("[request_suspend_state]: %s (%d->%d) at %lld "
+        pm_warn("%s (%d->%d) at %lld "
             "(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n",
             new_state != PM_SUSPEND_ON ? "sleep" : "wakeup",
             requested_suspend_state, new_state,
@@ -204,15 +219,15 @@ void request_suspend_state(suspend_state_t new_state)
     }
     if (!old_sleep && new_state != PM_SUSPEND_ON) {
         state |= SUSPEND_REQUESTED;
-        pr_info("[request_suspend_state]: sys_sync_work_queue early_sys_sync_work\n");
+        pm_warn("sys_sync_work_queue early_sys_sync_work\n");
         queue_work(sys_sync_work_queue, &early_sys_sync_work);
-        pr_info("[request_suspend_state]: suspend_work_queue early_suspend_work\n");
+        pm_warn("suspend_work_queue early_suspend_work\n");
         queue_work(suspend_work_queue, &early_suspend_work);
     } else if (old_sleep && new_state == PM_SUSPEND_ON) {
         state &= ~SUSPEND_REQUESTED;
-        wake_lock(&main_wake_lock);
-        pr_info("[request_suspend_state]: suspend_work_queue late_resume_work\n");
-        if (queue_work(suspend_work_queue, &late_resume_work)) {
+        //wake_lock(&main_wake_lock);
+		///cun
+		if (queue_work(suspend_work_queue, &late_resume_work)) {
             /*
              * In order to synchronize the backlight turn on timing,
              * block the thread and wait for fb driver late_resume()
@@ -225,7 +240,7 @@ void request_suspend_state(suspend_state_t new_state)
     spin_unlock_irqrestore(&state_lock, irqflags);
     if (wait_flag == 1) {
         wait_for_completion(&fb_drv_ready);
-        pr_info("[late_resume]: wait done\n");
+        pr_warn("wait done\n");
     }
 }
 
@@ -233,3 +248,34 @@ suspend_state_t get_suspend_state(void)
 {
     return requested_suspend_state;
 }
+//cun
+static int __init org_wakelocks_init(void)
+{
+    int ret;
+   
+    wake_lock_init(&sys_sync_wake_lock, WAKE_LOCK_SUSPEND, "sys_sync");
+
+    sys_sync_work_queue = create_singlethread_workqueue("fs_sync");
+    if (sys_sync_work_queue == NULL) {
+        pr_err("[wakelocks_init] fs_sync workqueue create failed\n");
+    }
+
+    suspend_work_queue = create_singlethread_workqueue("suspend");
+    if (suspend_work_queue == NULL) {
+        ret = -ENOMEM;
+        goto err_suspend_work_queue;
+    }
+    return 0;
+
+err_suspend_work_queue:
+
+    return ret;
+}
+
+static void  __exit org_wakelocks_exit(void)
+{
+    destroy_workqueue(suspend_work_queue);
+}
+
+core_initcall(org_wakelocks_init);
+module_exit(org_wakelocks_exit);

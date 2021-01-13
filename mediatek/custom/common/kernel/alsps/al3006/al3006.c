@@ -1,4 +1,17 @@
-
+/* drivers/hwmon/mt6516/amit/al3006.c - AL3006 ALS/PS driver
+ * 
+ * Author: MingHsien Hsieh <minghsien.hsieh@mediatek.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -44,6 +57,13 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 #ifdef MT6573
 extern void mt65xx_eint_unmask(unsigned int line);
 extern void mt65xx_eint_mask(unsigned int line);
@@ -67,7 +87,14 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
                                      kal_bool auto_umask);
 
 #endif
-
+#ifdef MT6577
+extern void mt65xx_eint_unmask(unsigned int line);
+extern void mt65xx_eint_mask(unsigned int line);
+extern void mt65xx_eint_set_polarity(unsigned int eint_num, unsigned int pol);
+extern void mt65xx_eint_set_hw_debounce(unsigned int eint_num, unsigned int ms);
+extern unsigned int mt65xx_eint_set_sens(unsigned int eint_num, unsigned int sens);
+extern void mt65xx_eint_registration(unsigned int eint_num, unsigned int is_deb_en, unsigned int pol, void (EINT_FUNC_PTR)(void), unsigned int is_auto_umask);
+#endif
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
@@ -81,6 +108,12 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+/******************************************************************************
+ * configuration
+*******************************************************************************/
 #define I2C_DRIVERID_AL3006 3006
 /*----------------------------------------------------------------------------*/
 #define AL3006_I2C_ADDR_RAR 0   /*!< the index in obj->hw->i2c_addr: alert response address */
@@ -93,6 +126,9 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #define APS_ERR(fmt, args...)    printk(KERN_ERR  APS_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
 #define APS_LOG(fmt, args...)    printk(KERN_INFO APS_TAG fmt, ##args)
 #define APS_DBG(fmt, args...)    printk(KERN_INFO fmt, ##args)                 
+/******************************************************************************
+ * extern functions
+*******************************************************************************/
 #ifdef MT6516
 extern void MT6516_EINTIRQUnmask(unsigned int line);
 extern void MT6516_EINTIRQMask(unsigned int line);
@@ -126,10 +162,11 @@ extern void MT6516_EINT_Registration(kal_uint8 eintno, kal_bool Dbounce_En,
 static struct i2c_client *al3006_i2c_client = NULL;
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id al3006_i2c_id[] = {{AL3006_DEV_NAME,0},{}};
+static const struct i2c_board_info __initdata i2c_AL3006= {I2C_BOARD_INFO("AL3006",(0X38>>1))};
 /*the adapter id & i2c address will be available in customization*/
-static unsigned short al3006_force[] = {0x00, AL3006_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const al3006_forces[] = { al3006_force, NULL };
-static struct i2c_client_address_data al3006_addr_data = { .forces = al3006_forces,};
+//static unsigned short al3006_force[] = {0x00, AL3006_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const al3006_forces[] = { al3006_force, NULL };
+//static struct i2c_client_address_data al3006_addr_data = { .forces = al3006_forces,};
 /*----------------------------------------------------------------------------*/
 static int al3006_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
 static int al3006_i2c_remove(struct i2c_client *client);
@@ -206,13 +243,13 @@ struct al3006_priv {
 static struct i2c_driver al3006_i2c_driver = {	
 	.probe      = al3006_i2c_probe,
 	.remove     = al3006_i2c_remove,
-	.detect     = al3006_i2c_detect,
+//	.detect     = al3006_i2c_detect,
 	.suspend    = al3006_i2c_suspend,
 	.resume     = al3006_i2c_resume,
 	.id_table   = al3006_i2c_id,
-	.address_data = &al3006_addr_data,
+//	.address_data = &al3006_addr_data,
 	.driver = {
-		.owner          = THIS_MODULE,
+//		.owner          = THIS_MODULE,
 		.name           = AL3006_DEV_NAME,
 	},
 };
@@ -261,12 +298,57 @@ static void al3006_dumpReg(struct i2c_client *client)
 		break;
   }
 }
+/*
+void al3006_first_read_ps_func()
+{
+	
+	if (al3006_obj != NULL)
+	{
+		schedule_work(&al3006_obj->eint_work);
+	}
+	
+	if(al3006_obj->first_read& 0x04 )
+	{
+	  mod_timer(&al3006_obj->first_read_ps_timer, jiffies + 20); 
+	}
+}
+
+void al3006_first_read_als_func()
+{
+	
+	if (al3006_obj != NULL)
+	{
+		schedule_work(&al3006_obj->eint_work);
+	}
+	
+	if(al3006_obj->first_read&0x02)
+	{
+	  mod_timer(&al3006_obj->first_read_als_timer, jiffies + 20); 
+	}
+}
+
+*/
 /*----------------------------------------------------------------------------*/
 int al3006_get_timing(void)
 {
 return 200;
+/*
+	u32 base = I2C2_BASE; 
+	return (__raw_readw(mt6516_I2C_HS) << 16) | (__raw_readw(mt6516_I2C_TIMING));
+*/
 }
 /*----------------------------------------------------------------------------*/
+/*
+int al3006_config_timing(int sample_div, int step_div)
+{
+	u32 base = I2C2_BASE; 
+	unsigned long tmp;
+
+	tmp  = __raw_readw(mt6516_I2C_TIMING) & ~((0x7 << 8) | (0x1f << 0));
+	tmp  = (sample_div & 0x7) << 8 | (step_div & 0x1f) << 0 | tmp;
+
+	return (__raw_readw(mt6516_I2C_HS) << 16) | (tmp);
+}*/
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -418,6 +500,26 @@ int al3006_set_window_loss(struct i2c_client *client, unsigned int loss)
 {
 	int res =0;
 	u8 data =0;
+/*
+	switch(loss)
+	{
+	case 0:
+		data = 0x00;
+		break;
+	case 1:
+		data = 0x01;
+		break;
+	case 2:
+		data = 0x02;
+		break;
+	case 3:
+		data = 0x03;
+		break;
+	case 1:
+		data = 0x01;
+		break;
+	}
+	*/
 	APS_LOG("loss  %x\n" ,(u8)loss);
 	
 	res = hwmsen_write_byte(client, APS_ALS_WINDOW, (u8)loss);
@@ -812,6 +914,12 @@ static void al3006_eint_work(struct work_struct *work)
 	#ifdef MT6573
 	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);  
 	#endif
+	#ifdef MT6575
+	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);  
+	#endif
+	#ifdef MT6577
+	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);  
+	#endif
 }
 
 /*----------------------------------------------------------------------------*/
@@ -850,7 +958,25 @@ int al3006_setup_eint(struct i2c_client *client)
 	mt65xx_eint_registration(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_EN, CUST_EINT_ALS_POLARITY, al3006_eint_func, 0);
 	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);  
 #endif  
-	
+
+#ifdef MT6575
+		
+		mt65xx_eint_set_sens(CUST_EINT_ALS_NUM, CUST_EINT_ALS_SENSITIVE);
+		mt65xx_eint_set_polarity(CUST_EINT_ALS_NUM, CUST_EINT_ALS_POLARITY);
+		mt65xx_eint_set_hw_debounce(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_CN);
+		mt65xx_eint_registration(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_EN, CUST_EINT_ALS_POLARITY, al3006_eint_func, 0);
+		mt65xx_eint_unmask(CUST_EINT_ALS_NUM);	
+#endif  
+#ifdef MT6577
+		
+		mt65xx_eint_set_sens(CUST_EINT_ALS_NUM, CUST_EINT_ALS_SENSITIVE);
+		mt65xx_eint_set_polarity(CUST_EINT_ALS_NUM, CUST_EINT_ALS_POLARITY);
+		mt65xx_eint_set_hw_debounce(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_CN);
+		mt65xx_eint_registration(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_EN, CUST_EINT_ALS_POLARITY, al3006_eint_func, 0);
+		mt65xx_eint_unmask(CUST_EINT_ALS_NUM);	
+#endif  
+
+
     return 0;
 }
 
@@ -890,6 +1016,9 @@ static int al3006_init_client(struct i2c_client *client)
 	
 	return err;
 }
+/******************************************************************************
+ * Sysfs attributes
+*******************************************************************************/
 static ssize_t al3006_show_config(struct device_driver *ddri, char *buf)
 {
 	ssize_t res;
@@ -1059,11 +1188,60 @@ static ssize_t al3006_show_status(struct device_driver *ddri, char *buf)
 /*----------------------------------------------------------------------------*/
 static ssize_t al3006_show_i2c(struct device_driver *ddri, char *buf)
 {
+/*	ssize_t len = 0;
+	u32 base = I2C2_BASE;
+
+	if(!al3006_obj)
+	{
+		APS_ERR("al3006_obj is null!!\n");
+		return 0;
+	}
+	
+	len += snprintf(buf+len, PAGE_SIZE-len, "DATA_PORT      = 0x%08X\n", __raw_readl(mt6516_I2C_DATA_PORT    ));
+	len += snprintf(buf+len, PAGE_SIZE-len, "SLAVE_ADDR     = 0x%08X\n", __raw_readl(mt6516_I2C_SLAVE_ADDR));
+	len += snprintf(buf+len, PAGE_SIZE-len, "INTR_MASK      = 0x%08X\n", __raw_readl(mt6516_I2C_INTR_MASK));
+	len += snprintf(buf+len, PAGE_SIZE-len, "INTR_STAT      = 0x%08X\n", __raw_readl(mt6516_I2C_INTR_STAT));
+	len += snprintf(buf+len, PAGE_SIZE-len, "CONTROL        = 0x%08X\n", __raw_readl(mt6516_I2C_CONTROL));
+	len += snprintf(buf+len, PAGE_SIZE-len, "TRANSFER_LEN   = 0x%08X\n", __raw_readl(mt6516_I2C_TRANSFER_LEN));
+	len += snprintf(buf+len, PAGE_SIZE-len, "TRANSAC_LEN    = 0x%08X\n", __raw_readl(mt6516_I2C_TRANSAC_LEN));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DELAY_LEN      = 0x%08X\n", __raw_readl(mt6516_I2C_DELAY_LEN));
+	len += snprintf(buf+len, PAGE_SIZE-len, "TIMING         = 0x%08X\n", __raw_readl(mt6516_I2C_TIMING));
+	len += snprintf(buf+len, PAGE_SIZE-len, "START          = 0x%08X\n", __raw_readl(mt6516_I2C_START));
+	len += snprintf(buf+len, PAGE_SIZE-len, "FIFO_STAT      = 0x%08X\n", __raw_readl(mt6516_I2C_FIFO_STAT));
+	len += snprintf(buf+len, PAGE_SIZE-len, "FIFO_THRESH    = 0x%08X\n", __raw_readl(mt6516_I2C_FIFO_THRESH));
+	len += snprintf(buf+len, PAGE_SIZE-len, "FIFO_ADDR_CLR  = 0x%08X\n", __raw_readl(mt6516_I2C_FIFO_ADDR_CLR));
+	len += snprintf(buf+len, PAGE_SIZE-len, "IO_CONFIG      = 0x%08X\n", __raw_readl(mt6516_I2C_IO_CONFIG));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DEBUG          = 0x%08X\n", __raw_readl(mt6516_I2C_DEBUG));
+	len += snprintf(buf+len, PAGE_SIZE-len, "HS             = 0x%08X\n", __raw_readl(mt6516_I2C_HS));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DEBUGSTAT      = 0x%08X\n", __raw_readl(mt6516_I2C_DEBUGSTAT));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DEBUGCTRL      = 0x%08X\n", __raw_readl(mt6516_I2C_DEBUGCTRL));    
+
+	return len;*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
 static ssize_t al3006_store_i2c(struct device_driver *ddri, char *buf, size_t count)
 {
+/*	int sample_div, step_div;
+	unsigned long tmp;
+	u32 base = I2C2_BASE;    
+
+	if(!al3006_obj)
+	{
+		APS_ERR("al3006_obj is null!!\n");
+		return 0;
+	}
+	else if(2 != sscanf(buf, "%d %d", &sample_div, &step_div))
+	{
+		APS_ERR("invalid format: '%s'\n", buf);
+		return 0;
+	}
+	tmp  = __raw_readw(mt6516_I2C_TIMING) & ~((0x7 << 8) | (0x1f << 0));
+	tmp  = (sample_div & 0x7) << 8 | (step_div & 0x1f) << 0 | tmp;
+	__raw_writew(tmp, mt6516_I2C_TIMING);        
+
+	return count;
+	*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
@@ -1229,6 +1407,9 @@ static int al3006_create_attr(struct device_driver *driver)
 	
 	return err;
 }
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int al3006_get_als_value(struct al3006_priv *obj, u8 als)
 {
 	int idx;
@@ -1337,6 +1518,9 @@ static int al3006_get_ps_value(struct al3006_priv *obj, u8 ps)
 	
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int al3006_open(struct inode *inode, struct file *file)
 {
 	file->private_data = al3006_i2c_client;
@@ -1356,7 +1540,7 @@ static int al3006_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int al3006_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+static int al3006_unlocked_ioctl(struct file *file, unsigned int cmd,
        unsigned long arg)
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
@@ -1506,10 +1690,10 @@ static int al3006_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 }
 /*----------------------------------------------------------------------------*/
 static struct file_operations al3006_fops = {
-	.owner = THIS_MODULE,
+//	.owner = THIS_MODULE,
 	.open = al3006_open,
 	.release = al3006_release,
-	.ioctl = al3006_ioctl,
+	.unlocked_ioctl = al3006_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice al3006_device = {
@@ -1918,6 +2102,18 @@ static int al3006_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 		APS_ERR("attach fail = %d\n", err);
 		goto exit_create_attr_failed;
 	}
+/*
+	//init timer
+	init_timer(&obj->first_read_ps_timer);
+	obj->first_read_ps_timer.expires	= jiffies + 110;
+	obj->first_read_ps_timer.function	= al3006_first_read_ps_func;
+	obj->first_read_ps_timer.data		= 0;
+
+	init_timer(&obj->first_read_als_timer);
+	obj->first_read_als_timer.expires	= jiffies + 220;
+	obj->first_read_als_timer.function	= al3006_first_read_als_func;
+	obj->first_read_als_timer.data		= 0;
+*/
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
@@ -1973,7 +2169,7 @@ static int al3006_probe(struct platform_device *pdev)
 
 	al3006_power(hw, 1);    
 	//al3006_get_addr(hw, &addr);
-	al3006_force[0] = hw->i2c_num;
+//	al3006_force[0] = hw->i2c_num;
 	//al3006_force[1] = addr.init;
 	if(i2c_add_driver(&al3006_i2c_driver))
 	{
@@ -1997,13 +2193,14 @@ static struct platform_driver al3006_alsps_driver = {
 	.remove     = al3006_remove,    
 	.driver     = {
 		.name  = "als_ps",
-		.owner = THIS_MODULE,
+//		.owner = THIS_MODULE,
 	}
 };
 /*----------------------------------------------------------------------------*/
 static int __init al3006_init(void)
 {
 	APS_FUN();
+	i2c_register_board_info(0,&i2c_AL3006,1);
 	if(platform_driver_register(&al3006_alsps_driver))
 	{
 		APS_ERR("failed to register driver");

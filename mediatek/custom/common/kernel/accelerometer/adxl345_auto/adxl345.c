@@ -1,4 +1,17 @@
-
+/* ADXL345 motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -645,6 +658,13 @@ static int adxl345_init_client(struct i2c_client *client, int reset_cali)
 	}
 
 	gsensor_gain.x = gsensor_gain.y = gsensor_gain.z = obj->reso->sensitivity;
+/*
+	res = ADXL345_SetIntEnable(client, ADXL345_DATA_READY);        
+	if(res != ADXL345_SUCCESS)//0x2E->0x80
+	{
+		return res;
+	}
+*/
 	if(0 != reset_cali)
 	{ 
 		/*reset calibration only in power on*/
@@ -1387,6 +1407,9 @@ int adxl345_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int adxl345_open(struct inode *inode, struct file *file)
 {
 	file->private_data = adxl345_i2c_client;

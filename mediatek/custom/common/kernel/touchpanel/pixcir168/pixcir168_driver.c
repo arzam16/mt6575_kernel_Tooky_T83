@@ -1,4 +1,3 @@
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -34,9 +33,9 @@
 extern struct tpd_device *tpd;
 
 static int tpd_flag = 0;
-static int tpd_halt=0;
-static u8 *I2CDMABuf_va = NULL;
-static u32 I2CDMABuf_pa = NULL;
+static int tpd_halt = 0;
+static u8 *I2CDMABuf_va = 0;
+static u32 I2CDMABuf_pa = 0;
 static struct task_struct *thread = NULL;
 static DECLARE_WAIT_QUEUE_HEAD(waiter);
 
@@ -49,14 +48,14 @@ static int tpd_wb_start_local[TPD_WARP_CNT] = TPD_WARP_START;
 static int tpd_wb_end_local[TPD_WARP_CNT]   = TPD_WARP_END;
 #endif
 #if (defined(TPD_HAVE_CALIBRATION) && !defined(TPD_CUSTOM_CALIBRATION))
-static int tpd_calmat_local[8]     = TPD_CALIBRATION_MATRIX;
+//static int tpd_calmat_local[8]     = TPD_CALIBRATION_MATRIX;
 static int tpd_def_calmat_local[8] = TPD_CALIBRATION_MATRIX;
 #endif
 
 static void tpd_eint_interrupt_handler(void);
 static int touch_event_handler(void *unused);
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
 static int tpd_i2c_remove(struct i2c_client *client);
 extern void mt65xx_eint_unmask(unsigned int line);
 extern void mt65xx_eint_mask(unsigned int line);
@@ -70,21 +69,25 @@ static struct i2c_client *i2c_client = NULL;
 static const struct i2c_device_id tpd_i2c_id[] = {{"mtk-tpd",0},{}};
 static unsigned short force[] = {0, 0xB8, I2C_CLIENT_END,I2C_CLIENT_END};
 static const unsigned short * const forces[] = { force, NULL };
-static struct i2c_client_address_data addr_data = { .forces = forces,};
+//static struct i2c_client_address_data addr_data = { .forces = forces,};
+static struct i2c_board_info __initdata i2c_tpd = { I2C_BOARD_INFO("mtk-tpd", (0xB8>>1))};
+
+
 struct i2c_driver tpd_i2c_driver = {                       
     .probe = tpd_i2c_probe,                                   
     .remove = tpd_i2c_remove,                           
     .detect = tpd_i2c_detect,                           
     .driver.name = "mtk-tpd", 
     .id_table = tpd_i2c_id,                             
-    .address_data = &addr_data,                        
+    .address_list = (const unsigned short*) forces,
 }; 
 
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) {
+static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info) {
     strcpy(info->type, "mtk-tpd");
     return 0;
 }
 
+/*
 static int tpd_i2c_write(struct i2c_client *client, const uint8_t *buf, int len)
 {
     int i = 0;
@@ -95,7 +98,7 @@ static int tpd_i2c_write(struct i2c_client *client, const uint8_t *buf, int len)
     
     if(len < 8)
     {
-        client->addr = client->addr & I2C_MASK_FLAG | I2C_ENEXT_FLAG;
+        client->addr = ( client->addr & I2C_MASK_FLAG ) | I2C_ENEXT_FLAG;
         return i2c_master_send(client, buf, len);
     }
     else
@@ -104,6 +107,7 @@ static int tpd_i2c_write(struct i2c_client *client, const uint8_t *buf, int len)
         return i2c_master_send(client, I2CDMABuf_pa, len);
     }    
 }
+*/
 
 static int tpd_i2c_read(struct i2c_client *client, uint8_t *buf, int len)
 {
@@ -111,13 +115,13 @@ static int tpd_i2c_read(struct i2c_client *client, uint8_t *buf, int len)
     
     if(len < 8)
     {
-        client->addr = client->addr & I2C_MASK_FLAG | I2C_ENEXT_FLAG;
+        client->addr = ( client->addr & I2C_MASK_FLAG ) | I2C_ENEXT_FLAG;
         return i2c_master_recv(client, buf, len);
     }
     else
     {
-        client->addr = client->addr & I2C_MASK_FLAG | I2C_DMA_FLAG | I2C_ENEXT_FLAG;
-        ret = i2c_master_recv(client, I2CDMABuf_pa, len);
+        client->addr = ( ( client->addr & I2C_MASK_FLAG ) | I2C_DMA_FLAG ) | I2C_ENEXT_FLAG;
+        ret = i2c_master_recv(client, (u8 *)I2CDMABuf_pa, len);
     
         if(ret < 0)
         {
@@ -133,7 +137,7 @@ static int tpd_i2c_read(struct i2c_client *client, uint8_t *buf, int len)
 }
 
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id) {             
-    int err = 0, ret = -1;
+    int err = 0;// ret = -1;
     
     #ifdef TPD_NO_GPIO
     u16 temp;
@@ -186,17 +190,20 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     return 0;
 }
 
-void tpd_eint_interrupt_handler(void) { 
-    TPD_DEBUG_PRINT_INT; tpd_flag=1; wake_up_interruptible(&waiter);
+void tpd_eint_interrupt_handler(void)
+{ 
+    TPD_DEBUG_PRINT_INT;
+    tpd_flag=1;
+    wake_up_interruptible(&waiter);
 } 
 
 static int tpd_i2c_remove(struct i2c_client *client) 
 {
     if(I2CDMABuf_va)
     {
-	dma_free_coherent(NULL, 4096, I2CDMABuf_va, I2CDMABuf_pa);
-	I2CDMABuf_va = NULL;
-	I2CDMABuf_pa = 0;
+    	dma_free_coherent(NULL, 4096, I2CDMABuf_va, I2CDMABuf_pa);
+    	I2CDMABuf_va = NULL;
+    	I2CDMABuf_pa = 0;
     }
     return 0;
 }
@@ -214,23 +221,25 @@ void tpd_down(int raw_x, int raw_y, int x, int y, int p) {
 }
 
 void tpd_up(int raw_x, int raw_y, int x, int y, int p) {
-    input_report_abs(tpd->dev, ABS_PRESSURE, 0);
+    //input_report_abs(tpd->dev, ABS_PRESSURE, 0);
     input_report_key(tpd->dev, BTN_TOUCH, 0);
-    input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 0);
-    input_report_abs(tpd->dev, ABS_MT_WIDTH_MAJOR, 0);
-    input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
-    input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
+    //input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 0);
+    //input_report_abs(tpd->dev, ABS_MT_WIDTH_MAJOR, 0);
+    //input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
+    //input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
     input_mt_sync(tpd->dev);
     TPD_DEBUG("U[%4d %4d %4d]\n", x, y, 0);
     TPD_EM_PRINT(raw_x, raw_y, x, y, p, 0);
 }
 
-static int touch_event_handler(void *unused) {
+static int touch_event_handler(void *unused)
+{
     struct sched_param param = { .sched_priority = RTPM_PRIO_TPD }; 
     static int x1, y1, x2, y2, raw_x1, raw_y1, raw_x2, raw_y2;
     int temp_x1 = x1, temp_y1 = y1, temp_raw_x1 = raw_x1, temp_raw_y1 = raw_y1;
+    int lastUp_x = 0, lastUp_y = 0;
     char buffer[10];
-    int pending = 0, ret = -1, touching, oldtouching;
+    int ret = -1, touching, oldtouching;//int pending = 0
     unsigned char Wrbuf[1] = {0};
     
     sched_setscheduler(current, SCHED_RR, &param); 
@@ -242,16 +251,17 @@ static int touch_event_handler(void *unused) {
         TPD_DEBUG_SET_TIME;
         set_current_state(TASK_RUNNING); 
 
-        i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG | I2C_ENEXT_FLAG;
+        i2c_client->addr = ( i2c_client->addr & I2C_MASK_FLAG ) | I2C_ENEXT_FLAG;
         ret = i2c_master_send(i2c_client, Wrbuf, 1);
         if(ret != sizeof(Wrbuf))
         {
             TPD_DEBUG("[mtk-tpd] i2c write communcate error: 0x%x\n", ret);
             continue;
         }
-        i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG | I2C_DMA_FLAG | I2C_ENEXT_FLAG;
-        ret = tpd_i2c_read(i2c_client, buffer, 10);
-        if (ret != sizeof(buffer))
+        i2c_client->addr = ( ( i2c_client->addr & I2C_MASK_FLAG ) | I2C_DMA_FLAG ) | I2C_ENEXT_FLAG;
+        ret = tpd_i2c_read(i2c_client, buffer, 7);
+        buffer[7] = buffer[8] = buffer[9] = 0;
+        if (ret != 7)//sizeof(buffer)
         {
             TPD_DEBUG("[mtk-tpd] i2c read communcate error: 0x%x\n", ret);
             continue;
@@ -279,13 +289,18 @@ static int touch_event_handler(void *unused) {
             if(oldtouching > 0)
             {
                 //tpd_up(raw_y1, raw_x1, y1, x1, 0);	
-                tpd_up(raw_x1, raw_y1, x1, y1, 0);	
+                //tpd_up(raw_x1, raw_y1, x1, y1, 0);
+                lastUp_x = x1;
+                lastUp_y = y1;
             }
             if(oldtouching > 1)
             {
                 //tpd_up(raw_y2, raw_x2, y2, x2, 0);	
-                tpd_up(raw_x2, raw_y2, x2, y2, 0);	
+                //tpd_up(raw_x2, raw_y2, x2, y2, 0);
+                //lastUp_x = x1;
+                //lastUp_y = y1;
             }
+            tpd_up(lastUp_x, lastUp_y, lastUp_x, lastUp_y, 0);
             break;
         case 1:
             tpd_calibrate(&x1, &y1);
@@ -296,12 +311,16 @@ static int touch_event_handler(void *unused) {
                 if(abs(x1 - x2) < 2 && abs(y1 - y2) < 2) // need to adjust.
                 {
                     //tpd_up(temp_raw_y1, temp_raw_x1, temp_y1, temp_x1, 0);
-                    tpd_up(temp_raw_x1, temp_raw_y1, temp_x1, temp_y1, 0);
+                    
+                    //For ICS
+                    //tpd_up(temp_raw_x1, temp_raw_y1, temp_x1, temp_y1, 0);
                 }
                 else
                 {
                     //tpd_up(raw_y2, raw_x2, y2, x2, 0);
-                    tpd_up(raw_x2, raw_y2, x2, y2, 0);
+                    
+                    //For ICS
+                    //tpd_up(raw_x2, raw_y2, x2, y2, 0);
                 }
             }
             break;
@@ -309,9 +328,9 @@ static int touch_event_handler(void *unused) {
             tpd_calibrate(&x1, &y1);
             //tpd_down(raw_y1, raw_x1, y1, x1, 1);
             tpd_down(raw_x1, raw_y1, x1, y1, 1);
-            tpd_calibrate(&x2, &y2);
+            //tpd_calibrate(&x2, &y2);
             //tpd_down(raw_y2, raw_x2, y2, x2, 1);
-            tpd_down(raw_x2, raw_y2, x2, y2, 1);
+            //tpd_down(raw_x2, raw_y2, x2, y2, 1);
             break;
         default:
             TPD_DEBUG("[mtk-tpd] invalid touch num: 0x%x\n", touching);
@@ -329,10 +348,12 @@ static int touch_event_handler(void *unused) {
 
 int tpd_local_init(void) 
 {
-     if(i2c_add_driver(&tpd_i2c_driver)!=0) {
-      TPD_DMESG("unable to add i2c driver.\n");
-      return -1;
-    }
+     if(i2c_add_driver(&tpd_i2c_driver)!=0)
+     {
+          TPD_DMESG("unable to add i2c driver.\n");
+          return -1;
+     }
+     
 #ifdef TPD_HAVE_BUTTON     
     tpd_button_setting(TPD_KEY_COUNT, tpd_keys_local, tpd_keys_dim_local);// initialize tpd button data
 #endif   
@@ -353,14 +374,15 @@ int tpd_local_init(void)
 }
 
 /* Function to manage low power suspend */
-void tpd_suspend(struct i2c_client *client, pm_message_t message)
+//void tpd_suspend(struct i2c_client *client, pm_message_t message)
+static void tpd_suspend( struct early_suspend *h )
 {
     int ret = 0;
     unsigned char Wrbuf[2] = {0x14, 0x02};
     tpd_halt = 1;
     mt65xx_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
 
-    i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG | I2C_ENEXT_FLAG;
+    i2c_client->addr = ( i2c_client->addr & I2C_MASK_FLAG ) | I2C_ENEXT_FLAG;
     ret = i2c_master_send(i2c_client, Wrbuf, 2);
     if(ret != sizeof(Wrbuf))
     {
@@ -369,12 +391,13 @@ void tpd_suspend(struct i2c_client *client, pm_message_t message)
 }
 
 /* Function to manage power-on resume */
-void tpd_resume(struct i2c_client *client)
+//void tpd_resume(struct i2c_client *client)
+static void tpd_resume( struct early_suspend *h )
 {   
     int ret = 0;
     unsigned char Wrbuf[2] = {0x14, 0x00};
     
-    i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG | I2C_ENEXT_FLAG;
+    i2c_client->addr = ( i2c_client->addr & I2C_MASK_FLAG ) | I2C_ENEXT_FLAG;
     ret = i2c_master_send(i2c_client, Wrbuf, 2);
     if(ret != sizeof(Wrbuf))
     {
@@ -396,10 +419,13 @@ static struct tpd_driver_t tpd_device_driver = {
 #endif
 };
 /* called when loaded into kernel */
-static int __init tpd_driver_init(void) {
+static int __init tpd_driver_init(void)
+{
     printk("MediaTek pixcir168 touch panel driver init\n");
-                if(tpd_driver_add(&tpd_device_driver) < 0)
-                        TPD_DMESG("add generic driver failed\n");
+    i2c_register_board_info(0, &i2c_tpd, 1);
+    if(tpd_driver_add(&tpd_device_driver) < 0)
+            TPD_DMESG("add generic driver failed\n");
+            
     return 0;
 }
 

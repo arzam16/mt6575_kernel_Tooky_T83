@@ -1,3 +1,52 @@
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   ALPS
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author: 
+ * -------
+ *   Anyuan Huang (MTK70663)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 04 20 2012 chengxue.shen
+ * [ALPS00272900] HI542 Sensor Driver Check In
+ * SIV120B Sensor driver Modify For MT6577 dual core processor
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ *
+ * 03 09 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Add the SIV120B sensor driver for MT6575 LDVT.
+ *
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
@@ -7,6 +56,7 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <asm/system.h>
 #include <asm/io.h>
 
 #include "kd_camera_hw.h"
@@ -53,6 +103,8 @@ typedef struct
 
 #define Sleep(ms) mdelay(ms)
 
+static DEFINE_SPINLOCK(siv120d_drv_lock);
+
 /* Global Valuable */
 SIV120DStatus SIV120DCurrentStatus;
 MSDK_SENSOR_CONFIG_STRUCT SIV120DSensorConfigData;
@@ -82,12 +134,16 @@ static void SIV120DSetPage(kal_uint8 iPage)
   if(SIV120DCurrentStatus.iCurrentPage == iPage)
     return ;
 
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iCurrentPage = iPage;
+  spin_unlock(&siv120d_drv_lock);
+  
   SIV120DWriteCmosSensor(0x00,iPage);
 }
 
 static void SIV120DInitialPara(void)
 {
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.bNightMode = KAL_FALSE;
   SIV120DCurrentStatus.iWB = AWB_MODE_AUTO;
   SIV120DCurrentStatus.iAE = AE_MODE_AUTO;
@@ -109,6 +165,7 @@ static void SIV120DInitialPara(void)
 
   SIV120DCurrentStatus.MinFpsNormal = SIV120D_FPS(10);
   SIV120DCurrentStatus.MinFpsNight =  SIV120DCurrentStatus.MinFpsNormal >> 1;
+  spin_unlock(&siv120d_drv_lock);
 }
 
 static void SIV120DInitialSetting(void)
@@ -737,11 +794,36 @@ static void SIV120BInitialSetting(void)
   SIV120DWriteCmosSensor(0x03,0xA5); //0x55
 }
 
+/*************************************************************************
+* FUNCTION
+*    SIV120DHalfAdjust
+*
+* DESCRIPTION
+*    This function dividend / divisor and use round-up.
+*
+* PARAMETERS
+*    dividend
+*    divisor
+*
+* RETURNS
+*    [dividend / divisor]
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 __inline static kal_uint32 SIV120DHalfAdjust(kal_uint32 dividend, kal_uint32 divisor)
 {
   return (dividend * 2 + divisor) / (divisor * 2); /* that is [dividend / divisor + 0.5]*/
 }
 
+/*************************************************************************
+* FUNCTION
+*   SIV120DSetShutterStep
+*
+* DESCRIPTION
+*   This function is to calculate & set shutter step register .
+*
+*************************************************************************/
 static void SIV120DSetShutterStep(void)
 {       
   const kal_uint8 banding = SIV120DCurrentStatus.iBanding == AE_FLICKER_MODE_50HZ ? SIV120D_NUM_50HZ : SIV120D_NUM_60HZ;
@@ -749,8 +831,11 @@ static void SIV120DSetShutterStep(void)
 
   if(SIV120DCurrentStatus.iShutterStep == shutter_step)
     return ;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iShutterStep = shutter_step;
+  spin_unlock(&siv120d_drv_lock);
+  
   ASSERT(shutter_step <= 0xFF);    
   /* Block 1:0x34  shutter step*/
   SIV120DSetPage(1);
@@ -759,6 +844,14 @@ static void SIV120DSetShutterStep(void)
   SENSORDB("Set Shutter Step:%x\n",shutter_step);
 }/* SIV120DSetShutterStep */
 
+/*************************************************************************
+* FUNCTION
+*   SIV120DSetFrameCount
+*
+* DESCRIPTION
+*   This function is to set frame count register .
+*
+*************************************************************************/
 static void SIV120DSetFrameCount(void)
 {    
   kal_uint16 Frame_Count,min_fps = 100;
@@ -769,8 +862,10 @@ static void SIV120DSetFrameCount(void)
 
   if(SIV120DCurrentStatus.iFrameCount == Frame_Count)
     return ;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iFrameCount = Frame_Count;
+  spin_unlock(&siv120d_drv_lock);  
 
   SENSORDB("min_fps:%d,Frame_Count:%x\n",min_fps/SIV120D_FRAME_RATE_UNIT,Frame_Count);
   /*Block 01: 0x11  Max shutter step,for Min frame rate */
@@ -778,6 +873,22 @@ static void SIV120DSetFrameCount(void)
   SIV120DWriteCmosSensor(0x11,Frame_Count&0xFF);    
 }/* SIV120DSetFrameCount */
 
+/*************************************************************************
+* FUNCTION
+*   SIV120DConfigBlank
+*
+* DESCRIPTION
+*   This function is to set Blank size for Preview mode .
+*
+* PARAMETERS
+*   iBlank: target HBlank size
+*      iHz: banding frequency
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static void SIV120DConfigBlank(kal_uint16 hblank,kal_uint16 vblank)
 {    
   SENSORDB("hblank:%x,vblank:%x\n",hblank,vblank);
@@ -791,8 +902,11 @@ static void SIV120DConfigBlank(kal_uint16 hblank,kal_uint16 vblank)
   if((SIV120DCurrentStatus.iHblank == hblank) && (SIV120DCurrentStatus.iVblank == vblank) )
      return ;
 
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iHblank = hblank;
   SIV120DCurrentStatus.iVblank = vblank;
+  spin_unlock(&siv120d_drv_lock); 
+   
   ASSERT(hblank <= SIV120D_BLANK_REGISTER_LIMITATION && vblank <= SIV120D_BLANK_REGISTER_LIMITATION);
   SIV120DSetPage(0);
   SIV120DWriteCmosSensor(0x20,((hblank>>4)&0xF0)|((vblank>>8)&0x0F));
@@ -801,6 +915,23 @@ static void SIV120DConfigBlank(kal_uint16 hblank,kal_uint16 vblank)
   SIV120DSetShutterStep();
 }   /* SIV120DConfigBlank */
 
+/*************************************************************************
+* FUNCTION
+*    SIV120DCalFps
+*
+* DESCRIPTION
+*    This function calculate & set frame rate and fix frame rate when video mode
+*    MUST BE INVOKED AFTER SIM120C_preview() !!!
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void SIV120DCalFps(void)
 {
   kal_uint16 Line_length,Dummy_Line,Dummy_Pixel;
@@ -832,11 +963,20 @@ static void SIV120DCalFps(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   SIV120DFixFrameRate
+*
+* DESCRIPTION
+*   This function fix the frame rate of image sensor.
+*
+*************************************************************************/
 static void SIV120DFixFrameRate(kal_bool bEnable)
 {
   if(SIV120DCurrentStatus.bFixFrameRate == bEnable)
     return ;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.bFixFrameRate = bEnable;
   if(bEnable == KAL_TRUE)
   {   //fix frame rate
@@ -846,15 +986,26 @@ static void SIV120DFixFrameRate(kal_bool bEnable)
   {        
     SIV120DCurrentStatus.iControl &= 0x3F;
   }
+  spin_unlock(&siv120d_drv_lock);
+  
   SIV120DSetPage(0);
   SIV120DWriteCmosSensor(0x04,SIV120DCurrentStatus.iControl);
 }   /* SIV120DFixFrameRate */
 
+/*************************************************************************
+* FUNCTION
+*   SIV120DHVmirror
+*
+* DESCRIPTION
+*   This function config the HVmirror of image sensor.
+*
+*************************************************************************/
 static void SIV120DHVmirror(kal_uint8 HVmirrorType)
 {    
   if(SIV120DCurrentStatus.iMirror == HVmirrorType)
     return ;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iMirror = HVmirrorType;
   SIV120DCurrentStatus.iControl = SIV120DCurrentStatus.iControl & 0xFC;  
   switch (HVmirrorType) 
@@ -871,19 +1022,39 @@ static void SIV120DHVmirror(kal_uint8 HVmirrorType)
     case IMAGE_NORMAL:
     default:
       SIV120DCurrentStatus.iControl |= 0x00;
-  }    
+  }
+  spin_unlock(&siv120d_drv_lock);
+  
   SIV120DSetPage(0);
   SIV120DWriteCmosSensor(0x04,SIV120DCurrentStatus.iControl);
 }   /* SIV120DHVmirror */
 
+/*************************************************************************
+* FUNCTION
+*  SIV120DNightMode
+*
+* DESCRIPTION
+*  This function night mode of SIV120D.
+*
+* PARAMETERS
+*  none
+*
+* RETURNS
+*  None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void SIV120DNightMode(kal_bool enable)
 {
   SENSORDB("NightMode %d\n",enable);
 
   if (enable == SIV120DCurrentStatus.bNightMode)
     return ;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.bNightMode = enable;
+  spin_unlock(&siv120d_drv_lock);
 
   if ( SIV120DCurrentStatus.bVideoMode == KAL_TRUE)// camera mode
     return ;
@@ -915,10 +1086,27 @@ void SIV120DNightMode(kal_bool enable)
   SIV120DSetFrameCount(); 
 }  /* SIV120DNightMode */
 
+/*************************************************************************
+* FUNCTION
+*  SIV120DOpen
+*
+* DESCRIPTION
+*  This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*  None
+*
+* RETURNS
+*  None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 SIV120DOpen(void)
 {
 
   kal_uint16 sensor_id=0;
+  kal_uint16 temp_data;
 
   SENSORDB("SIV120D Sensor open\n");
 
@@ -930,7 +1118,12 @@ UINT32 SIV120DOpen(void)
   {
     return ERROR_SENSOR_CONNECT_FAIL;
   }
-  SIV120DCurrentStatus.iSensorVersion  = SIV120DReadCmosSensor(0x02);  
+  
+  temp_data = SIV120DReadCmosSensor(0x02);
+  spin_lock(&siv120d_drv_lock);
+  SIV120DCurrentStatus.iSensorVersion  = temp_data;  
+  spin_unlock(&siv120d_drv_lock);
+  
   SENSORDB("SIV120B Sensor Version %x\n",SIV120DCurrentStatus.iSensorVersion);
   //SIV120D_set_isp_driving_current(3);
   SIV120DInitialPara();
@@ -947,12 +1140,45 @@ UINT32 SIV120DOpen(void)
   return ERROR_NONE;
 }  /* SIV120DOpen() */
 
+/*************************************************************************
+* FUNCTION
+*  SIV120DClose
+*
+* DESCRIPTION
+*  This function is to turn off sensor module power.
+*
+* PARAMETERS
+*  None
+*
+* RETURNS
+*  None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 SIV120DClose(void)
 {
 //  CISModulePowerOn(FALSE);
   return ERROR_NONE;
 }  /* SIV120DClose() */
 
+/*************************************************************************
+* FUNCTION
+*  SIV120DPreview
+*
+* DESCRIPTION
+*  This function start the sensor preview.
+*
+* PARAMETERS
+*  *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*  None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 SIV120DPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
             MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -962,10 +1188,13 @@ UINT32 SIV120DPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
   SENSORDB("Camera preview\r\n");
   //4  <1> preview of capture PICTURE
   SIV120DFixFrameRate(KAL_FALSE);
+
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.MinFpsNormal = SIV120D_FPS(10);
   SIV120DCurrentStatus.MinFpsNight =  SIV120DCurrentStatus.MinFpsNormal >> 1;  
   SIV120DCurrentStatus.bVideoMode =  KAL_FALSE;
-   
+  spin_unlock(&siv120d_drv_lock);	
+  
   //4 <2> set mirror and flip
   SIV120DHVmirror(sensor_config_data->SensorImageMirror);
 
@@ -1081,8 +1310,11 @@ BOOL SIV120DSetParamWB(UINT16 para)
   SENSORDB("WB %d\n",para);
   if(SIV120DCurrentStatus.iWB== para)
     return FALSE;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iWB = para;
+  spin_unlock(&siv120d_drv_lock);	
+   
   SIV120DSetPage(2);
   switch (para)
   {
@@ -1129,8 +1361,11 @@ BOOL SIV120DSetParamAE(UINT16 para)
   SENSORDB("AE %d\n",para);
   if(SIV120DCurrentStatus.iAE== para)
     return FALSE;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iAE = para;
+  spin_unlock(&siv120d_drv_lock);
+  
   SIV120DSetPage(1);
   if(KAL_TRUE == para)
     SIV120DWriteCmosSensor(0x10,0x80);
@@ -1144,8 +1379,11 @@ BOOL SIV120DSetParamEffect(UINT16 para)
   SENSORDB("Effect %d\n",para);
   if(SIV120DCurrentStatus.iEffect== para)
     return FALSE;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iEffect = para;
+  spin_unlock(&siv120d_drv_lock);
+  
   SIV120DSetPage(3);
   switch (para)
   {
@@ -1184,8 +1422,11 @@ BOOL SIV120DSetParamBanding(UINT16 para)
   SENSORDB("Banding %d\n",para);
   if(SIV120DCurrentStatus.iBanding== para)
     return TRUE;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iBanding = para;
+  spin_unlock(&siv120d_drv_lock);
+  
   SIV120DSetShutterStep();
   SIV120DSetFrameCount(); 
   return TRUE;
@@ -1196,8 +1437,11 @@ BOOL SIV120DSetParamEV(UINT16 para)
   SENSORDB("Exporsure %d\n",para);
   if(SIV120DCurrentStatus.iEV== para)
     return FALSE;
-
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.iEV = para;  
+  spin_unlock(&siv120d_drv_lock);
+
   SIV120DSetPage(3);
   switch (para)
   {
@@ -1272,19 +1516,27 @@ UINT32 SIV120DYUVSetVideoMode(UINT16 u2FrameRate)
 {
     SENSORDB("SetVideoMode %d\n",u2FrameRate);
 
-  SIV120DFixFrameRate(KAL_TRUE);  
+  SIV120DFixFrameRate(KAL_TRUE);
+  
+  spin_lock(&siv120d_drv_lock);
   SIV120DCurrentStatus.bVideoMode = KAL_TRUE;
   SIV120DCurrentStatus.MinFpsNormal = SIV120D_FPS(25);//FAE: 30 cause flicker
   SIV120DCurrentStatus.MinFpsNight =  SIV120DCurrentStatus.MinFpsNormal >> 1; 
+  spin_unlock(&siv120d_drv_lock);
+  
   if (u2FrameRate == 25)
   {
+    spin_lock(&siv120d_drv_lock);
     SIV120DCurrentStatus.bNightMode = KAL_FALSE;
+	spin_unlock(&siv120d_drv_lock);
   }
   else if (u2FrameRate == 12)       
   {
   //VideoCamera.java 
   //(mIsVideoNightMode ? mProfile.videoBitRate / 2 : mProfile.videoBitRate)
+    spin_lock(&siv120d_drv_lock);
     SIV120DCurrentStatus.bNightMode = KAL_TRUE;
+	spin_unlock(&siv120d_drv_lock);
   }
   else 
   {

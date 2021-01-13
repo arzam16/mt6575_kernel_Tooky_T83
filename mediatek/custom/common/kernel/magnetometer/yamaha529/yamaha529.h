@@ -1,5 +1,20 @@
+/*yamaha529.h - YAMAHA304 compass driver
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
-
+/*
+ * Definitions for yamaha529 compass chip.
+ */
 
 
 #ifndef _YAMAHA529_H_
@@ -39,6 +54,12 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 
+/*
+#define YLOGD(...) 
+#define YLOGI(...) 
+#define YLOGW(...) printk(KERN_WARNING __VA_ARGS__)
+#define YLOGE(...) printk(KERN_ERR __VA_ARGS__)
+*/
 
 #define MSE_TAG                  "MSENSOR"
 #define MSE_FUN(f)               printk(KERN_INFO MSE_TAG" %s\r\n", __FUNCTION__)
@@ -224,6 +245,25 @@ STATIC int geomagnetic_driver_init(struct geomagnetic_hwdep_driver *hwdep_driver
 
 #endif
 
+/*
+ * Copyright (c) 2010 Yamaha Corporation
+ *
+ * This software is provided 'as-is', without any express or implied
+ * warranty.  In no event will the authors be held liable for any damages
+ * arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you must not
+ *    claim that you wrote the original software. If you use this software
+ *    in a product, an acknowledgment in the product documentation would be
+ *    appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ */
 
 #ifndef _YAS529_LINUX_H_
 #define _YAS529_LINUX_H_

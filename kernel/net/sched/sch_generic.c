@@ -60,7 +60,7 @@ static inline struct sk_buff *dequeue_skb(struct Qdisc *q)
 
 		/* check the reason of requeuing without tx lock first */
 		txq = netdev_get_tx_queue(dev, skb_get_queue_mapping(skb));
-		if (!netif_tx_queue_frozen_or_stopped(txq)) {
+		if (!netif_xmit_frozen_or_stopped(txq)) {
 			q->gso_skb = NULL;
 			q->q.qlen--;
 		} else
@@ -121,7 +121,7 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 	spin_unlock(root_lock);
 
 	HARD_TX_LOCK(dev, txq, smp_processor_id());
-	if (!netif_tx_queue_frozen_or_stopped(txq))
+	if (!netif_xmit_frozen_or_stopped(txq))
 		ret = dev_hard_start_xmit(skb, dev, txq);
 
 	HARD_TX_UNLOCK(dev, txq);
@@ -143,7 +143,7 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 		ret = dev_requeue_skb(skb, q);
 	}
 
-	if (ret && netif_tx_queue_frozen_or_stopped(txq))
+	if (ret && netif_xmit_frozen_or_stopped(txq))
 		ret = 0;
 
 	return ret;
@@ -189,15 +189,15 @@ static inline int qdisc_restart(struct Qdisc *q)
 
 void __qdisc_run(struct Qdisc *q)
 {
-	unsigned long start_time = jiffies;
+	int quota = weight_p;
 
 	while (qdisc_restart(q)) {
 		/*
-		 * Postpone processing if
-		 * 1. another process needs the CPU;
-		 * 2. we've been doing it for too long.
+		 * Ordered by possible occurrence: Postpone processing if
+		 * 1. we've exceeded packet quota
+		 * 2. another process needs the CPU;
 		 */
-		if (need_resched() || jiffies != start_time) {
+		if (--quota <= 0 || need_resched()) {
 			__netif_schedule(q);
 			break;
 		}
@@ -242,10 +242,11 @@ static void dev_watchdog(unsigned long arg)
 				 * old device drivers set dev->trans_start
 				 */
 				trans_start = txq->trans_start ? : dev->trans_start;
-				if (netif_tx_queue_stopped(txq) &&
+				if (netif_xmit_stopped(txq) &&
 				    time_after(jiffies, (trans_start +
 							 dev->watchdog_timeo))) {
 					some_queue_timedout = 1;
+					txq->trans_timeout++;
 					break;
 				}
 			}
@@ -799,6 +800,11 @@ static bool some_qdisc_is_busy(struct net_device *dev)
 
 		dev_queue = netdev_get_tx_queue(dev, i);
 		q = dev_queue->qdisc_sleeping;
+		if(q == NULL){
+            printk(KERN_WARNING "some_qdisc_is_busy dev=0x%x, i=%d, dev_q=0x%x",
+				(u32)dev, i, (u32)dev_queue);
+			BUG_ON(q == NULL);
+		}
 		root_lock = qdisc_lock(q);
 
 		spin_lock_bh(root_lock);

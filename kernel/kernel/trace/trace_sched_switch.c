@@ -26,7 +26,7 @@ static struct trace_array	*ctx_trace;
 static int __read_mostly	tracer_enabled;
 static int			sched_ref;
 static DEFINE_MUTEX(sched_register_mutex);
-int sched_stopped = 1;
+int			sched_stopped = 1;
 
 
 void
@@ -52,6 +52,11 @@ tracing_sched_switch_trace(struct trace_array *tr,
 	entry->next_prio		= next->prio;
 	entry->next_state		= next->state;
 	entry->next_cpu	= task_cpu(next);
+
+        if(entry->prev_state == TASK_UNINTERRUPTIBLE && prev->in_iowait == 1)
+        {
+            entry -> prev_state = MTK_TASK_IO_WAIT;
+        }
 
 	if (!filter_check_discard(call, entry, buffer, event))
 		trace_buffer_unlock_commit(buffer, event, flags, pc);
@@ -108,6 +113,11 @@ tracing_sched_wakeup_trace(struct trace_array *tr,
 	entry->next_prio		= wakee->prio;
 	entry->next_state		= wakee->state;
 	entry->next_cpu			= task_cpu(wakee);
+
+        if(entry->next_state == TASK_UNINTERRUPTIBLE && wakee->in_iowait == 1)
+        {
+            entry->next_state= MTK_TASK_IO_WAIT;
+        }
 
 	if (!filter_check_discard(call, entry, buffer, event))
 		ring_buffer_unlock_commit(buffer, event);
@@ -447,17 +457,26 @@ void save_isr_name()
     unsigned long flags;
 
     for (i = 0; i< NR_IRQS; i++) {
-	raw_spin_lock_irqsave(&irq_desc[i].lock, flags);
-	action = irq_desc[i].action;
-	if (!action){
-	    raw_spin_unlock_irqrestore(&irq_desc[i].lock, flags);
-	    continue;
-	}
-	tracing_record_isr(i, action->name);
-	printk(KERN_DEBUG "IRQ[%d] Handler:%s\n",i,action->name);
-	raw_spin_unlock_irqrestore(&irq_desc[i].lock, flags);
+        raw_spin_lock_irqsave(&irq_desc[i].lock, flags);
+        action = irq_desc[i].action;
+        if (!action){
+            raw_spin_unlock_irqrestore(&irq_desc[i].lock, flags);
+            continue;
+        }
+        tracing_record_isr(i, action->name);
+        printk(KERN_DEBUG "IRQ[%d] Handler:%s\n",i,action->name);
+        raw_spin_unlock_irqrestore(&irq_desc[i].lock, flags);
     }
-
+#ifdef CONFIG_SMP
+	tracing_record_isr(2,"IPI_TIMER");
+	tracing_record_isr(3,"IPI_RESCHEDULE");
+	tracing_record_isr(4,"IPI_CALL_FUNC");
+	tracing_record_isr(5,"IPI_CALL_FUNC_SINGLE");
+	tracing_record_isr(6,"IPI_CPU_STOP");
+	tracing_record_isr(7,"IPI_CPU_BACKTRACE");
+	tracing_record_isr(29,"LOCAL_TIMER");
+	tracing_record_isr(30,"LOCAL_WDT");
+#endif
 }
 #endif
 __init static int init_sched_switch_trace(void)

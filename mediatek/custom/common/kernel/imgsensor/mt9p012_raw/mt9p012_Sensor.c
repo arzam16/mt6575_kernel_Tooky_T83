@@ -1,4 +1,182 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 02 19 2012 koli.lin
+ * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
+ * [Camera] 1. Modify the AE converge speed in the video mode.
+ *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
+ *
+ * 10 12 2010 koli.lin
+ * [ALPS00127101] [Camera] AE will flash
+ * [Camera]Create Vsync interrupt to handle the exposure time, sensor gain and raw gain control.
+ *
+ * 09 10 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .alps dual sensor
+ *
+ * 09 02 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .roll back dual sensor
+ *
+ * 07 27 2010 sean.cheng
+ * [ALPS00003112] [Need Patch] [Volunteer Patch] ISP/Sensor driver modification for Customer support
+ * .1. add master clock switcher 
+ *  2. add master enable/disable 
+ *  3. add dummy line/pixel for sensor 
+ *  4. add sensor driving current setting
+ *
+ * 07 02 2010 sean.cheng
+ * [ALPS00121215][Camera] Change color when switch low and high 
+ * .Change Video Delay = 5, preview delay = 2
+ *
+ * 07 01 2010 sean.cheng
+ * [ALPS00121215][Camera] Change color when switch low and high 
+ * .Add video delay frame.
+ *
+ * 06 15 2010 koli.lin
+ * [ALPS00002569][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for 
+ * Fix the video recording frame rate don't fix when the setting is 15fps.
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .
+ * 1. Add set zoom factor and capdelay frame for YUV sensor 
+ * 2. Modify e1k sensor setting
+ *
+ * 05 07 2010 sean.cheng
+ * [ALPS00005476][Performance][Camera] Camera startup time is slow 
+ * .
+ * Increase the delay for sensor reset, due to short delay will cause unstable
+ *
+ * 04 30 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Change DS269 sensor type to YUV sensor.
+ *
+ * Feb 24 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ *
+ *
+ * Dec 23 2009 mtk01592
+ * [DUMA00021387] [CCT Issue] Sensor Curve value�S���s�JNVRAM��
+ *
+ *
+ * Dec 21 2009 mtk70508
+ * [DUMA00147177] Winmo sensor  and lens driver  modification
+ *
+ *
+ * Nov 24 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ *
+ *
+ * Oct 29 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ *
+ *
+ * Oct 27 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ *
+ *
+ * Aug 13 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ *
+ *
+ * Aug 5 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ *
+ *
+ * Jul 17 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ *
+ *
+ * Jul 7 2009 mtk01051
+ * [DUMA00008051] [Camera Driver] Add drivers for camera high ISO binning mode.
+ * Add ISO query info for Sensor
+ *
+ * May 18 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ *
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ *
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ *
+ *
+ * Apr 7 2009 mtk02204
+ * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came
+ *
+ *
+ * Mar 27 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 25 2009 mtk02204
+ * [DUMA00111570] [Camera] The system crash after some operations
+ *
+ *
+ * Mar 20 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 2 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Feb 24 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Dec 27 2008 MTK01813
+ * DUMA_MBJ CheckIn Files
+ * created by clearfsimport
+ *
+ * Dec 10 2008 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Oct 27 2008 mtk01051
+ * [DUMA00000851] Camera related drivers check in
+ * Modify Copyright Header
+ *
+ * Oct 24 2008 mtk02204
+ * [DUMA00000851] Camera related drivers check in
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 
 //s_porting add
 //s_porting add
@@ -512,6 +690,22 @@ kal_bool MT9P012_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx,
   return KAL_TRUE;
 }
 
+/*************************************************************************
+* FUNCTION
+* set_MT9P012_shutter
+*
+* DESCRIPTION
+* This function set e-shutter of MT9P012 to change exposure time.
+*
+* PARAMETERS
+* shutter : exposured lines
+*
+* RETURNS
+* None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void set_MT9P012_shutter(kal_uint16 shutter)
 {
   MT9P012_exposure_lines=shutter;
@@ -541,6 +735,22 @@ void set_MT9P012_shutter(kal_uint16 shutter)
   }
 } /* set_MT9P012_shutter */
 
+/*************************************************************************
+* FUNCTION
+* set_MT9P012_gain
+*
+* DESCRIPTION
+* This function is to set global gain to sensor.
+*
+* PARAMETERS
+* gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+* the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 set_MT9P012_gain(kal_uint16 gain)
 {
   kal_uint32 reg_gain;
@@ -551,6 +761,22 @@ kal_uint16 set_MT9P012_gain(kal_uint16 gain)
       return reg_gain;
 }
 
+/*************************************************************************
+* FUNCTION
+* MT9P012_night_mode
+*
+* DESCRIPTION
+* This function night mode of MT9P012.
+*
+* PARAMETERS
+* none
+*
+* RETURNS
+* None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void MT9P012_night_mode(kal_bool enable)
 {
   kal_uint16 dummy = IMAGE_SENSOR_PV_VBLANKING+MT9P012_PV_dummy_lines;   
@@ -650,6 +876,22 @@ void Config_MT9P012_Window(kal_uint16 startX,kal_uint16 endX,kal_uint16 startY,k
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+* MT9P012Open
+*
+* DESCRIPTION
+* This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+* None
+*
+* RETURNS
+* None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P012Open(void)
 {
   volatile signed char i;
@@ -781,6 +1023,22 @@ UINT32 MT9P012Open(void)
   return ERROR_NONE;
 } /* MT9P012Open() */
 
+/*************************************************************************
+* FUNCTION
+* MT9P012Close
+*
+* DESCRIPTION
+* This function is to turn off sensor module power.
+*
+* PARAMETERS
+* None
+*
+* RETURNS
+* None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P012Close(void)
 {
 //    CISModulePowerOn(FALSE);
@@ -791,6 +1049,23 @@ UINT32 MT9P012Close(void)
   return ERROR_NONE;
 } /* MT9P012Close() */
 
+/*************************************************************************
+* FUNCTION
+* MT9P012Preview
+*
+* DESCRIPTION
+* This function start the sensor preview.
+*
+* PARAMETERS
+* *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+* None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P012Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -1293,6 +1568,10 @@ UINT32 MT9P012FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             }
         break;
 		case SENSOR_FEATURE_SET_ENG_REGISTER:
+/*SensorRegNumber=*pFeatureData32++;
+			RETAILMSG(1, (TEXT("MT9P012 Sensor Reg No %x \r\n"),SensorRegNumber));
+			if (SensorRegNumber>ENGINEER_END)
+				return FALSE;*/
 			SensorRegNumber=ENGINEER_END;
 			for (i=0;i<SensorRegNumber;i++)
 			{

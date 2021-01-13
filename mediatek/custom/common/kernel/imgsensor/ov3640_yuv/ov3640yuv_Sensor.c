@@ -1,4 +1,215 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 10 27 2010 sean.cheng
+ * [ALPS00130222] [MPEG4 recording] Frame rate is 30fps by nigh mode
+ * .check in for YUV night mode fps = 15
+ *
+ * 10 12 2010 sean.cheng
+ * [ALPS00021722] [Need Patch] [Volunteer Patch][Camera]MT6573 Camera related function
+ * .rollback the lib3a for mt6573 camera related files
+ *
+ * 09 10 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .alps dual sensor
+ *
+ * 09 02 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .roll back dual sensor
+ *
+ * 07 27 2010 sean.cheng
+ * [ALPS00003112] [Need Patch] [Volunteer Patch] ISP/Sensor driver modification for Customer support
+ * .1. add master clock switcher 
+ *  2. add master enable/disable 
+ *  3. add dummy line/pixel for sensor 
+ *  4. add sensor driving current setting
+ *
+ * 07 19 2010 sean.cheng
+ * [ALPS00002994][Need Patch] [Volunteer Patch] E1K YUV sensor update customer parameters 
+ * .Optimize the sensor paramter & flicker caputre shutter setting
+ *
+ * 07 06 2010 sean.cheng
+ * [ALPS00121501][Need Resolved][E1K][camera]The preview display abnormal when switch scen mode between auto  and night 
+ * .Remove the gamma setting in night mode
+ *
+ * 07 06 2010 sean.cheng
+ * [ALPS00121385][Camera] set EV as one non-zero value, after capturing one iamge , the value seems to be set to zero 
+ * .change effect_off setting to reserve the EV setting
+ *
+ * 07 02 2010 sean.cheng
+ * [ALPS00121364][Camera] when set AE value, the effect is disabled 
+ * .Modify exposure setting to let effect remain
+ *
+ * 07 01 2010 sean.cheng
+ * [ALPS00121215][Camera] Change color when switch low and high 
+ * .Add video delay frame.
+ *
+ * 06 18 2010 sean.cheng
+ * [ALPS00008131][E1K][Camera]Screen will flash some times in this case 
+ * .Add 2 frame delay for capture back to preview
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .Modify e1k sensor setting
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .
+ * 1. Add set zoom factor and capdelay frame for YUV sensor 
+ * 2. Modify e1k sensor setting
+ *
+ * 06 09 2010 sean.cheng
+ * [ALPS00007960][E1K][Camera]There will be a yellow block show on screen left side when preview 
+ * .Change the VGA setting
+ *
+ * 05 27 2010 sean.cheng
+ * [ALPS00002309][Need Patch] [Volunteer Patch] ALPS.10X.W10.24 Volunteer patch for E1k YUV Sensor support 
+ * .
+ * Update OV3640 yuv sensor init setting
+ *
+ * 05 26 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Update OV3640 yuv sensor init setting
+ *
+ * 05 25 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Add OV3640 YUV sensor driver support
+ *
+ * 05 03 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Fix OV3640 YUV sensor frame rate to 30fps in vidoe mode
+ *
+ * Mar 4 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ * 
+ *
+ * Mar 4 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ * 
+ *
+ * Mar 1 2010 mtk01118
+ * [DUMA00025869] [Camera][YUV I/F & Query feature] check in camera code
+ * 
+ *
+ * Feb 24 2010 mtk01118
+ * [DUMA00025869] [Camera][YUV I/F & Query feature] check in camera code
+ * 
+ *
+ * Nov 24 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Oct 29 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Oct 27 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Aug 13 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Aug 5 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Jul 17 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Jul 7 2009 mtk01051
+ * [DUMA00008051] [Camera Driver] Add drivers for camera high ISO binning mode.
+ * Add ISO query info for Sensor
+ *
+ * May 18 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * Apr 7 2009 mtk02204
+ * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came
+ * 
+ *
+ * Mar 27 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 25 2009 mtk02204
+ * [DUMA00111570] [Camera] The system crash after some operations
+ *
+ *
+ * Mar 20 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 2 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Feb 24 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Dec 27 2008 MTK01813
+ * DUMA_MBJ CheckIn Files
+ * created by clearfsimport
+ *
+ * Dec 10 2008 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Oct 27 2008 mtk01051
+ * [DUMA00000851] Camera related drivers check in
+ * Modify Copyright Header
+ *
+ * Oct 24 2008 mtk02204
+ * [DUMA00000851] Camera related drivers check in
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 //#include <windows.h>
 //#include <memory.h>
 //#include <nkintr.h>
@@ -56,6 +267,9 @@ kal_uint16 get_byte=0;
 }
 
 
+/*******************************************************************************
+* // Adapter for Winmo typedef 
+********************************************************************************/
 #define WINMO_USE 0
 
 #define Sleep(ms) mdelay(ms)
@@ -63,6 +277,9 @@ kal_uint16 get_byte=0;
 #define TEXT
 
 
+/*******************************************************************************
+* // End Adapter for Winmo typedef 
+********************************************************************************/
 
 
 #define	OV3640_LIMIT_EXPOSURE_LINES				(1253)
@@ -336,6 +553,36 @@ static void OV3640_write_shutter(kal_uint16 shutter)
     OV3640_write_cmos_sensor(0x3002, (shutter & 0xFF00) >> 8);  //AEC[8:15]
 
 }    /* OV3640_write_shutter */
+/*
+void OV3640_Computer_AEC(kal_uint16 preview_clk_in_M, kal_uint16 capture_clk_in_M)
+{
+    kal_uint16 PV_Line_Width;
+    kal_uint16 Capture_Line_Width;
+    kal_uint16 Capture_Maximum_Shutter;
+    kal_uint16 Capture_Exposure;
+    kal_uint16 Capture_Gain16;
+    kal_uint16 Capture_Banding_Filter;
+    kal_uint32 Gain_Exposure=0;
+
+    PV_Line_Width = OV3640_PV_PERIOD_PIXEL_NUMS + OV3640_PV_Dummy_Pixels;   
+
+    Capture_Line_Width = OV3640_FULL_PERIOD_PIXEL_NUMS + OV3640_Capture_Dummy_Pixels;
+    Capture_Maximum_Shutter = OV3640_FULL_EXPOSURE_LIMITATION + OV3640_Capture_Dummy_Lines;
+    Gain_Exposure = 1;
+    ///////////////////////
+    Gain_Exposure *=(OV3640_PV_Shutter+OV3640_PV_Extra_Lines);
+    Gain_Exposure *=PV_Line_Width;  //970
+    //   Gain_Exposure /=g_Preview_PCLK_Frequency;
+    Gain_Exposure /=Capture_Line_Width;//1940
+    Gain_Exposure = Gain_Exposure*capture_clk_in_M/preview_clk_in_M;// for clock   
+
+    //OV3640_Capture_Gain16 = Capture_Gain16;
+    OV3640_Capture_Extra_Lines = (Gain_Exposure > Capture_Maximum_Shutter)?
+            (Gain_Exposure - Capture_Maximum_Shutter):0;     
+    
+    OV3640_Capture_Shutter = Gain_Exposure - OV3640_Capture_Extra_Lines;
+}
+*/
 
 void OV3640_Computer_AECAGC(kal_uint16 preview_clk_in_M, kal_uint16 capture_clk_in_M)
 {
@@ -430,6 +677,22 @@ void OV3640_set_isp_driving_current(kal_uint8 current)
 
 
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_NightMode
+*
+* DESCRIPTION
+*	This function night mode of OV3640.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV3640_night_mode(kal_bool enable)
 {
 	//kal_uint16 night = 0;
@@ -1152,6 +1415,22 @@ static void OV3640_set_QXGA_mode(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   OV3640GetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640GetSensorID(UINT32 *sensorID) 
 {
 	volatile signed char i;
@@ -1196,6 +1475,22 @@ UINT32 OV3640GetSensorID(UINT32 *sensorID)
     return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*	OV3640Open
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640Open(void)
 {
     volatile signed char i;
@@ -1260,6 +1555,22 @@ UINT32 OV3640Open(void)
     return ERROR_NONE;
 }	/* OV3640Open() */
 
+/*************************************************************************
+* FUNCTION
+*	OV3640Close
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640Close(void)
 {
 //	CISModulePowerOn(FALSE);
@@ -1447,6 +1758,22 @@ static void OV3640_set_mirror_flip(kal_uint8 image_mirror, kal_uint16 *iStartX, 
  
 }
 
+/*************************************************************************
+* FUNCTION
+*    OV3640GetEvAwbRef
+*
+* DESCRIPTION
+*    This function get sensor Ev/Awb (EV05/EV13) for auto scene detect
+*
+* PARAMETERS
+*    Ref
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void OV3640GetEvAwbRef(UINT32 pSensorAEAWBRefStruct/*PSENSOR_AE_AWB_REF_STRUCT Ref*/)
 {
     PSENSOR_AE_AWB_REF_STRUCT Ref = (PSENSOR_AE_AWB_REF_STRUCT)pSensorAEAWBRefStruct;
@@ -1462,6 +1789,22 @@ static void OV3640GetEvAwbRef(UINT32 pSensorAEAWBRefStruct/*PSENSOR_AE_AWB_REF_S
     Ref->SensorAwbGainRef.AwbRefCWFBgain = 164; /* 1.28125x, 128 base */
 }
 
+/*************************************************************************
+* FUNCTION
+*    OV3640GetCurAeAwbInfo
+*
+* DESCRIPTION
+*    This function get sensor cur Ae/Awb for auto scene detect
+*
+* PARAMETERS
+*    Info
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void OV3640GetCurAeAwbInfo(UINT32 pSensorAEAWBCurStruct/*PSENSOR_AE_AWB_CUR_STRUCT Info*/)
 {
     PSENSOR_AE_AWB_CUR_STRUCT Info = (PSENSOR_AE_AWB_CUR_STRUCT)pSensorAEAWBCurStruct;
@@ -1475,6 +1818,23 @@ static void OV3640GetCurAeAwbInfo(UINT32 pSensorAEAWBCurStruct/*PSENSOR_AE_AWB_C
     Info->SensorAwbGainCur.AwbCurBgain = OV3640_read_cmos_sensor(0x33CA) << 1; /* 128 base */
 }
 
+/*************************************************************************
+* FUNCTION
+*	OV3640Preview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -1622,6 +1982,12 @@ UINT32 OV3640Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	//kal_prompt_trace(MOD_ENG,"Register 0x3001=0x%x",OV3640_read_cmos_sensor(0x3001));
 	//kal_prompt_trace(MOD_ENG,"Register 0x3002=0x%x",OV3640_read_cmos_sensor(0x3002));
 	//kal_prompt_trace(MOD_ENG,"Register 0x3003=0x%x",OV3640_read_cmos_sensor(0x3003));
+/*	kal_prompt_trace(MOD_ENG, "Prev read:shutter=%d, pv_gain=%d",shutter, pv_gain);
+
+	
+
+	kal_prompt_trace(MOD_ENG,"out preview function ");
+*/	
 //	camera_wait_sensor_vd_done();		//Wait at least  one frame.
 
 //	kal_sleep_task(150);	//Delay for apply setting.
@@ -2124,6 +2490,22 @@ void OV3640Query(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 }
 #endif 
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_set_param_wb
+*
+* DESCRIPTION
+*	wb setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL OV3640_set_param_wb(UINT16 para)
 {
 	
@@ -2184,6 +2566,22 @@ BOOL OV3640_set_param_wb(UINT16 para)
 	
 } /* OV3640_set_param_wb */
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_set_param_effect
+*
+* DESCRIPTION
+*	effect setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL OV3640_set_param_effect(UINT16 para)
 {
     kal_uint32  ret = TRUE;
@@ -2249,6 +2647,22 @@ BOOL OV3640_set_param_effect(UINT16 para)
 
 } /* OV3640_set_param_effect */
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_set_param_banding
+*
+* DESCRIPTION
+*	banding setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL OV3640_set_param_banding(UINT16 para)
 {
 	kal_uint16 PV_Line_Width = 0; 
@@ -2258,6 +2672,37 @@ BOOL OV3640_set_param_banding(UINT16 para)
 	PV_Line_Width = OV3640_FULL_PERIOD_PIXEL_NUMS + OV3640_PV_dummy_pixels*2; 
     //kal_prompt_trace(MOD_ENG,"call banding function ");
 
+/*	switch (para)
+	{
+		case CAM_BANDING_50HZ:
+		//	Preview_Banding_Filter = OV3640_g_Preview_PCLK_Frequency*1000000/100/ (2*PV_Line_Width)+0.5;    //calculate result=237=0xed
+		//	Exposure_Step = OV3640_PV_EXPOSURE_LIMITATION / Preview_Banding_Filter - 1;                             //calculate result=2
+
+		//	OV3640_write_cmos_sensor(0x3014, 0x84); //bit[7]select 50/60hz banding, 0:60hz
+	   	//	OV3640_write_cmos_sensor(0x3070, Preview_Banding_Filter >> 8); //50hz banding filter control
+		//	OV3640_write_cmos_sensor(0x3071, Preview_Banding_Filter & 0x00FF);
+		//	OV3640_write_cmos_sensor(0x301C, Exposure_Step & 0x3F); //50hz banding max steps
+    
+		    OV3640_write_cmos_sensor(0x3014, 0x84); //bit[7]select 50/60hz banding, 0:60hz	
+			OV3640_write_cmos_sensor(0x3070, 0x00); //50Hz banding filter 8 MSB	
+		    OV3640_write_cmos_sensor(0x3071, 0xed); //50Hz banding filter value 8 LSB		
+	 	    OV3640_write_cmos_sensor(0x301c, 0x02); //50Hz maximum banding step
+			break;
+
+		case CAM_BANDING_60HZ:
+		//	Preview_Banding_Filter = OV3640_g_Preview_PCLK_Frequency*1000000/120/ (2*PV_Line_Width)+0.5;   //calculate result=198=0xc6
+		//	Exposure_Step = OV3640_PV_EXPOSURE_LIMITATION / Preview_Banding_Filter - 1;                            //calculate result=3
+
+			OV3640_write_cmos_sensor(0x3014, 0x04); //bit[7]select 50/60hz banding, 0:60h
+			OV3640_write_cmos_sensor(0x3072, Preview_Banding_Filter >> 8); //60hz banding filter control
+			OV3640_write_cmos_sensor(0x3073, Preview_Banding_Filter & 0x00FF);     
+			OV3640_write_cmos_sensor(0x301D, Exposure_Step & 0x3F); //60hz banding max steps	
+			break;
+
+	     default:
+	          return KAL_FALSE;
+	}
+*/
 	switch (para)
 	{
 		case AE_FLICKER_MODE_50HZ:
@@ -2347,6 +2792,16 @@ BOOL OV3640_set_param_banding(UINT16 para)
 	    kal_prompt_trace(MOD_ENG,"Register 0x3001=0x%x",OV3640_read_cmos_sensor(0x3001));
 		kal_prompt_trace(MOD_ENG,"Register 0x3002=0x%x",OV3640_read_cmos_sensor(0x3002));
 		kal_prompt_trace(MOD_ENG,"Register 0x3003=0x%x",OV3640_read_cmos_sensor(0x3003));
+/*	    kal_prompt_trace(MOD_ENG,"Register 0x3014=0x%x",OV3640_read_cmos_sensor(0x3014));
+		kal_prompt_trace(MOD_ENG,"Register 0x3015=0x%x",OV3640_read_cmos_sensor(0x3015));
+		kal_prompt_trace(MOD_ENG,"Register 0x3011=0x%x",OV3640_read_cmos_sensor(0x3011));
+		kal_prompt_trace(MOD_ENG,"Register 0x3071=0x%x",OV3640_read_cmos_sensor(0x3071));
+		kal_prompt_trace(MOD_ENG,"Register 0x3073=0x%x",OV3640_read_cmos_sensor(0x3073));
+		kal_prompt_trace(MOD_ENG,"Register 0x301c=0x%x",OV3640_read_cmos_sensor(0x301c));
+		kal_prompt_trace(MOD_ENG,"Register 0x301d=0x%x",OV3640_read_cmos_sensor(0x301d));
+		kal_prompt_trace(MOD_ENG,"Register 0x302d=0x%x",OV3640_read_cmos_sensor(0x302d));
+		kal_prompt_trace(MOD_ENG,"Register 0x302e=0x%x",OV3640_read_cmos_sensor(0x302e));
+*/
         kal_prompt_trace(MOD_ENG,"out banding function ");
 #endif 
 	return KAL_TRUE;
@@ -2355,6 +2810,22 @@ BOOL OV3640_set_param_banding(UINT16 para)
 
 
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_set_param_exposure
+*
+* DESCRIPTION
+*	exposure setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL OV3640_set_param_exposure(UINT16 para)
 {
    kal_uint16 temp=OV3640_read_cmos_sensor(0x3302);

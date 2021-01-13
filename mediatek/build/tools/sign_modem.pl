@@ -10,6 +10,8 @@ my $modem_auth = $ARGV[2];
 my $custom_dir = $ARGV[3];
 my $secro_ac = $ARGV[4];
 
+my $modem_cipher = "yes";
+
 my $sml_dir = "mediatek/custom/$custom_dir/security/sml_auth";
 
 my $cipher_tool = "mediatek/build/tools/CipherTool/CipherTool";
@@ -33,9 +35,21 @@ if (${modem_auth} eq "yes")
 	}
 }
 
+#if (${prj} eq "mt6577_evb" || ${prj} eq "mt6577_evb_nand" || ${prj} eq "mt6517_evb")
+#{
+#	$modem_encode = "no"
+#}
+
+if (${prj} eq "mt6577_evb_mt" || ${prj} eq "mt6577_phone_mt" || ${prj} eq "moto77_ics")
+{
+	$modem_cipher = "no"
+}
+
+
 print "parameter check pass\n";
 print "MTK_SEC_MODEM_AUTH    =  $modem_auth\n";
 print "MTK_SEC_MODEM_ENCODE  =  $modem_encode\n";
+print "modem_cipher  =  $modem_cipher\n";
 
 ##########################################################
 # Process Modem Image
@@ -81,12 +95,15 @@ sub process_modem_image
 			########################################		
 			if (${modem_encode} eq "yes")
 			{
-				system("./$cipher_tool ENC $sml_dir/SML_ENCODE_KEY.ini $sml_dir/SML_ENCODE_CFG.ini $md_load $c_md_load") == 0 or die "Cipher Tool return error\n";
-				
-				if(-e "$c_md_load")
+				if (${modem_cipher} eq "yes")
 				{
-					system("rm -f $md_load") == 0 or die "can't remove original modem binary\n";
-					system("mv -f $c_md_load $md_load") == 0 or die "can't generate cipher modem binary\n";
+					system("./$cipher_tool ENC $sml_dir/SML_ENCODE_KEY.ini $sml_dir/SML_ENCODE_CFG.ini $md_load $c_md_load") == 0 or die "Cipher Tool return error\n";
+				
+					if(-e "$c_md_load")
+					{
+						system("rm -f $md_load") == 0 or die "can't remove original modem binary\n";
+						system("mv -f $c_md_load $md_load") == 0 or die "can't generate cipher modem binary\n";
+					}
 				}
 				
 				system("./$sign_tool $sml_dir/SML_AUTH_KEY.ini $sml_dir/SML_AUTH_CFG.ini $md_load $s_md_load");
@@ -114,9 +131,10 @@ print "********************************************\n";
 print " Fill AC_REGION \n";
 print "********************************************\n";
 
+my $secro_def_cfg = "mediatek/custom/common/secro/SECRO_DEFAULT_LOCK_CFG.ini";
 my $secro_out = "mediatek/custom/$custom_dir/secro/AC_REGION";
 my $secro_script = "mediatek/build/tools/SecRo/secro_post.pl";
-system("./$secro_script $prj $custom_dir $secro_ac $secro_out") == 0 or die "SECRO post process return error\n";
+system("./$secro_script $secro_def_cfg $prj $custom_dir $secro_ac $secro_out") == 0 or die "SECRO post process return error\n";
 
 ##########################################################
 # Process SECFL.ini

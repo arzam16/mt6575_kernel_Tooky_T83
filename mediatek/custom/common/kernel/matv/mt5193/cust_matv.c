@@ -1,4 +1,3 @@
-
 //For mt6573_evb
 ///#include <mach/mt6575_pll.h>
 #include <linux/init.h>
@@ -18,8 +17,21 @@
 #include <linux/jiffies.h>
 #include <linux/timer.h>
 
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_pm_ldo.h>
+
+
+
+#if defined(MT6575)
+#include <mach/mt_typedefs.h>
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_reg_base.h>
+
+#elif defined(MT6577)
+
+#include <mach/mt_typedefs.h>
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_reg_base.h>
+
+#endif
 
 #include "cust_matv.h"
 #include "cust_matv_comm.h"
@@ -29,6 +41,7 @@ int cust_matv_power_on(void)
 {  
     //set GPIO94 for power
     ///int pinSetIdx = 0;//default main sensor
+#if 0    
     int pinSet[2][4] = {
     			//for main sensor 
     			{GPIO_CAMERA_CMRST_PIN,
@@ -41,7 +54,7 @@ int cust_matv_power_on(void)
     			 GPIO_CAMERA_CMPDN1_PIN,
     			 GPIO_CAMERA_CMPDN1_PIN_M_GPIO}
     		   };
-
+#endif
 	MATV_LOGE("[MATV] cust_matv_power_on Start\n");
 
     if(TRUE != hwPowerOn(CAMERA_POWER_VCAM_D2, VOL_1800,"MT5192"))
@@ -73,6 +86,13 @@ int cust_matv_power_on(void)
     return 0;
     }    
 
+    /*  the following code is for some special camera sensor.
+        matv and camera will use same power interface and isp interface.
+        some special camera sensor has some currency leakage and make matv image quality bad when matv power on.
+        for these camera sensor,  we need power on the camera sensor and then power down.
+        */
+#if 0
+
     mt_set_gpio_mode(pinSet[0][0],pinSet[0][1]);
     mt_set_gpio_dir(pinSet[0][0],GPIO_DIR_OUT);
     mt_set_gpio_out(pinSet[0][0],GPIO_OUT_ZERO);
@@ -89,13 +109,13 @@ int cust_matv_power_on(void)
     mt_set_gpio_dir(pinSet[1][2],GPIO_DIR_OUT);
     mt_set_gpio_out(pinSet[1][2],GPIO_OUT_ZERO);
     
-#if 0
     mdelay(10);
     mt_set_gpio_out(pinSet[0][0],GPIO_OUT_ONE);
     
     mt_set_gpio_out(pinSet[1][0],GPIO_OUT_ONE);
     
     mdelay(1);
+    
     //PDN pin
     mt_set_gpio_mode(pinSet[0][2],pinSet[0][3]);
     mt_set_gpio_dir(pinSet[0][2],GPIO_DIR_OUT);
@@ -112,7 +132,6 @@ int cust_matv_power_on(void)
     mt_set_gpio_out(pinSet[1][0],GPIO_OUT_ZERO);
     mt_set_gpio_out(pinSet[1][2],GPIO_OUT_ZERO);
         
-    }
 #endif
 
     return 0;

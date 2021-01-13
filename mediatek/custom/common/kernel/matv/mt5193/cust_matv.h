@@ -1,13 +1,10 @@
-
 ///#include <mach/mt6575_pll.h>
 ///#include <mach/mt6575_typedefs.h> 
-#include <mach/mt6575_reg_base.h>
 ///#include <mach/mt6575_gpio.h>
 #include <kd_camera_hw.h>
 #include <cust_gpio_usage.h>
 
 
-#define MATV_I2C_DEVNAME "MT6573_I2C_MATV"
 
 #define CAMERA_IO_DRV_1800
 //6573_EVB

@@ -28,47 +28,12 @@
 #include <asm/atomic.h>
 //#include <mach/mt_gpio.h>
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
 
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#endif
-
-#ifdef MT6577
-#include <mach/mt6577_devs.h>
-#include <mach/mt6577_typedefs.h>
-#include <mach/mt6577_gpio.h>
-#include <mach/mt6577_pm_ldo.h>
-#endif
-#ifdef MT6516
-#define POWER_NONE_MACRO MT6516_POWER_NONE
-#endif
-
-#ifdef MT6573
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-
-#ifdef MT6575
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-#ifdef MT6577
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
 
 #include <cust_acc.h>
 #include <linux/hwmsensor.h>
@@ -105,7 +70,10 @@ static struct i2c_board_info __initdata i2c_BMA222={ I2C_BOARD_INFO("BMA222", (0
 static int bma222_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
 static int bma222_i2c_remove(struct i2c_client *client);
 static int bma222_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
-
+#ifndef CONFIG_HAS_EARLYSUSPEND
+static int bma222_suspend(struct i2c_client *client, pm_message_t msg);
+static int bma222_resume(struct i2c_client *client);
+#endif
 /*----------------------------------------------------------------------------*/
 typedef enum {
     ADX_TRC_FILTER  = 0x01,
@@ -157,7 +125,7 @@ struct bma222_i2c_data {
     struct data_filter      fir;
 #endif 
     /*early suspend*/
-#if defined(CONFIG_HAS_EARLYSUSPEND)
+#ifdef CONFIG_HAS_EARLYSUSPEND
     struct early_suspend    early_drv;
 #endif     
 };
@@ -370,7 +338,7 @@ static int BMA222_ReadOffset(struct i2c_client *client, s8 ofs[BMA222_AXES_NUM])
 #ifdef SW_CALIBRATION
 	ofs[0]=ofs[1]=ofs[2]=0x0;
 #else
-	if(err = hwmsen_read_block(client, BMA222_REG_OFSX, ofs, BMA222_AXES_NUM))
+	if((err = hwmsen_read_block(client, BMA222_REG_OFSX, ofs, BMA222_AXES_NUM)))
 	{
 		GSE_ERR("error: %d\n", err);
 	}
@@ -391,7 +359,7 @@ static int BMA222_ResetCalibration(struct i2c_client *client)
 	#ifdef SW_CALIBRATION
 		
 	#else
-		if(err = hwmsen_write_block(client, BMA222_REG_OFSX, ofs, 4))
+		if((err = hwmsen_write_block(client, BMA222_REG_OFSX, ofs, 4)))
 		{
 			GSE_ERR("error: %d\n", err);
 		}
@@ -437,7 +405,7 @@ static int BMA222_ReadCalibrationEx(struct i2c_client *client, int act[BMA222_AX
 	#ifdef SW_CALIBRATION
 		mul = 0;//only SW Calibration, disable HW Calibration
 	#else
-		if(err = BMA222_ReadOffset(client, obj->offset))
+		if((err = BMA222_ReadOffset(client, obj->offset)))
 		{
 			GSE_ERR("read offset fail, %d\n", err);
 			return err;
@@ -506,7 +474,7 @@ static int BMA222_WriteCalibration(struct i2c_client *client, int dat[BMA222_AXE
 		obj->offset[BMA222_AXIS_X], obj->offset[BMA222_AXIS_Y], obj->offset[BMA222_AXIS_Z],
 		obj->cali_sw[BMA222_AXIS_X], obj->cali_sw[BMA222_AXIS_Y], obj->cali_sw[BMA222_AXIS_Z]);
 
-	if(err = hwmsen_write_block(obj->client, BMA222_REG_OFSX, obj->offset, BMA222_AXES_NUM))
+	if((err = hwmsen_write_block(obj->client, BMA222_REG_OFSX, obj->offset, BMA222_AXES_NUM)))
 	{
 		GSE_ERR("write offset fail: %d\n", err);
 		return err;
@@ -1522,7 +1490,7 @@ static int bma222_suspend(struct i2c_client *client, pm_message_t msg)
 			return -EINVAL;
 		}
 		atomic_set(&obj->suspend, 1);
-		if((err = BMA222_SetPowerMode(obj->client, false)))
+		if(err = BMA222_SetPowerMode(obj->client, false))
 		{
 			GSE_ERR("write power control fail!!\n");
 			return;
@@ -1545,7 +1513,7 @@ static int bma222_resume(struct i2c_client *client)
 	}
 
 	BMA222_power(obj->hw, 1);
-	if((err = bma222_init_client(client, 0)))
+	if(err = bma222_init_client(client, 0))
 	{
 		GSE_ERR("initialize client fail!!\n");
 		return err;        
@@ -1689,7 +1657,7 @@ static int bma222_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	}
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
-	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	obj->early_drv.suspend  = bma222_early_suspend,
 	obj->early_drv.resume   = bma222_late_resume,    
 	register_early_suspend(&obj->early_drv);

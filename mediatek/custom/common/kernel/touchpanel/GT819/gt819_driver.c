@@ -1,4 +1,3 @@
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -340,13 +339,14 @@ void tpd_down(int raw_x, int raw_y, int x, int y, int p) {
     TPD_EM_PRINT(raw_x, raw_y, x, y, p, 1);
 }
 
-void tpd_up(int raw_x, int raw_y, int x, int y, int p) {
-    input_report_abs(tpd->dev, ABS_PRESSURE, 0);
+void tpd_up(int raw_x, int raw_y, int x, int y, int p)
+{
+    //input_report_abs(tpd->dev, ABS_PRESSURE, 0);
     input_report_key(tpd->dev, BTN_TOUCH, 0);
-    input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 0);
-    input_report_abs(tpd->dev, ABS_MT_WIDTH_MAJOR, 0);
-    input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
-    input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
+    //input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 0);
+    //input_report_abs(tpd->dev, ABS_MT_WIDTH_MAJOR, 0);
+    //input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
+    //input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
     input_mt_sync(tpd->dev);
     TPD_DEBUG("U[%4d %4d %4d]\n", x, y, 0);
     TPD_EM_PRINT(raw_x, raw_y, x, y, p, 0);
@@ -355,11 +355,11 @@ void tpd_up(int raw_x, int raw_y, int x, int y, int p) {
 static int touch_event_handler(void *unused) {
     struct sched_param param = { .sched_priority = RTPM_PRIO_TPD };
     static u8 buffer[ TPD_POINT_INFO_LEN*MAX_FINGER_NUM ];
-    int x, y, size, max_finger_id = 0;
+    int x, y, size, max_finger_id = 0, finger_num = 0;
     //int finger_num = 0;
     static u8 id_mask = 0;
     u16 cur_mask;
-    int idx, valid_point;
+    int idx, valid_point, lastIdx = 0;
     int ret = 0;
     static int x_history[MAX_FINGER_NUM+1];
     static int y_history[MAX_FINGER_NUM+1];
@@ -393,6 +393,8 @@ static int touch_event_handler(void *unused) {
             {
                 idx++;
             }while((cur_mask >> idx) > 0);
+            
+            finger_num = idx;
             max_finger_id = idx - 1;
             ret = i2c_read_bytes( i2c_client, TPD_POINT_INFO_REG_BASE, buffer, (max_finger_id + 1)*TPD_POINT_INFO_LEN);
             if (ret < 0)
@@ -404,6 +406,7 @@ static int touch_event_handler(void *unused) {
         else
         {
             max_finger_id = 0;
+            finger_num = 0;
         }
 
         for ( idx = 0, valid_point = 0 ; idx < (max_finger_id + 1) ; idx++ )
@@ -424,11 +427,14 @@ static int touch_event_handler(void *unused) {
                 x_history[idx] = x;
                 y_history[idx] = y;
                 valid_point++;
+                lastIdx = idx;
             }
             else
                 TPD_DEBUG("Invalid id %d\n", idx );
         }         
-               
+        
+        /****Linux kernel 2.6.35. For GB.****/
+#if 0       
         if ( cur_mask != id_mask )
         {
             u8 diff = cur_mask^id_mask;
@@ -448,10 +454,31 @@ static int touch_event_handler(void *unused) {
             }
             id_mask = cur_mask;
         }
-
         if ( tpd != NULL && tpd->dev != NULL )
+        {
             input_sync(tpd->dev);
-        
+        }
+#endif
+        /****Linux kernel from 2.6.35 to 3.0. For ICS.****/
+        if ( finger_num )
+        {
+        	if ( tpd != NULL && tpd->dev != NULL )
+            {
+            	input_sync(tpd->dev);
+        	}
+		}
+		else
+		{
+			if ( tpd != NULL && tpd->dev != NULL )
+            {
+            	//TPD_DEBUG("lastIdx = %d \n", lastIdx);
+				//TPD_DEBUG("x_history[lastIdx] = %d, y_history[lastIdx] = %d \n", x_history[lastIdx], y_history[lastIdx]);
+            	//TPD_DEBUG("Up[%4d %4d %4d]\n", x_history[lastIdx], y_history[lastIdx], 0);
+				//tpd_up(x_history[lastIdx], y_history[lastIdx], x_history[lastIdx], y_history[lastIdx], 0, lastIdx);
+				tpd_up(x_history[lastIdx], y_history[lastIdx], x_history[lastIdx], y_history[lastIdx], 0);
+				input_sync(tpd->dev);
+        	}
+		}        
     } while (!kthread_should_stop()); 
     return 0;
 }
@@ -505,13 +532,32 @@ void tpd_suspend(struct i2c_client *client, pm_message_t message)
     {
         TPD_DEBUG("[mtk-tpd] i2c write communcate error during suspend: 0x%x\n", ret);
     }
-
+    
+    //Turn off GPIO
+    
+    TPD_DEBUG("Turn off GPIO..\n");
+    mt_set_gpio_mode(GPIO70, GPIO_MODE_00);
+    mt_set_gpio_dir(GPIO70, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO70, GPIO_OUT_ZERO);
+   
+    mt_set_gpio_mode(GPIO100, GPIO_MODE_00);
+    mt_set_gpio_dir(GPIO100, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO100, GPIO_OUT_ZERO);
 }
 
 /* Function to manage power-on resume */
 void tpd_resume(struct i2c_client *client)
 {   
     TPD_DEBUG("GT819 call resume\n");  
+    
+    TPD_DEBUG("Turn on GPIO..\n");
+    mt_set_gpio_mode(GPIO70, GPIO_MODE_00);
+    mt_set_gpio_dir(GPIO70, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO70, GPIO_OUT_ONE);
+
+	mt_set_gpio_mode(GPIO100, GPIO_MODE_00);
+    mt_set_gpio_dir(GPIO100, GPIO_DIR_OUT);
+    mt_set_gpio_out(GPIO100, GPIO_OUT_ONE);
   
     mt_set_gpio_mode(GPIO_CTP_EINT_PIN, GPIO_CTP_EINT_PIN_M_GPIO);
     mt_set_gpio_dir(GPIO_CTP_EINT_PIN, GPIO_DIR_OUT);

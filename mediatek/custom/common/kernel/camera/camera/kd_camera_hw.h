@@ -2,13 +2,12 @@
 #define _KD_CAMERA_HW_H_
  
 
-#if defined(MT6575)
 
 //#include <mach/mt6575_pll.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_gpt.h>
-#include <mach/mt6575_pm_ldo.h>
-#include <mach/mt6575_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_gpt.h>
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_typedefs.h>
 
 //Power 
 #define CAMERA_POWER_VCAM_A MT65XX_POWER_LDO_VCAMA
@@ -67,7 +66,5 @@
 
 //i2c id for sensor device, MT6575_evb, the I2C is attached on 1
 #define IMG_SENSOR_I2C_GROUP_ID 1
-#else 
-#error Error!!!, Forget to define the MACRO for Sensor Power and I2C control
-#endif 
+
 #endif 

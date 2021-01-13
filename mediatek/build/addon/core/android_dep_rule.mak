@@ -1,3 +1,37 @@
+# Copyright Statement:
+#
+# This software/firmware and related documentation ("MediaTek Software") are
+# protected under relevant copyright laws. The information contained herein
+# is confidential and proprietary to MediaTek Inc. and/or its licensors.
+# Without the prior written permission of MediaTek inc. and/or its licensors,
+# any reproduction, modification, use or disclosure of MediaTek Software,
+# and information contained herein, in whole or in part, shall be strictly prohibited.
+#
+# MediaTek Inc. (C) 2010. All rights reserved.
+#
+# BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+# THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+# RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
+# AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+# NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+# SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+# SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
+# THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
+# THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
+# CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
+# SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
+# STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+# CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+# AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+# OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
+# MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+#
+# The following software/firmware and/or related documentation ("MediaTek Software")
+# have been modified by MediaTek Inc. All revisions are subject to any receiver's
+# applicable license agreements with MediaTek Inc.
+
 ifneq ($(CUSTOM_MODEM),)
 MTK_MODEM_PATH = mediatek/custom/common/modem/$(CUSTOM_MODEM)
 MTK_MODEM_FILE = $(if $(wildcard $(MTK_MODEM_PATH)/modem_E2.mak),$(MTK_MODEM_PATH)/modem_E2.mak,$(MTK_MODEM_PATH)/modem.mak)
@@ -237,6 +271,21 @@ ifeq (no, $(strip $(MTK_SMSREG_APP)))
   endif
 endif
 
+ifeq (yes, $(strip $(MTK_DM_APP)))
+  ifeq (yes, $(strip $(MTK_MDM_APP)))
+    $(call dep-err-offa-or-offb, MTK_DM_APP, MTK_MDM_APP)
+  endif
+  ifeq (yes, $(strip $(MTK_RSDM_APP)))
+    $(call dep-err-offa-or-offb, MTK_DM_APP, MTK_RSDM_APP)
+  endif
+endif
+
+ifeq (yes, $(strip $(MTK_RSDM_APP)))
+  ifeq (yes, $(strip $(MTK_MDM_APP)))
+    $(call dep-err-offa-or-offb, MTK_RSDM_APP, MTK_MDM_APP)
+  endif
+endif
+
 ##############################################################
 # for IME
 
@@ -370,12 +419,6 @@ ifeq (yes,$(MTK_PHONE_VT_MM_RINGTONE))
   endif
 endif
 
-ifeq (yes,$(HAVE_CMMB_FEATURE))
-  ifneq (OP01_SPEC0200_SEGC,$(OPTR_SPEC_SEG_DEF))
-     $(call dep-err-seta-or-offb, OPTR_SPEC_SEG_DEF,OP01_SPEC0200_SEGC,HAVE_CMMB_FEATURE)
-  endif
-endif
-
 ##############################################################
 # for BT 
 
@@ -460,12 +503,6 @@ ifeq (no,$(strip $(MTK_BT_SUPPORT)))
   endif
 endif
 
-ifeq (no,$(strip $(MTK_BT_30_HS_SUPPORT)))
-  ifeq (yes,$(strip $(MTK_BT_PROFILE_AVRCP14)))
-    $(call dep-err-ona-or-offb, MTK_BT_30_HS_SUPPORT, MTK_BT_PROFILE_AVRCP14)
-  endif
-endif
-
 ifeq (no,$(strip $(MTK_BT_40_SUPPORT)))
   ifeq (yes,$(strip $(MTK_BT_PROFILE_PRXM)))
     $(call dep-err-ona-or-offb, MTK_BT_40_SUPPORT, MTK_BT_PROFILE_PRXM)
@@ -500,6 +537,12 @@ endif
 ifeq (yes,$(strip $(MTK_EMMC_SUPPORT_OTP)))
   ifeq (no,$(strip $(MTK_EMMC_SUPPORT)))
     $(call dep-err-ona-or-offb, MTK_EMMC_SUPPORT, MTK_EMMC_SUPPORT_OTP)
+  endif
+endif
+
+ifeq (yes,$(strip $(MTK_EMMC_SUPPORT_OTP)))
+  ifeq (FALSE,$(strip $(MODEM_OTP_SUPPORT)))
+    $(call dep-err-ona-or-offb, OTP_SUPPORT, MTK_EMMC_SUPPORT_OTP)
   endif
 endif
 
@@ -556,9 +599,9 @@ endif
 
 ##############################################################
 # for 6575 display quality enhancement
-ifneq (MT6575,$(strip $(MTK_PLATFORM)))
+ifeq (,$(filter MT6575 MT6577, $(MTK_PLATFORM)))
   ifdef MTK_75DISPLAY_ENHANCEMENT_SUPPORT
-    $(call dep-err-common, MTK_75DISPLAY_ENHANCEMENT_SUPPORT could only be defined when MTK_PLATFORM = MT6575)
+    $(call dep-err-common, MTK_75DISPLAY_ENHANCEMENT_SUPPORT could only be defined when MTK_PLATFORM = MT6575/MT6577)
   endif
 endif
 
@@ -595,21 +638,207 @@ ifeq (no,$(HAVE_CMMB_FEATURE))
   endif
 endif
 
-
-ifneq ($(findstring modem_2g,$(MTK_MODEM_SUPPORT)),)
-  ifeq ($(strip $(MTK_RAT_WCDMA_PREFERRED)),yes)
-    $(call dep-err-seta-or-offb,MTK_MODEM_SUPPORT,none modem_2g,MTK_RAT_WCDMA_PREFERRED)
+##############################################################
+# for MD DB
+ifeq (no,$(strip $(MTK_MDLOGGER_SUPPORT)))
+  ifeq (yes,$(strip $(MTK_INCLUDE_MODEM_DB_IN_IMAGE)))
+     $(call dep-err-ona-or-offb, MTK_MDLOGGER_SUPPORT, MTK_INCLUDE_MODEM_DB_IN_IMAGE)
   endif
 endif
 
-ifneq ($(findstring modem_3g_tdd,$(MTK_MODEM_SUPPORT)),)
-  ifeq ($(strip $(MTK_RAT_WCDMA_PREFERRED)),yes)
-    $(call dep-err-seta-or-offb,MTK_MODEM_SUPPORT,none modem_3g_tdd,MTK_RAT_WCDMA_PREFERRED)
+##############################################################
+# for phone number geo-description
+ifneq ($(filter OP01% OP02%, $(OPTR_SPEC_SEG_DEF)),)
+  ifeq (no,$(strip $(MTK_PHONE_NUMBER_GEODESCRIPTION)))
+    $(call dep-err-seta-or-onb, OPTR_SPEC_SEG_DEF,none OP01/OP02,MTK_PHONE_NUMBER_GEODESCRIPTION)
+  endif
+endif
+############################################################
+#for CMAS
+ifneq ($(filter OP07% OP08%, $(OPTR_SPEC_SEG_DEF)),)
+  ifneq (yes, $(strip $(MTK_CMAS_SUPPORT)))
+     $(call dep-err-seta-or-onb, OPTR_SPEC_SEG_DEF,none OP07/OP08,MTK_CMAS_SUPPORT)
   endif
 endif
 
-ifneq ($(findstring OP01_SPEC0200_SEGC,$(OPTR_SPEC_SEG_DEF)),)
-  ifeq ($(strip $(MTK_RAT_WCDMA_PREFERRED)),yes)
-    $(call dep-err-seta-or-offb,MTK_MODEM_SUPPORT,none OP01_SPEC0200_SEGC,MTK_RAT_WCDMA_PREFERRED)
+#############################################################
+# MTK_MDM_APP, MTK_DM_APP and MTK_RSDM_APP are exclusive. (Only one can be enabled at the same time.)
+ifeq ($(strip $(MTK_MDM_APP)),yes)
+  ifeq ($(strip $(MTK_DM_APP)),yes)
+     $(call dep-err-offa-or-offb, MTK_MDM_APP, MTK_DM_APP)
+  endif
+  ifeq ($(strip $(MTK_RSDM_APP)),yes)
+     $(call dep-err-offa-or-offb, MTK_MDM_APP, MTK_RSDM_APP)
+  endif
+endif
+
+ifeq ($(strip $(MTK_DM_APP)),yes)
+  ifeq ($(strip $(MTK_MDM_APP)),yes)
+     $(call dep-err-offa-or-offb, MTK_DM_APP, MTK_MDM_APP)
+  endif
+  ifeq ($(strip $(MTK_RSDM_APP)),yes)
+     $(call dep-err-offa-or-offb, MTK_DM_APP, MTK_RSDM_APP)
+  endif
+endif
+
+ifeq ($(strip $(MTK_RSDM_APP)),yes)
+  ifeq ($(strip $(MTK_MDM_APP)),yes)
+     $(call dep-err-offa-or-offb, MTK_RSDM_APP, MTK_MDM_APP)
+  endif
+  ifeq ($(strip $(MTK_DM_APP)),yes)
+     $(call dep-err-offa-or-offb, MTK_RSDM_APP, MTK_DM_APP)
+  endif
+endif
+
+#############################################################
+# for MTK_APKINSTALLER_APP
+
+ifeq (OP02_SPEC0200_SEGC,$(strip $(OPTR_SPEC_SEG_DEF)))
+  ifeq ($(strip $(MTK_APKINSTALLER_APP)),no)
+     $(call dep-err-seta-or-onb, OPTR_SPEC_SEG_DEF,non OP02_SPEC0200_SEGC,MTK_APKINSTALLER_APP)  
+  endif
+endif
+
+#############################################################
+
+ifneq (yes,$(strip $(MTK_TABLET_PLATFORM)))
+  ifeq (240,$(strip $(LCM_WIDTH)))
+    ifeq (320,$(strip $(LCM_HEIGHT)))
+      ifeq ($(filter ldpi,$(MTK_PRODUCT_LOCALES)),)
+        $(call dep-err-common, Please add ldpi to MTK_PRODUCT_LOCALES or set different LCM_WIDTH and LCM_HEIGHT)
+      endif       
+    endif
+  endif
+  ifeq (320,$(strip $(LCM_WIDTH)))
+    ifeq (480,$(strip $(LCM_HEIGHT)))
+      ifeq ($(filter mdpi,$(MTK_PRODUCT_LOCALES)),)
+        $(call dep-err-common, Please add mdpi to MTK_PRODUCT_LOCALES or set different LCM_WIDTH and LCM_HEIGHT)
+      endif       
+    endif
+  endif
+  ifeq (480,$(strip $(LCM_WIDTH)))
+    ifeq (800,$(strip $(LCM_HEIGHT)))
+      ifeq ($(filter hdpi,$(MTK_PRODUCT_LOCALES)),)
+        $(call dep-err-common, Please add hdpi to MTK_PRODUCT_LOCALES or set different LCM_WIDTH and LCM_HEIGHT)
+      endif       
+    endif
+  endif
+  ifeq (540,$(strip $(LCM_WIDTH)))
+    ifeq (960,$(strip $(LCM_HEIGHT)))
+      ifeq ($(filter hdpi,$(MTK_PRODUCT_LOCALES)),)
+        $(call dep-err-common, Please add hdpi to MTK_PRODUCT_LOCALES or set different LCM_WIDTH and LCM_HEIGHT)
+      endif       
+    endif
+  endif
+  ifeq (720,$(strip $(LCM_WIDTH)))
+    ifeq (1280,$(strip $(LCM_HEIGHT)))
+      ifeq ($(filter hdpi,$(MTK_PRODUCT_LOCALES)),)
+        $(call dep-err-common, Please add hdpi to MTK_PRODUCT_LOCALES or set different LCM_WIDTH and LCM_HEIGHT)
+      endif  
+      ifeq ($(filter xhdpi,$(MTK_PRODUCT_LOCALES)),)
+        $(call dep-err-common, Please add xhdpi to MTK_PRODUCT_LOCALES or set different LCM_WIDTH and LCM_HEIGHT)
+      endif 
+    endif
+  endif
+endif
+
+############################################################
+ifeq (yes,$(MTK_WEATHER3D_WIDGET))
+  ifeq (no,$(MTK_WEATHER_PROVIDER_APP))
+        $(call dep-err-ona-or-offb, MTK_WEATHER_PROVIDER_APP, MTK_WEATHER3D_WIDGET)
+  endif
+endif
+
+############################################################
+ifeq ($(strip $(MTK_COMBO_CHIP)),MT6628)
+  ifneq ($(strip $(MTK_BT_FM_OVER_BT_VIA_CONTROLLER)),no)
+    $(call dep-err-seta-or-setb,MTK_BT_FM_OVER_BT_VIA_CONTROLLER,no,MTK_COMBO_CHIP,none MT6628)
+  endif
+endif
+ifeq ($(strip $(MTK_BT_CHIP)),MTK_MT6628)
+  ifneq ($(strip $(MTK_COMBO_CHIP)),MT6628)
+     $(call dep-err-seta-or-setb,MTK_BT_CHIP, none MTK_MT6628,MTK_COMBO_CHIP,MT6628)
+  endif
+endif
+ifeq ($(strip $(MTK_FM_CHIP)),MT6628_FM)  
+  ifneq ($(strip $(MTK_COMBO_CHIP)),MT6628)
+    $(call dep-err-seta-or-setb,MTK_FM_CHIP, none MT6628_FM,MTK_COMBO_CHIP,MT6628)
+  endif
+endif
+ifeq ($(strip $(MTK_WLAN_CHIP)),MT6628)
+  ifneq ($(strip $(MTK_COMBO_CHIP)),MT6628)
+    $(call dep-err-seta-or-setb,MTK_WLAN_CHIP, none MT6628,MTK_COMBO_CHIP,MT6628)
+  endif
+endif
+ifeq ($(strip $(MTK_GPS_CHIP)),MTK_GPS_MT6628)
+  ifneq ($(strip $(MTK_COMBO_CHIP)),MT6628)
+    $(call dep-err-seta-or-setb,MTK_GPS_CHIP, none MTK_GPS_MT6628,MTK_COMBO_CHIP,MT6628)
+  endif
+endif
+
+############################################################
+ifeq ($(strip $(MTK_AP_SPEECH_ENHANCEMENT)),yes)
+  ifneq ($(strip $(MTK_AUDIO_HD_REC_SUPPORT)),yes)
+    $(call dep-err-ona-or-offb, MTK_AUDIO_HD_REC_SUPPORT, MTK_AP_SPEECH_ENHANCEMENT)
+  endif
+endif
+############################################################
+ifneq ($(strip $(MTK_LOG2SERVER_APP)),yes)
+  ifeq ($(strip $(MTK_LOG2SERVER_INTERNAL)),yes)
+    $(call dep-err-ona-or-offb, MTK_LOG2SERVER_APP, MTK_LOG2SERVER_INTERNAL)
+  endif
+endif
+############################################################
+ifeq ($(strip $(MTK_MEDIA3D_APP)),yes)
+  ifneq ($(strip $(MTK_TABLET_PLATFORM)),yes)
+    ifeq ($(filter xhdpi hdpi ,$(MTK_PRODUCT_LOCALES)),)
+      $(call dep-err-common,MTK_MEDIA3D_APP can set to yes only if MTK_TABLET_PLATFORM is yes or MTK_PRODUCT_LOCALES contains xhdpi hdpi) 
+    endif
+  endif
+  ifeq ($(filter xhdpi hdpi ,$(MTK_PRODUCT_LOCALES)),)
+    ifneq ($(strip $(MTK_TABLET_PLATFORM)),yes)
+      $(call dep-err-common,MTK_MEDIA3D_APP can set to yes only if MTK_TABLET_PLATFORM is yes or MTK_PRODUCT_LOCALES contains xhdpi hdpi) 
+    endif
+  endif
+endif
+############################################################
+ifeq ($(strip $(MTK_AP_SPEECH_ENHANCEMENT)),yes)
+  ifneq ($(strip $(MTK_AUDIO_HD_REC_SUPPORT)),yes)
+     $(call dep-err-ona-or-offb, MTK_AUDIO_HD_REC_SUPPORT, MTK_AP_SPEECH_ENHANCEMENT)
+  endif
+endif
+
+############################################################
+ifeq ($(strip $(MTK_HDMI_SUPPORT)),yes)
+  ifeq ($(strip $(CUSTOM_KERNEL_HDMI)),)
+    $(call dep-err-common, CUSTOM_KERNEL_HDMI should not be NULL when MTK_HDMI_SUPPORT=yes)
+  endif
+endif
+############################################################
+ifneq ($(strip $(OPTR_SPEC_SEG_DEF)), NONE)
+  ifneq ($(strip $(MTK_NETWORK_TYPE_ALWAYS_ON)), no)
+     $(call dep-err-common, Please set OPTR_SPEC_SEG_DEF as NONE or set MTK_NETWORK_TYPE_ALWAYS_ON as no)
+  endif
+endif
+############################################################
+ifeq ($(strip $(MTK_S3D_SUPPORT)),yes)
+  ifneq ($(strip $(MTK_STEREO3D_WALLPAPER_APP)),yes)
+    $(call dep-err-ona-or-offb, MTK_STEREO3D_WALLPAPER_APP, MTK_S3D_SUPPORT)
+  endif
+endif
+ifneq ($(strip $(MTK_S3D_SUPPORT)),yes)
+  ifeq ($(strip $(MTK_STEREO3D_WALLPAPER_APP)),yes)
+    $(call dep-err-ona-or-offb, MTK_S3D_SUPPORT, MTK_STEREO3D_WALLPAPER_APP)
+  endif
+endif
+############################################################
+ifeq ($(strip $(MTK_S3D_SUPPORT)),yes)
+  ifneq ($(strip $(MTK_3DWORLD_APP)),yes)
+    $(call dep-err-ona-or-offb, MTK_3DWORLD_APP, MTK_S3D_SUPPORT)
+  endif
+endif
+ifneq ($(strip $(MTK_S3D_SUPPORT)),yes)
+  ifeq ($(strip $(MTK_3DWORLD_APP)),yes)
+    $(call dep-err-ona-or-offb, MTK_S3D_SUPPORT, MTK_3DWORLD_APP)
   endif
 endif

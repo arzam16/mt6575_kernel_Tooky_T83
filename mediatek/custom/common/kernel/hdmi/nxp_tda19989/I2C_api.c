@@ -29,9 +29,9 @@
 #include "tmdlHdmiTx_IW.h"
 #include <linux/string.h>
 #ifdef BUILD_UBOOT
-#include <asm/arch/mt6575_gpio.h>
+#include <asm/arch/mt_gpio.h>
 #else
-#include <mach/mt6575_gpio.h>
+#include <mach/mt_gpio.h>
 #include "mach/eint.h"
 #include "mach/irqs.h"
 #endif
@@ -40,7 +40,11 @@
 static size_t hdmi_i2c_log_on = false;
 #define HDMI_I2C_LOG(fmt, arg...) \
     do { \
-        if (hdmi_i2c_log_on) printk("[hdmi_i2c log]", fmt, ##arg); \
+        if (hdmi_i2c_log_on) \
+        { \
+            printk("[hdmi_i2c log], %s, #%d", __func__, __LINE__); \
+            printk(fmt, ##arg); \
+        } \
     }while (0)
 
 #define HDMI_I2C_FUNC()	\
@@ -119,14 +123,14 @@ static int i2c_delay(unsigned int n)
 			:
 			:"memory"
 			);
-	return 0;
 #endif
+	return 0;
 }
 
 
 #define I2C_START_TRANSMISSION \
 { \
-	volatile unsigned char j; \
+	/*volatile unsigned char j;*/ \
 	SET_SCCB_CLK_OUTPUT; \
 	SET_SCCB_DATA_OUTPUT; \
 	SET_SCCB_CLK_HIGH; \
@@ -141,7 +145,7 @@ static int i2c_delay(unsigned int n)
 
 #define I2C_STOP_TRANSMISSION \
 { \
-	volatile unsigned char j; \
+	/*volatile unsigned char j;*/ \
 	SET_SCCB_CLK_OUTPUT; \
 	SET_SCCB_DATA_OUTPUT; \
 	SET_SCCB_CLK_LOW; \
@@ -157,7 +161,7 @@ static int i2c_delay(unsigned int n)
 static void SCCB_send_byte(unsigned char send_byte)
 {
 	volatile signed char i;
-	volatile unsigned int j;
+	//volatile unsigned int j;
 
 	for (i=7;i>=0;i--)
 	{	/* data bit 7~0 */
@@ -187,7 +191,7 @@ static void SCCB_send_byte(unsigned char send_byte)
 static unsigned char SCCB_get_byte(void)
 {
 	volatile signed char i;
-	volatile unsigned char j;
+	//volatile unsigned char j;
 	unsigned char get_byte=0;
 
 	SET_SCCB_DATA_INPUT;
@@ -220,7 +224,7 @@ static unsigned char SCCB_get_byte(void)
 
 static void sccb_write(unsigned char slave_addr, unsigned char addr, unsigned char para)
 {
-	volatile unsigned int i, j;
+	//volatile unsigned int i,j;
 
 	I2C_START_TRANSMISSION;
 	//for(j=0;j<I2C_DELAY;j++);
@@ -244,7 +248,7 @@ static void sccb_write(unsigned char slave_addr, unsigned char addr, unsigned ch
 
 static void sccb_write_multi(unsigned char slave_addr, unsigned char *addr, unsigned int nb_char)
 {
-	volatile unsigned int i, j;
+	volatile unsigned int i;
 
 	I2C_START_TRANSMISSION;
 	
@@ -264,7 +268,7 @@ static void sccb_write_multi(unsigned char slave_addr, unsigned char *addr, unsi
 static unsigned int sccb_read(unsigned char slave_addr, unsigned char addr)
 {
 	unsigned int get_byte;
-	volatile unsigned int i, j;
+	//volatile unsigned int i, j;
 
 	I2C_START_TRANSMISSION;
 	//for(j=0;j<I2C_DELAY;j++);
@@ -303,6 +307,7 @@ tmErrorCode_t suspend_i2c(void)
 
     mt_set_gpio_pull_enable(GPIO_SCL, true);    
     mt_set_gpio_pull_select(GPIO_SCL, GPIO_PULL_UP);    
+    return TM_OK;
 }
 
 tmErrorCode_t resume_i2c(void)
@@ -310,7 +315,11 @@ tmErrorCode_t resume_i2c(void)
     mt_set_gpio_pull_enable(GPIO_SDA, false);
 
     mt_set_gpio_pull_enable(GPIO_SCL, false);    
+    return TM_OK;
 }
+
+#include <linux/semaphore.h>
+DEFINE_SEMAPHORE(i2c_mutex);
 
 tmErrorCode_t Init_i2c(void)
 {
@@ -343,7 +352,10 @@ tmErrorCode_t Init_i2c(void)
 
   #endif
   /* Create the semaphore to protect I²C access */
-  errCode = tmdlHdmiTxIWSemaphoreCreate(&gI2CSemaphore);
+  //errCode = tmdlHdmiTxIWSemaphoreCreate(&gI2CSemaphore);
+  
+  gI2CSemaphore = (unsigned long)(&i2c_mutex);
+  errCode = TM_OK;   
 
   return errCode;
 }
@@ -367,7 +379,7 @@ tmErrorCode_t Init_i2c(void)
 
 unsigned char Write_i2c(unsigned char address,  unsigned char *ptr, unsigned char nb_char)
 {
-   unsigned char i;
+   //unsigned char i;
    int  hConnection;
 
   HDMI_I2C_LOG("hdmi, %s, 0x%08x, 0x%08x, 0x%08x\n", __func__, address, ptr[0], ptr[1]);
@@ -451,7 +463,7 @@ unsigned char Write_i2c(unsigned char address,  unsigned char *ptr, unsigned cha
 
 unsigned char Read_at_i2c(unsigned char address, unsigned char pos, unsigned char nb_char, unsigned char *ptr)
 {
-    unsigned char i;
+    //unsigned char i;
     int hConnection;
 	switch(address)
    {
@@ -533,8 +545,8 @@ unsigned char Read_at_i2c(unsigned char address, unsigned char pos, unsigned cha
 unsigned char Read_edid(unsigned char seg_addr, unsigned char seg_ptr, unsigned char data_addr, unsigned char word_offset,
                                 unsigned char nb_char, unsigned char *ptr)
 {
-    unsigned char i;
-  HDMI_I2C_LOG("hdmi, %s\n", __func__);
+   //unsigned char i;
+   HDMI_I2C_LOG("hdmi, %s\n", __func__);
 	#if 0
 
    pt_mtd[2] = &seg_ptr;
@@ -653,10 +665,10 @@ tmErrorCode_t  i2cRead(i2cRegisterType_t type_register,tmbslHdmiSysArgs_t *pSysA
 unsigned char i2cReadEdid(unsigned char seg_addr, unsigned char seg_ptr, unsigned char data_addr, unsigned char word_offset,
                                 unsigned char nb_char, unsigned char *ptr)
 {
-   unsigned char i;
-   tmErrorCode_t errCode;
+   //unsigned char i;
+   //tmErrorCode_t errCode;
 
-  HDMI_I2C_LOG("hdmi, %s\n", __func__);
+   HDMI_I2C_LOG("hdmi, %s\n", __func__);
 #if 0
    /* Take the semaphore for I²C */
    errCode = tmdlHdmiTxIWSemaphoreP(gI2CSemaphore);

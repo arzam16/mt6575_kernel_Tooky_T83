@@ -709,7 +709,7 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 
 	mutex_lock(&tty_mutex);
 	tty_lock();
-	tty = tty_init_dev(ptm_driver, index, 1);
+	tty = tty_init_dev(ptm_driver, index);
 	mutex_unlock(&tty_mutex);
 
 	if (IS_ERR(tty)) {

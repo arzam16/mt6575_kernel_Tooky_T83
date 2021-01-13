@@ -1,38 +1,3 @@
-/* Copyright Statement:
- *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
- */
-/* MediaTek Inc. (C) 2010. All rights reserved.
- *
- * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
- * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
- */
-
 /*****************************************************************************
  *  Copyright Statement:
  *  --------------------
@@ -70,7 +35,7 @@
 #if defined(MTK_HDMI_SUPPORT)
 #include <linux/string.h>
 
-#include <mach/mt6575_gpio.h>
+#include <mach/mt_gpio.h>
 #include "mach/eint.h"
 #include "mach/irqs.h"
 
@@ -134,9 +99,18 @@
 #include <linux/vmalloc.h>
 
 #include <asm/uaccess.h>
+
+#ifndef TMFL_TDA19989 
 #define TMFL_TDA19989 
+#endif
+
+#ifndef TMFL_NO_RTOS 
 #define TMFL_NO_RTOS 
+#endif
+
+#ifndef TMFL_LINUX_OS_KERNEL_DRIVER
 #define TMFL_LINUX_OS_KERNEL_DRIVER
+#endif
 
 
 /* HDMI DevLib */
@@ -161,7 +135,7 @@
    }
 
 static size_t hdmi_log_on = true;
-static struct switch_dev hdmi_switch_data;
+//static struct switch_dev hdmi_switch_data;
 #define HDMI_LOG(fmt, arg...) \
 	do { \
 		if (hdmi_log_on) printk("[hdmi_drv]%s,%d ", __func__, __LINE__); printk(fmt, ##arg); \
@@ -183,12 +157,12 @@ static struct switch_dev hdmi_switch_data;
 //  Local Variables
 // ---------------------------------------------------------------------------
 
-static struct task_struct *hdmi_event_task = NULL;
+//static struct task_struct *hdmi_event_task = NULL;
 static struct task_struct *hdmi_hpd_detect_task = NULL;
 
 wait_queue_head_t hdmi_event_wq;
 atomic_t hdmi_event = ATOMIC_INIT(0);
-static int hdmi_event_status = HDMI_STATE_NO_DEVICE;
+//static int hdmi_event_status = HDMI_STATE_NO_DEVICE;
 
 tda_instance our_instance, *g_inst;
 static HDMI_UTIL_FUNCS hdmi_util = {0};
@@ -292,6 +266,7 @@ static char *tda_spy_hsdc_fail_status(int fail)
 	}
 }
 
+#if 0
 static char *tda_spy_hdcp_status(int status)
 {
 	switch (status)
@@ -307,6 +282,8 @@ static char *tda_spy_hdcp_status(int status)
 	}
 
 }
+#endif
+
 #endif
 
 static char *tda_spy_sink(int sink)
@@ -442,6 +419,7 @@ static char *tda_spy_vfmt(int fmt)
 }
 #endif
 
+#if 0
 static char *tda_spy_audio_fmt(int fmt)
 {
 	switch (fmt)
@@ -505,7 +483,7 @@ static void tda_spy_audio(tmdlHdmiTxAudioInConfig_t *audio)
 			audio->dstRate,                                               \
 			audio->channelAllocation);
 }
-
+#endif
 /*
  *  
  */
@@ -643,6 +621,7 @@ TRY_DONE:
 	return err;
 }
 
+#if 0
 static char *tda_ioctl(int io)
 {
 	switch (io)
@@ -689,13 +668,14 @@ static char *tda_ioctl(int io)
 
 
 }
+#endif
 /*
  * On HDCP
  */
 void _tda19989_hdcp_on(tda_instance *this) 
 {
-    HDMI_FUNC();
     int err=0;
+    HDMI_FUNC();
 
 	if (this->tda.hdcp_status != HDCP_IS_NOT_INSTALLED) { /* check HDCP is installed ... */
 		if (this->tda.hdcp_enable) { /* ... but requested ! */ 
@@ -717,9 +697,8 @@ TRY_DONE:
  */
 void _tda19989_hdcp_off(tda_instance *this) 
 {
-
-    HDMI_FUNC();
 	int err=0;
+    HDMI_FUNC();
 
 	if (this->tda.hdcp_status != HDCP_IS_NOT_INSTALLED) { /* check HDCP is installed ... */
 
@@ -791,7 +770,7 @@ TRY_DONE:
 void _tda19989_eventCallbackTx(tmdlHdmiTxEvent_t event)
 {
 	tda_instance *this=&our_instance;
-	int err=0;
+	//int err=0;
 	unsigned short new_addr;
 #if defined (TMFL_TDA19989) || defined (TMFL_TDA9984) 
 	tda_hdcp_fail hdcp_fail;
@@ -893,7 +872,7 @@ void _tda19989_eventCallbackTx(tmdlHdmiTxEvent_t event)
 	}
 
 	this->driver.poll_done=true;
-TRY_DONE:
+//TRY_DONE:
 	(void)0;
 }
 
@@ -1017,13 +996,15 @@ static void hdmi_drv_get_params(HDMI_PARAMS *params)
 	params->io_driving_current = IO_DRIVING_CURRENT_2MA;
 	params->intermediat_buffer_num = 4;
 
-	params->output_mode = HDMI_OUTPUT_MODE_LCD_MIRROR;
+	params->output_mode = HDMI_OUTPUT_MODE_VIDEO_MODE;
     params->is_force_awake  = 0;
     params->is_force_landscape = 0;
 }
+
+#if 0
 static void _tda19989_irq_handler(void)
 {
-        int ret = 0;
+    //int ret = 0;
         
 	HDMI_LOG("[hdmi_drv]hdmi detected!!!\n");
     atomic_set(&hdmi_event, 1);
@@ -1033,6 +1014,8 @@ static void _tda19989_irq_handler(void)
 
 
 }
+#endif
+
 extern tmErrorCode_t suspend_i2c(void);
 extern tmErrorCode_t resume_i2c(void);
 
@@ -1058,7 +1041,7 @@ void hdmi_drv_suspend(void)
 
     
 TRY_DONE:
-    return err;
+    return /*err*/;
 }
 
 void hdmi_drv_resume(void)
@@ -1084,7 +1067,7 @@ void hdmi_drv_resume(void)
 
     
 TRY_DONE:
-    return err;
+    return /*err*/;
 }
 
 tmdlHdmiTxVinMode_t tda19989_vin_format_convert(HDMI_VIDEO_INPUT_FORMAT vin)
@@ -1094,8 +1077,9 @@ tmdlHdmiTxVinMode_t tda19989_vin_format_convert(HDMI_VIDEO_INPUT_FORMAT vin)
 		case HDMI_VIN_FORMAT_RGB565: return TMDL_HDMITX_VINMODE_RGB444;
 		case HDMI_VIN_FORMAT_RGB666: return TMDL_HDMITX_VINMODE_RGB444;
 		case HDMI_VIN_FORMAT_RGB888: return TMDL_HDMITX_VINMODE_RGB444;
-dafault: return TMDL_HDMITX_VINMODE_INVALID;
+        //dafault: return TMDL_HDMITX_VINMODE_INVALID;
 	}
+    return TMDL_HDMITX_VINMODE_INVALID;//avoid warning
 }
 
 tmdlHdmiTxVoutMode_t tda19989_vout_format_convert(HDMI_VIDEO_OUTPUT_FORMAT vout)
@@ -1105,16 +1089,19 @@ tmdlHdmiTxVoutMode_t tda19989_vout_format_convert(HDMI_VIDEO_OUTPUT_FORMAT vout)
 		case HDMI_VOUT_FORMAT_RGB888: return TMDL_HDMITX_VOUTMODE_RGB444;
 		case HDMI_VOUT_FORMAT_YUV422: return TMDL_HDMITX_VOUTMODE_YUV422;
 		case HDMI_VOUT_FORMAT_YUV444: return TMDL_HDMITX_VOUTMODE_YUV444;
-dafault: return TMDL_HDMITX_VOUTMODE_INVALID;
+        //dafault: return TMDL_HDMITX_VOUTMODE_INVALID;
 	}
+    return TMDL_HDMITX_VOUTMODE_INVALID;//avoid warning
 }
 
 // TODO:
 static int hdmi_drv_video_config(HDMI_VIDEO_RESOLUTION vformat, HDMI_VIDEO_INPUT_FORMAT vin, HDMI_VIDEO_OUTPUT_FORMAT vout)
 {
 	int err = 0;
-        HDMI_FUNC();
 	tda_instance *this = g_inst;
+
+    HDMI_FUNC();
+
 	/* Main settings */
 	this->tda.setio.video_out.mode = TMDL_HDMITX_VOUTMODE_RGB444;
 	this->tda.setio.video_out.colorDepth = TMDL_HDMITX_COLORDEPTH_24;
@@ -1197,9 +1184,11 @@ TRY_DONE:
 
 static int hdmi_drv_audio_config(HDMI_AUDIO_FORMAT aformat)
 {
-	int err = 0;
-    HDMI_FUNC();
+	//int err = 0;
 	tda_instance *this = g_inst;
+
+    HDMI_FUNC();
+
 	this->tda.setio.audio_in.format = TMDL_HDMITX_AFMT_I2S;
 	if(aformat == HDMI_AUDIO_PCM_16bit_48000)
 	{
@@ -1237,7 +1226,7 @@ static int hdmi_drv_audio_config(HDMI_AUDIO_FORMAT aformat)
 					this->tda.setio.sink);
 	//_tda19989_hdcp_on(this);
 
-TRY_DONE:
+//TRY_DONE:
 	return 0;
 }
 
@@ -1301,10 +1290,13 @@ static int last_hot_plug_detect_status = 0;
 static int hdmi_hpd_detect_kthread(void *data)
 {
         tda_instance *this = g_inst;
-        HDMI_FUNC();
-        int ret = 0;
+        //int ret = 0;
 		int hpd_result = 0;
         struct sched_param param = { .sched_priority = RTPM_PRIO_SCRN_UPDATE };
+
+        tmdlHdmiTxRxSense_t rx_sense_status = TMDL_HDMITX_RX_SENSE_INVALID;
+        HDMI_FUNC();
+
         sched_setscheduler(current, SCHED_RR, &param);
 
         for( ;; ) 
@@ -1313,7 +1305,8 @@ static int hdmi_hpd_detect_kthread(void *data)
                 //HDMI_LOG("%s, return %d\n", __func__, ret);
                 //HDMI_LOG("%s, mdelay begin\n", __func__);
                 tmdlHdmiTxGetHPDStatus(this->tda.instance,&this->tda.hot_plug_detect);
-                tmdlHdmiTxGetRXSenseStatus(this->tda.instance,&this->tda.rx_device_active);
+                tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
+                this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
 				hpd_result = (this->tda.hot_plug_detect || this->tda.rx_device_active);
                  if(hpd_result != last_hot_plug_detect_status)
                 {    
@@ -1348,6 +1341,13 @@ static int hdmi_drv_init(void)
         return 0;
 }
 
+static int hdmi_drv_enter(void)
+{
+        HDMI_FUNC();
+   
+        return 0;
+}
+
 static int hdmi_drv_exit(void)
 {
         HDMI_FUNC();
@@ -1369,8 +1369,10 @@ static int hdmi_drv_exit(void)
 void hdmi_drv_power_on(void)
 {
     int err = 0;
-    HDMI_FUNC();
     tda_instance *this = g_inst;
+    tmdlHdmiTxRxSense_t rx_sense_status = TMDL_HDMITX_RX_SENSE_INVALID;
+
+    HDMI_FUNC();
 
       resume_i2c();
 #if defined 	GPIO_HDMI_POWER_CONTROL
@@ -1401,7 +1403,8 @@ void hdmi_drv_power_on(void)
 #endif
 
        
-       tmdlHdmiTxGetRXSenseStatus(this->tda.instance,&this->tda.rx_device_active);
+       tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
+       this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
        tmdlHdmiTxGetHPDStatus(this->tda.instance,&this->tda.hot_plug_detect);
        HDMI_LOG("this->tda.rx_device_active=%d, this->tda.hot_plug_detect=%d\n", this->tda.rx_device_active, this->tda.hot_plug_detect);
 
@@ -1463,11 +1466,13 @@ TRY_DONE:
 
 HDMI_STATE hdmi_drv_get_state(void)
 {
-    HDMI_FUNC();
     tda_instance *this = g_inst;
+    tmdlHdmiTxRxSense_t rx_sense_status = TMDL_HDMITX_RX_SENSE_INVALID;
+    HDMI_FUNC();
 
     tmdlHdmiTxGetHPDStatus(this->tda.instance,&this->tda.hot_plug_detect);
-    tmdlHdmiTxGetRXSenseStatus(this->tda.instance,&this->tda.rx_device_active);
+    tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
+    this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
 
     if(this->tda.hot_plug_detect && this->tda.rx_device_active)
         return HDMI_STATE_ACTIVE;
@@ -1475,14 +1480,19 @@ HDMI_STATE hdmi_drv_get_state(void)
         return HDMI_STATE_NO_DEVICE;
 }
 
+void hdmi_drv_log_enable(bool enable)
+{
+    hdmi_log_on = enable;
+}
+
 const HDMI_DRIVER* HDMI_GetDriver(void)
 {
-        HDMI_FUNC();
 	static const HDMI_DRIVER HDMI_DRV =
 	{
 		.set_util_funcs = hdmi_drv_set_util_funcs,
 		.get_params     = hdmi_drv_get_params,
 		.init           = hdmi_drv_init,
+		.enter         = hdmi_drv_enter,
 		.exit         = hdmi_drv_exit,
 		.suspend        = hdmi_drv_suspend,
 		.resume         = hdmi_drv_resume,
@@ -1492,8 +1502,11 @@ const HDMI_DRIVER* HDMI_GetDriver(void)
 		.audio_enable	= hdmi_drv_audio_enable,
 		.power_on		= hdmi_drv_power_on,
 		.power_off		= hdmi_drv_power_off,
-		.get_state     = hdmi_drv_get_state
+		.get_state     = hdmi_drv_get_state,
+		.log_enable    = hdmi_drv_log_enable
 	};
+
+    HDMI_FUNC();
 
 	return &HDMI_DRV;
 }

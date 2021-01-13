@@ -74,7 +74,6 @@
 #endif
 
 /*----------------------------------------------------------------------------*/
-/*----------------------------------------------------------------------------*/
 static const struct i2c_device_id yamaha530_i2c_id[] = {{YAMAHA530_DEV_NAME,0},{}};
 static struct i2c_board_info __initdata i2c_YAMAHA530={ I2C_BOARD_INFO("yamaha530", (0x5c>>1))};
 /*the adapter id will be available in customization*/
@@ -84,7 +83,7 @@ static struct i2c_board_info __initdata i2c_YAMAHA530={ I2C_BOARD_INFO("yamaha53
 /*----------------------------------------------------------------------------*/
 static int yamaha530_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
 static int yamaha530_i2c_remove(struct i2c_client *client);
-static int yamaha530_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+static int yamaha530_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
 
 static struct platform_driver yamaha_sensor_driver;
 
@@ -106,7 +105,7 @@ struct geomagnetic_data {
     struct input_dev *input_data;
     struct input_dev *input_raw;
     struct delayed_work work;
-    struct semaphore driver_lock;
+    struct semaphore driver_lock;//need to repaired
     struct semaphore multi_lock;
 	struct mag_hw *hw;
     atomic_t last_data[3];
@@ -128,6 +127,7 @@ struct geomagnetic_data {
     int suspend;
 #endif
 };
+
 
 static struct i2c_client *this_client = NULL;
 
@@ -289,32 +289,44 @@ static int
 geomagnetic_lock(void)
 {
     struct geomagnetic_data *data = NULL;
-    int rt;
-
+  
+//lock_count++;
+//printk("geomagnetic_lock yucong debug: lock_count = %d\n",lock_count);
     if (this_client == NULL) {
         return -1;
     }
 
     data = i2c_get_clientdata(this_client);
+//spin_lock_irqsave(&data->driver_lock,1);
+//mutex_lock(&data->driver_lock);
+    #if 0
+    int rt;
     rt = down_interruptible(&data->driver_lock);
     if (rt < 0) {
         up(&data->driver_lock);
     }
     return rt;
+	#endif
+	return 0;
 }
 
 static int
 geomagnetic_unlock(void)
 {
     struct geomagnetic_data *data = NULL;
-
+	//lock_count--;
+	//printk("geomagnetic_unlock yucong debug: lock_count = %d\n",lock_count);
     if (this_client == NULL) {
         return -1;
     }
 
     data = i2c_get_clientdata(this_client);
-    up(&data->driver_lock);
-    return 0;
+	#if 0
+    	up(&data->driver_lock);
+	#endif
+	//spin_unlock_irqrestore(&data->driver_lock,1);
+	//mutex_unlock(&data->driver_lock);
+	return 0;
 }
 
 static void
@@ -351,32 +363,45 @@ static int
 geomagnetic_multi_lock(void)
 {
     struct geomagnetic_data *data = NULL;
-    int rt;
-
+    //multi_lock_count++;
+    //printk("geomagnetic_multi_lock yucong debug: multi_lock_count = %d\n",multi_lock_count);
+	
     if (this_client == NULL) {
         return -1;
     }
 
     data = i2c_get_clientdata(this_client);
+    #if 0
+    int rt;
     rt = down_interruptible(&data->multi_lock);
     if (rt < 0) {
         up(&data->multi_lock);
     }
-    return rt;
+	#endif
+	//spin_lock_irqsave(&data->multi_lock,1);
+	//mutex_lock(&data->multi_lock);
+    return 0;
 }
 
 static int
 geomagnetic_multi_unlock(void)
 {
     struct geomagnetic_data *data = NULL;
-
+	
+	//multi_lock_count--;
+	//printk("geomagnetic_multi_unlock yucong debug: multi_lock_count = %d\n",multi_lock_count);
+	
     if (this_client == NULL) {
         return -1;
     }
 
     data = i2c_get_clientdata(this_client);
+	#if 0
     up(&data->multi_lock);
-    return 0;
+	#endif
+	//spin_unlock_irqrestore(&data->multi_lock,1);
+	//mutex_unlock(&data->multi_lock);
+	return 0;
 }
 
 static int
@@ -754,6 +779,7 @@ geomagnetic_wake_store(struct device *dev,
     static int16_t cnt = 1;
 
     input_report_abs(data->input_data, ABS_WAKE, cnt++);
+	input_sync(data->input_data);
 
     return count;
 }
@@ -884,6 +910,7 @@ geomagnetic_raw_threshold_store(struct device *dev,
     if (0 <= value && value <= 2) {
         data->threshold = value;
         input_report_abs(data->input_raw, ABS_RAW_THRESHOLD, value);
+		input_sync(data->input_raw);
     }
 
     geomagnetic_multi_unlock();
@@ -935,6 +962,8 @@ geomagnetic_raw_distortion_store(struct device *dev,
             data->distortion[i] = distortion[i];
         }
         input_report_abs(data->input_raw, ABS_RAW_DISTORTION, val++);
+		input_sync(data->input_raw);
+		
     }
 
     geomagnetic_multi_unlock();
@@ -975,6 +1004,7 @@ geomagnetic_raw_shape_store(struct device *dev,
     if (0 <= value && value <= 1) {
         data->shape = value;
         input_report_abs(data->input_raw, ABS_RAW_SHAPE, value);
+		input_sync(data->input_raw);
     }
 
     geomagnetic_multi_unlock();
@@ -1111,6 +1141,7 @@ geomagnetic_work(struct yas_mag_data *magdata)
             code |= (rt & YAS_REPORT_CALIB_OFFSET_CHANGED);
             value = (count++ << 16) | (code);
             input_report_abs(data->input_raw, ABS_RAW_REPORT, value);
+			input_sync(data->input_raw);
         }
 
         if (rt & YAS_REPORT_DATA) {
@@ -1123,6 +1154,7 @@ geomagnetic_work(struct yas_mag_data *magdata)
                     && atomic_read(&data->last_data[1]) == magdata->xyz.v[1]
                     && atomic_read(&data->last_data[2]) == magdata->xyz.v[2]) {
                 input_report_abs(data->input_data, ABS_RUDDER, cnt++);
+				input_sync(data->input_data);
             }
             input_report_abs(data->input_data, ABS_STATUS, accuracy);
             input_sync(data->input_data);
@@ -1213,13 +1245,14 @@ geomagnetic_resume(struct i2c_client *client)
 
 #define GEOMAGNETIC_CHRDEV_NAME "msensor"
 
-static int
-ioctl_init(unsigned long args)
+static long
+ioctl_init(void)
 {
     /* nothing to do */
     return 0;
 }
 
+#if 0
 static int
 ioctl_read_chipinfo(unsigned long args)
 {
@@ -1231,6 +1264,7 @@ ioctl_read_chipinfo(unsigned long args)
 
     return 0;
 }
+#endif
 
 static int
 ioctl_read_sensordata(unsigned long args)
@@ -1278,6 +1312,7 @@ ioctl_read_calidata(unsigned long args)
     return 0;
 }
 
+#if 0
 static long
 geomagnetic_dev_ioctl(struct file *f, unsigned int cmd, unsigned long args)
 {
@@ -1287,7 +1322,7 @@ geomagnetic_dev_ioctl(struct file *f, unsigned int cmd, unsigned long args)
 
     switch (cmd) {
     case GEOMAGNETIC_IOCTL_INIT:
-        result = ioctl_init(args);
+        result = ioctl_init();
         break;
     case GEOMAGNETIC_IOCTL_READ_CHIPINFO:
         result = ioctl_read_chipinfo(args);
@@ -1319,11 +1354,13 @@ static struct file_operations geomagnetic_fops = {
     .unlocked_ioctl = geomagnetic_dev_ioctl,
 };
 
+
 static struct miscdevice geomagnetic_device = {
     .name = GEOMAGNETIC_CHRDEV_NAME,
     .fops = &geomagnetic_fops,
     .minor = MISC_DYNAMIC_MINOR,
 };
+#endif
 
 int
 geomagnetic_get_delay(void)
@@ -1401,9 +1438,7 @@ EXPORT_SYMBOL(geomagnetic_set_enable);
 
 #endif
 
-
-
-
+#if 0
 static int
 geomagnetic_remove(struct i2c_client *client)
 {
@@ -1429,6 +1464,8 @@ geomagnetic_remove(struct i2c_client *client)
 
     return 0;
 }
+#endif
+
 
 #ifdef GEOMAGNETIC_PLATFORM_API
 static int
@@ -1519,17 +1556,17 @@ static int yamaha530_release(struct inode *inode, struct file *file)
 
 
 /*----------------------------------------------------------------------------*/
-static long yamaha530_ioctl(struct inode *inode, struct file *file, unsigned int cmd,unsigned long arg)
+static long yamaha530_ioctl(struct file *file, unsigned int cmd,unsigned long arg)
 {
-	int valuebuf[4];
-	int calidata[7];
-	int controlbuf[10];
-	char strbuf[64];
+//	int valuebuf[4];
+//	int calidata[7];
+//	int controlbuf[10];
+//	char strbuf[64];
 	void __user *data;
 	long retval=0;
-	int mode=0;
+//	int mode=0;
 
-    void __user *argp = (void __user *)arg;
+//      void __user *argp = (void __user *)arg;
 	geomagnetic_multi_lock();
 //	MSE_FUN(f);
 
@@ -1537,7 +1574,7 @@ static long yamaha530_ioctl(struct inode *inode, struct file *file, unsigned int
 	{
 		case MSENSOR_IOCTL_INIT:
 			data = (void __user *) arg;
-			retval = ioctl_init(data);         
+			retval = ioctl_init();         
 			break;
 
 		case MSENSOR_IOCTL_SET_POSTURE:			
@@ -1586,6 +1623,8 @@ static long yamaha530_ioctl(struct inode *inode, struct file *file, unsigned int
 			break;
 
 		case MSENSOR_IOCTL_SENSOR_ENABLE:
+			break;
+		case MSENSOR_IOCTL_READ_FACTORY_SENSORDATA:
 			break;
 			/*
 		case MSENSOR_IOCTL_READ_FACTORY_SENSORDATA:			
@@ -1645,7 +1684,7 @@ int yamaha530_operate(void* self, uint32_t command, void* buff_in, int size_in,
 		void* buff_out, int size_out, int* actualout)
 {
 	int err = 0;
-	int value, sample_delay, i;
+	int value, sample_delay;
 	hwm_sensor_data* msensor_data;
 	struct geomagnetic_data *data = i2c_get_clientdata(this_client);
 
@@ -1773,7 +1812,7 @@ static int yamaha530_i2c_probe(struct i2c_client *client, const struct i2c_devic
     struct input_dev *input_data = NULL, *input_raw = NULL;
     int rt, sysfs_created = 0, sysfs_raw_created = 0;
     int data_registered = 0, raw_registered = 0, i;
-	struct hwmsen_object sobj_m, sobj_o;
+	struct hwmsen_object sobj_m;
 	 struct yas_mag_filter filter;
 
     i2c_set_clientdata(client, NULL);
@@ -1796,6 +1835,8 @@ static int yamaha530_i2c_probe(struct i2c_client *client, const struct i2c_devic
     }
     atomic_set(&data->last_status, 0);
     INIT_DELAYED_WORK(&data->work, geomagnetic_input_work_func);
+	//data->driver_lock =__MUTEX_INITIALIZER(data->driver_lock);
+	//data->multi_lock =__MUTEX_INITIALIZER(data->multi_lock);
     sema_init(&data->driver_lock,1);
     sema_init(&data->multi_lock,1);	
 
@@ -1935,7 +1976,7 @@ static int yamaha530_i2c_probe(struct i2c_client *client, const struct i2c_devic
         data->filter_threshold = filter.threshold;
     }
 
-	if(rt = misc_register(&yamaha530_device))
+	if((rt = misc_register(&yamaha530_device)))
 	{
 		MSE_ERR("yamaha530_device register failed\n");
 		goto err;
@@ -1944,7 +1985,7 @@ static int yamaha530_i2c_probe(struct i2c_client *client, const struct i2c_devic
 	sobj_m.self = data;
     sobj_m.polling = 1;
     sobj_m.sensor_operate = yamaha530_operate;
-	if(rt = hwmsen_attach(ID_MAGNETIC, &sobj_m))
+	if((rt = hwmsen_attach(ID_MAGNETIC, &sobj_m)))
 	{
 		MSE_ERR("attach fail = %d\n", rt);
 		goto err;
@@ -2005,7 +2046,7 @@ static atomic_t dev_open_count;
 /*----------------------------------------------------------------------------*/
 
 
-static int yamaha530_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+static int yamaha530_i2c_detect(struct i2c_client *client, struct i2c_board_info *info) 
 {    
 	strcpy(info->type, YAMAHA530_DEV_NAME);
 	return 0;
@@ -2027,7 +2068,9 @@ static int yamaha530_i2c_remove(struct i2c_client *client)
 			hwdep_driver.term();
 		}
 
-		if(err = yamaha530_delete_attr(&yamaha_sensor_driver.driver))
+		err = yamaha530_delete_attr(&yamaha_sensor_driver.driver);
+
+		if(err)
 	    {
 		   printk("yamaha530_delete_attr fail: %d\n", err);
 	    }
@@ -2051,7 +2094,7 @@ static int yamaha530_i2c_remove(struct i2c_client *client)
 /*----------------------------------------------------------------------------*/
 static int yamaha_probe(struct platform_device *pdev) 
 {
-	struct mag_hw *hw = get_cust_mag_hw();
+	//struct mag_hw *hw = get_cust_mag_hw();
 
 	//yamaha530_power(hw, 1);    
 	//yamaha530_force[0] = hw->i2c_num;
@@ -2065,7 +2108,7 @@ static int yamaha_probe(struct platform_device *pdev)
 /*----------------------------------------------------------------------------*/
 static int yamaha_remove(struct platform_device *pdev)
 {
-	struct mag_hw *hw = get_cust_mag_hw();
+	//struct mag_hw *hw = get_cust_mag_hw();
 
 	MSE_FUN();    
 	//yamaha530_power(hw, 0);    

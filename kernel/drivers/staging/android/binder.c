@@ -30,16 +30,20 @@
 #include <linux/rbtree.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
-#include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/delay.h>
+#include <linux/kthread.h>
+#include <linux/rtc.h>
 
 #include "binder.h"
+#include "binder_trace.h"
 
-static DEFINE_MUTEX(binder_lock);
+static DEFINE_MUTEX(binder_main_lock);
 static DEFINE_MUTEX(binder_deferred_lock);
+static DEFINE_MUTEX(binder_mmap_lock);
 
 static HLIST_HEAD(binder_procs);
 static HLIST_HEAD(binder_deferred_list);
@@ -52,7 +56,6 @@ static uid_t binder_context_mgr_uid = -1;
 static int binder_last_id;
 static struct workqueue_struct *binder_deferred_workqueue;
 
-/* Terry Chang <terry.chang@mediatek.com>: for RT priority inheritance */
 #define RT_PRIO_INHERIT			"v1.7"
 
 /************************************************************************************************************************/
@@ -67,7 +70,8 @@ static struct workqueue_struct *binder_deferred_workqueue;
 /*	[DN #6]			|	Finally receive requester's confirmation from upper layer.			*/
 /************************************************************************************************************************/
 #define MTK_DEATH_NOTIFY_MONITOR	"v0.1"
-#define BINDER_MONITOR			"v0.1"
+
+#define BINDER_MONITOR			"v0.2"
 
 #ifdef BINDER_MONITOR
 #define MAX_SERVICE_NAME_LEN		32
@@ -81,54 +85,9 @@ static struct workqueue_struct *binder_deferred_workqueue;
 /************************************************************************************************************************/
 #define MAGIC_SERVICE_NAME_OFFSET	68
 
-#define MAX_ENG_TRANS_LOG_BUFF_LEN	128
+#define MAX_ENG_TRANS_LOG_BUFF_LEN	10240
 
-enum {
-	BMONITOR_CHECKPOINT_TRANS_CREATE_SUCCESS	= 1,
-	BMONITOR_CHECKPOINT_BWORK_CREATE_SUCCESS	= 2,
-	BMONITOR_CHECKPOINT_BBUFF_CREATE_SUCCESS	= 3,
-	BMONITOR_CHECKPOINT_BBUFF_COPY_SUCCESS_1	= 4,
-	BMONITOR_CHECKPOINT_BBUFF_COPY_SUCCESS_2	= 5,
-	BMONITOR_CHECKPOINT_BBUFF_COPY_SUCCESS_3	= 6,
-	BMONITOR_CHECKPOINT_FLAT_BINDER_REBUILD_SUCCESS	= 7,
-	BMONITOR_CHECKPOINT_BWORK_ENQUEUE_SUCCESS	= 8,
-	BMONITOR_CHECKPOINT_ALREADY_WAKEUP_RECEIVER	= 9,
-	BMONITOR_CHECKPOINT_BWORK_RECEIVED_BY_RECEIVER	= 10,
-	BMONITOR_CHECKPOINT_BWORK_HANDLE_SUCCESS	= 11,
-	BMONITOR_CHECKPOINT_BWORK_DEQUEUE_SUCCESS	= 12,
-};
-
-struct binder_mutex_log_entry {
-	int proc;
-	int thread;
-	int action;
-	struct timespec timestamp;
-};
-struct binder_mutex_log {
-	int next;
-	int full;
-	struct binder_mutex_log_entry entry[32];
-};
-static struct binder_mutex_log binder_mutex_log;
-static struct binder_mutex_log_entry *binder_mutex_log_add(
-	struct binder_mutex_log *log)
-{
-	struct binder_mutex_log_entry *e;
-	e = &log->entry[log->next];
-	memset(e, 0, sizeof(*e));
-	log->next++;
-	if (log->next == ARRAY_SIZE(log->entry)) {
-		log->next = 0;
-		log->full = 1;
-	}
-	return e;
-}
-enum {
-	BMONITOR_MUTEX_LOCK		= 1,
-	BMONITOR_MUTEX_UNLOCK		= 2,
-	BMONITOR_DEFERRED_MUTEX_LOCK	= 3,
-	BMONITOR_DEFERRED_MUTEX_UNLOCK	= 4,
-};
+static unsigned long binder_log_level = 0;
 #endif
 
 #define BINDER_DEBUG_ENTRY(name) \
@@ -196,16 +155,11 @@ enum {
 	BINDER_DEBUG_PRIORITY_CAP           = 1U << 14,
 	BINDER_DEBUG_BUFFER_ALLOC_ASYNC     = 1U << 15,
 };
-
-#ifdef BINDER_MONITOR
-static unsigned long binder_log_level = 0;
-#endif
-
 static uint32_t binder_debug_mask = BINDER_DEBUG_USER_ERROR |
 	BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION;
 module_param_named(debug_mask, binder_debug_mask, uint, S_IWUSR | S_IRUGO);
 
-static int binder_debug_no_lock;
+static bool binder_debug_no_lock;
 module_param_named(proc_no_lock, binder_debug_no_lock, bool, S_IWUSR | S_IRUGO);
 
 static DECLARE_WAIT_QUEUE_HEAD(binder_user_error_wait);
@@ -289,18 +243,19 @@ struct binder_transaction_log_entry {
 	int data_size;
 	int offsets_size;
 #ifdef BINDER_MONITOR
-	char service[MAX_SERVICE_NAME_LEN];
 	int code;
 	struct timespec timestamp;
+	char service[MAX_SERVICE_NAME_LEN];
 #endif
 };
 struct binder_transaction_log {
 	int next;
 	int full;
-#ifdef USER_BUILD_KERNEL
-	struct binder_transaction_log_entry entry[32];
+#ifdef BINDER_MONITOR
+	unsigned size;
+	struct binder_transaction_log_entry *entry;
 #else
-	struct binder_transaction_log_entry entry[MAX_ENG_TRANS_LOG_BUFF_LEN];
+	struct binder_transaction_log_entry entry[32];
 #endif
 };
 static struct binder_transaction_log binder_transaction_log;
@@ -313,12 +268,35 @@ static struct binder_transaction_log_entry *binder_transaction_log_add(
 	e = &log->entry[log->next];
 	memset(e, 0, sizeof(*e));
 	log->next++;
+#ifdef BINDER_MONITOR
+	if (log->next == log->size) {
+		log->next = 0;
+		log->full = 1;
+	}
+#else
 	if (log->next == ARRAY_SIZE(log->entry)) {
 		log->next = 0;
 		log->full = 1;
 	}
+#endif
 	return e;
 }
+
+#ifdef BINDER_MONITOR
+static struct binder_transaction_log_entry entry_failed[32];
+
+# ifndef USER_BUILD_KERNEL
+/* log_disable bitmap
+ * bit: ...3210
+ *           ||_ 0: log enable / 1: log disable
+ *           |__ 1: self resume 
+ */       
+static int log_disable;
+#define BINDER_LOG_RESUME	0x2
+
+static struct binder_transaction_log_entry entry_t[MAX_ENG_TRANS_LOG_BUFF_LEN];
+# endif
+#endif
 
 struct binder_work {
 	struct list_head entry;
@@ -382,7 +360,7 @@ struct binder_ref {
 };
 
 struct binder_buffer {
-	struct list_head entry; /* free and allocated entries by addesss */
+	struct list_head entry; /* free and allocated entries by address */
 	struct rb_node rb_node; /* free entry by size or allocated entry */
 				/* by address */
 	unsigned free:1;
@@ -412,6 +390,7 @@ struct binder_proc {
 	struct rb_root refs_by_node;
 	int pid;
 	struct vm_area_struct *vma;
+	struct mm_struct *vma_vm_mm;
 	struct task_struct *tsk;
 	struct files_struct *files;
 	struct hlist_node deferred_work_node;
@@ -438,8 +417,8 @@ struct binder_proc {
 	long default_priority;
 	struct dentry *debugfs_entry;
 #ifdef RT_PRIO_INHERIT
-	unsigned long default_rt_prio : 16;
-	unsigned long default_policy : 16;
+	unsigned long default_rt_prio:16;
+	unsigned long default_policy:16;
 #endif
 };
 
@@ -467,6 +446,15 @@ struct binder_thread {
 	struct binder_stats stats;
 };
 
+#ifdef BINDER_MONITOR
+enum wait_on_reason {
+	WAIT_ON_NONE       = 0U,
+	WAIT_ON_READ       = 1U,
+	WAIT_ON_EXEC       = 2U,
+	WAIT_ON_REPLY_READ = 3U
+};
+#endif
+
 struct binder_transaction {
 	int debug_id;
 	struct binder_work work;
@@ -483,21 +471,352 @@ struct binder_transaction {
 	unsigned int	flags;
 	long	priority;
 	long	saved_priority;
-#ifdef RT_PRIO_INHERIT
-	unsigned long rt_prio : 16;
-	unsigned long policy : 16;
-	unsigned long saved_rt_prio : 16;
-	unsigned long saved_policy : 16;
-#endif
 	uid_t	sender_euid;
+#ifdef RT_PRIO_INHERIT
+	unsigned long rt_prio:16;
+	unsigned long policy:16;
+	unsigned long saved_rt_prio:16;
+	unsigned long saved_policy:16;
+#endif
 #ifdef BINDER_MONITOR
 	struct timespec timestamp;
-	unsigned int checkpoint;
+
+	enum wait_on_reason wait_on;
+	enum wait_on_reason bark_on;
+	struct rb_node rb_node; /* by bark_time */
+	struct timespec bark_time;
+	struct timespec exe_timestamp;
+	struct timeval tv;
+	char service[MAX_SERVICE_NAME_LEN];
+	pid_t fproc;
+	pid_t fthrd;
+	pid_t tproc;
+	pid_t tthrd;
 #endif
 };
 
 static void
 binder_defer_work(struct binder_proc *proc, enum binder_deferred_state defer);
+static inline void binder_lock(const char *tag);
+static inline void binder_unlock(const char *tag);
+
+#ifdef BINDER_MONITOR
+/* work should be done within how many secs */
+#define WAIT_BUDGET_READ  2
+#define WAIT_BUDGET_EXEC  4
+#define WAIT_BUDGET_MIN   min(WAIT_BUDGET_READ, WAIT_BUDGET_EXEC)
+
+static struct rb_root bwdog_transacts;
+
+static const char *binder_wait_on_str[] = {
+	"none",
+	"read",
+	"exec",
+	"rply"
+};
+
+struct binder_timeout_log_entry {
+	enum wait_on_reason r;
+	pid_t from_proc;
+	pid_t from_thrd;
+	pid_t to_proc;
+	pid_t to_thrd;
+	unsigned over_sec;
+	struct timespec ts;
+	struct timeval  tv;
+	unsigned int code;
+	char service[MAX_SERVICE_NAME_LEN];
+};	
+
+struct binder_timeout_log {
+	int next;
+	int full;
+	struct binder_timeout_log_entry entry[64];
+};
+
+static struct binder_timeout_log binder_timeout_log_t;
+
+/**
+ * binder_timeout_log_add - Insert a timeout log
+ */
+static struct binder_timeout_log_entry *binder_timeout_log_add(void)
+{
+	struct binder_timeout_log *log = &binder_timeout_log_t;
+	struct binder_timeout_log_entry *e;
+
+	e = &log->entry[log->next];
+	memset(e, 0, sizeof(*e));
+	log->next++;
+	if (log->next == ARRAY_SIZE(log->entry)) {
+		log->next = 0;
+		log->full = 1;
+	}
+	return e;
+}
+
+/**
+ * binder_print_bwdog - Output info of a timeout transaction
+ * @t:		pointer to the timeout transaction
+ * @cur_in:	current timespec while going to print
+ * @e:		timeout log entry to record
+ * @r:		output reason, either while barking or after barked
+ */
+static void binder_print_bwdog(struct binder_transaction *t,
+			       struct timespec *cur_in,
+			       struct binder_timeout_log_entry *e,
+			       enum wait_on_reason r)
+{
+	struct rtc_time tm;
+	struct timespec *startime;
+	struct timespec cur, sub_t;
+
+	if (cur_in && e) {
+		memcpy(&cur, cur_in, sizeof(struct timespec));
+	} else {
+		do_posix_clock_monotonic_gettime(&cur);
+		monotonic_to_bootbased(&cur);
+	}
+	startime = (r == WAIT_ON_EXEC) ? &t->exe_timestamp : &t->timestamp;
+	sub_t = timespec_sub(cur, *startime);
+
+	rtc_time_to_tm(t->tv.tv_sec, &tm);
+	printk(KERN_INFO "binder: %d %s %d:%d to %d:%d %s %u.%03ld "
+			 "sec (%s) dex_code %u start_at %lu.%03ld "
+			 "%d-%02d-%02d %02d:%02d:%02d.%03lu\n",
+			 t->debug_id, binder_wait_on_str[r],
+			 t->fproc, t->fthrd, t->tproc, t->tthrd,
+			 (cur_in && e) ? "over" : "total",
+			 (unsigned)sub_t.tv_sec, (sub_t.tv_nsec / NSEC_PER_MSEC), 
+			 t->service, t->code,
+
+			 (unsigned long)startime->tv_sec,
+	 		 (startime->tv_nsec / NSEC_PER_MSEC),
+			 (tm.tm_year + 1900), (tm.tm_mon + 1), tm.tm_mday,
+			 tm.tm_hour, tm.tm_min, tm.tm_sec,
+			 (unsigned long)(t->tv.tv_usec / USEC_PER_MSEC));
+
+	if (e) {
+		e->over_sec = sub_t.tv_sec;
+		memcpy(&e->ts, startime, sizeof(struct timespec));
+	}
+}
+
+/**
+ * binder_bwdog_safe - Check a transaction is monitor-free or not
+ * @t:	pointer to the transaction to check
+ *
+ * Returns 1 means safe.
+ */
+static inline int binder_bwdog_safe(struct binder_transaction *t)
+{
+	return (t->wait_on == WAIT_ON_NONE) ? 1 : 0;
+}
+
+/**
+ * binder_query_bwdog - Check a transaction is queued or not
+ * @t:	pointer to the transaction to check
+ * 
+ * Returns a pointer points to t, or NULL if it's not queued. 
+ */
+static struct rb_node **binder_query_bwdog(struct binder_transaction *t)
+{
+	struct rb_node **p = &bwdog_transacts.rb_node;
+	struct rb_node *parent = NULL;
+	struct binder_transaction *transact = NULL;
+	int comp;
+
+	while (*p) {
+		parent = *p;
+		transact = rb_entry(parent, struct binder_transaction, rb_node);
+
+		comp = timespec_compare(&t->bark_time, &transact->bark_time);
+		if (comp < 0)
+			p = &(*p)->rb_left;
+		else if (comp > 0)
+			p = &(*p)->rb_right;
+		else
+			break;
+	}
+	return p;
+}
+
+/**
+ * binder_queue_bwdog - Queue a transaction to keep tracking
+ * @t:		pointer to the transaction being tracked
+ * @budget:	seconds, which this transaction can afford
+ */
+static void binder_queue_bwdog(struct binder_transaction *t, time_t budget)
+{
+	struct rb_node **p = &bwdog_transacts.rb_node;
+	struct rb_node *parent = NULL;
+	struct binder_transaction *transact = NULL;
+	int ret;
+
+	do_posix_clock_monotonic_gettime(&t->bark_time);
+	monotonic_to_bootbased(&t->bark_time);
+	t->bark_time.tv_sec += budget;
+
+	while (*p) {
+		parent = *p;
+		transact = rb_entry(parent, struct binder_transaction, rb_node);
+
+		ret = timespec_compare(&t->bark_time, &transact->bark_time);
+		if (ret < 0)
+			p = &(*p)->rb_left;
+		else if (ret > 0)
+			p = &(*p)->rb_right;
+		else {
+			printk(KERN_INFO "binder: %d found same key\n",
+					 t->debug_id);
+			t->bark_time.tv_nsec += 1;
+			p = &(*p)->rb_right;
+		}
+	}
+	rb_link_node(&t->rb_node, parent, p);
+	rb_insert_color(&t->rb_node, &bwdog_transacts);
+}
+
+/**
+ * binder_cancel_bwdog - Cancel a transaction from tracking list
+ * @t:		pointer to the transaction being cancelled
+ */
+static void binder_cancel_bwdog(struct binder_transaction *t)
+{
+	struct rb_node **p = NULL;
+
+	if (binder_bwdog_safe(t)) {
+		if (t->bark_on) {
+			binder_print_bwdog(t, NULL, NULL, t->bark_on);
+			t->bark_on = WAIT_ON_NONE;
+		}
+		return;
+	}
+
+	p = binder_query_bwdog(t);
+	if (*p == NULL) {
+		printk(KERN_ERR "binder: %d waits %s, but not queued...\n",
+				t->debug_id, binder_wait_on_str[t->wait_on]);
+		return;
+	}
+
+	rb_erase(&t->rb_node, &bwdog_transacts);
+	t->wait_on = WAIT_ON_NONE;
+}
+
+/**
+ * binder_bwdog_bark -
+ *     Barking funcion while timeout. Record target process or thread, which
+ * cannot handle transaction in time, including todo list. Also add a log
+ * entry for AMS reference.
+ *
+ * @t:		pointer to the transaction, which triggers watchdog
+ * @cur:	current kernel timespec
+ */
+static void binder_bwdog_bark(struct binder_transaction *t, struct timespec *cur)
+{
+	struct binder_timeout_log_entry *e;
+
+
+	if (binder_bwdog_safe(t)) {
+		printk(KERN_INFO "binder: %d watched, but wait nothing\n",
+				 t->debug_id);
+		return;
+	}
+
+	e = binder_timeout_log_add();
+	binder_print_bwdog(t, cur, e, t->wait_on);
+
+	e->r = t->wait_on;
+	e->from_proc = t->fproc;
+	e->from_thrd = t->fthrd;
+	memcpy(&e->tv, &t->tv, sizeof(struct timeval));
+
+	switch (t->wait_on) {
+	case WAIT_ON_READ: {
+		if (!t->to_proc) {
+			printk(KERN_ERR "binder: %d has NULL target\n",
+					t->debug_id);
+			return;
+		}
+		e->to_proc = t->tproc;
+		e->to_thrd = t->tthrd;
+		e->code = t->code;
+		strcpy(e->service, t->service);
+		break;
+	}
+
+	case WAIT_ON_EXEC: {
+		if (!t->to_thread) {
+			printk(KERN_ERR "binder: %d has NULL target for "
+					"execution\n", t->debug_id);
+			return;
+		}
+		e->to_proc = t->tproc;
+		e->to_thrd = t->tthrd;
+		e->code = t->code; 
+		strcpy(e->service, t->service);
+		goto dumpBackTrace;
+	}
+
+	case WAIT_ON_REPLY_READ: {
+		if (!t->to_thread) {
+			printk(KERN_ERR "binder: %d has NULL target thread\n",
+					t->debug_id);
+			return;
+		}
+		e->to_proc = t->tproc;
+		e->to_thrd = t->tthrd;
+		strcpy(e->service, "");
+		break;
+	}
+
+	default: {
+		return;
+	}
+	}
+
+dumpBackTrace:
+	return;
+}
+
+/**
+ * binder_bwdog_thread - Main thread to check timeout list periodically
+ */
+static int binder_bwdog_thread(void *__unused)
+{
+	unsigned long sleep_sec;
+	struct rb_node *n = NULL;
+	struct timespec cur_time;
+	struct binder_transaction *t = NULL;
+
+	for (;;) {
+		binder_lock(__func__);
+		do_posix_clock_monotonic_gettime(&cur_time);
+		monotonic_to_bootbased(&cur_time);
+
+		for (n = rb_first(&bwdog_transacts); n != NULL; n = rb_next(n)) {
+			t = rb_entry(n, struct binder_transaction, rb_node);
+			if (timespec_compare(&cur_time, &t->bark_time) < 0)
+				break;
+	
+			binder_bwdog_bark(t, &cur_time);
+			rb_erase(&t->rb_node, &bwdog_transacts);
+			t->bark_on = t->wait_on;
+			t->wait_on = WAIT_ON_NONE;
+		}
+
+		if (!n)
+			sleep_sec = WAIT_BUDGET_MIN;
+		else
+		 	sleep_sec = timespec_sub(t->bark_time, cur_time).tv_sec;
+		binder_unlock(__func__);
+
+		msleep(sleep_sec * MSEC_PER_SEC);
+	}
+	printk(KERN_INFO "binder: %s exit...\n", __func__);
+	return 0;
+}
+#endif
 
 /*
  * copied from get_unused_fd_flags
@@ -518,8 +837,7 @@ int task_get_unused_fd_flags(struct binder_proc *proc, int flags)
 
 repeat:
 	fdt = files_fdtable(files);
-	fd = find_next_zero_bit(fdt->open_fds->fds_bits, fdt->max_fds,
-				files->next_fd);
+	fd = find_next_zero_bit(fdt->open_fds, fdt->max_fds, files->next_fd);
 
 	/*
 	 * N.B. For clone tasks sharing a files structure, this test
@@ -547,11 +865,11 @@ repeat:
 		goto repeat;
 	}
 
-	FD_SET(fd, fdt->open_fds);
+	__set_open_fd(fd, fdt);
 	if (flags & O_CLOEXEC)
-		FD_SET(fd, fdt->close_on_exec);
+		__set_close_on_exec(fd, fdt);
 	else
-		FD_CLR(fd, fdt->close_on_exec);
+		__clear_close_on_exec(fd, fdt);
 	files->next_fd = fd + 1;
 #if 1
 	/* Sanity check */
@@ -592,7 +910,7 @@ static void task_fd_install(
 static void __put_unused_fd(struct files_struct *files, unsigned int fd)
 {
 	struct fdtable *fdt = files_fdtable(files);
-	__FD_CLR(fd, fdt->open_fds);
+	__clear_open_fd(fd, fdt);
 	if (fd < files->next_fd)
 		files->next_fd = fd;
 }
@@ -618,7 +936,7 @@ static long task_close_fd(struct binder_proc *proc, unsigned int fd)
 	if (!filp)
 		goto out_unlock;
 	rcu_assign_pointer(fdt->fd[fd], NULL);
-	FD_CLR(fd, fdt->close_on_exec);
+	__clear_close_on_exec(fd, fdt);
 	__put_unused_fd(files, fd);
 	spin_unlock(&files->file_lock);
 	retval = filp_close(filp, files);
@@ -635,6 +953,19 @@ static long task_close_fd(struct binder_proc *proc, unsigned int fd)
 out_unlock:
 	spin_unlock(&files->file_lock);
 	return -EBADF;
+}
+
+static inline void binder_lock(const char *tag)
+{
+	trace_binder_lock(tag);
+	mutex_lock(&binder_main_lock);
+	trace_binder_locked(tag);
+}
+
+static inline void binder_unlock(const char *tag)
+{
+	trace_binder_unlock(tag);
+	mutex_unlock(&binder_main_lock);
 }
 
 static void binder_set_nice(long nice)
@@ -763,6 +1094,8 @@ static int binder_update_page_range(struct binder_proc *proc, int allocate,
 	if (end <= start)
 		return 0;
 
+	trace_binder_update_page_range(proc, allocate, start, end);
+
 	if (vma)
 		mm = NULL;
 	else
@@ -771,6 +1104,11 @@ static int binder_update_page_range(struct binder_proc *proc, int allocate,
 	if (mm) {
 		down_write(&mm->mmap_sem);
 		vma = proc->vma;
+		if (vma && mm != proc->vma_vm_mm) {
+			pr_err("binder: %d: vma mm and task mm mismatch\n",
+				proc->pid);
+			vma = NULL;
+		}
 	}
 
 	if (allocate == 0)
@@ -873,9 +1211,9 @@ static struct binder_buffer *binder_alloc_buf(struct binder_proc *proc,
 
 	if (is_async &&
 	    proc->free_async_space < size + sizeof(struct binder_buffer)) {
-		binder_debug(BINDER_DEBUG_BUFFER_ALLOC,
-			     "binder: %d: binder_alloc_buf size %zd"
-			     "failed, no async space left\n", proc->pid, size);
+		printk(KERN_ERR "binder: %d: binder_alloc_buf size %zd"
+				"failed, no async space left (%zd)\n", 
+				proc->pid, size, proc->free_async_space);
 		return NULL;
 	}
 
@@ -1380,6 +1718,9 @@ static void binder_pop_transaction(struct binder_thread *target_thread,
 	t->need_reply = 0;
 	if (t->buffer)
 		t->buffer->transaction = NULL;
+#ifdef BINDER_MONITOR
+	binder_cancel_bwdog(t);
+#endif
 	kfree(t);
 	binder_stats_deleted(BINDER_STAT_TRANSACTION);
 }
@@ -1517,12 +1858,13 @@ static void binder_transaction_buffer_release(struct binder_proc *proc,
 #ifdef RT_PRIO_INHERIT
 static void mt_sched_setscheduler_nocheck(struct task_struct *p, int policy, struct sched_param *param)
 {
-	if(policy == SCHED_FIFO || policy == SCHED_RR)
+	if (policy == SCHED_FIFO || policy == SCHED_RR)
 		param->sched_priority |= MT_ALLOW_RT_PRIO_BIT;
 	sched_setscheduler_nocheck(p, policy, param);
 
 }
 #endif
+
 static void binder_transaction(struct binder_proc *proc,
 			       struct binder_thread *thread,
 			       struct binder_transaction_data *tr, int reply)
@@ -1538,8 +1880,20 @@ static void binder_transaction(struct binder_proc *proc,
 	struct binder_transaction *in_reply_to = NULL;
 	struct binder_transaction_log_entry *e;
 	uint32_t return_error;
+#ifdef BINDER_MONITOR
+	struct binder_transaction_log_entry log_entry;
 
+# ifdef USER_BUILD_KERNEL
+	e = &log_entry;
+# else
+	if (reply || log_disable) 
+		e = &log_entry;
+	else
+		e = binder_transaction_log_add(&binder_transaction_log);
+# endif
+#else
 	e = binder_transaction_log_add(&binder_transaction_log);
+#endif
 	e->call_type = reply ? 2 : !!(tr->flags & TF_ONE_WAY);
 	e->from_proc = proc->pid;
 	e->from_thread = thread->pid;
@@ -1561,7 +1915,21 @@ static void binder_transaction(struct binder_proc *proc,
 			return_error = BR_FAILED_REPLY;
 			goto err_empty_call_stack;
 		}
+#ifdef BINDER_MONITOR
+		binder_cancel_bwdog(in_reply_to);
+#endif
 		binder_set_nice(in_reply_to->saved_priority);
+#ifdef RT_PRIO_INHERIT
+		if (rt_task(current) && 
+		    !(thread->looper & (BINDER_LOOPER_STATE_REGISTERED |
+					BINDER_LOOPER_STATE_ENTERED))) {
+			struct sched_param param = {
+				.sched_priority = in_reply_to->saved_rt_prio,
+			};
+			mt_sched_setscheduler_nocheck(current,
+				    in_reply_to->saved_policy, &param);
+		}
+#endif
 		if (in_reply_to->to_thread != thread) {
 			binder_user_error("binder: %d:%d got reply transaction "
 				"with bad transaction stack,"
@@ -1580,8 +1948,8 @@ static void binder_transaction(struct binder_proc *proc,
 		if (target_thread == NULL) {
 #ifdef BINDER_MONITOR
 			binder_user_error("binder: %d:%d got reply transaction "
-				"with bad transaction reply_from,"
-				" transaction %d has target %d:%d\n",
+				"with bad transaction reply_from, "
+				"transaction %d has target %d:%d\n",
 				proc->pid, thread->pid, in_reply_to->debug_id,
 				in_reply_to->to_proc ?
 				in_reply_to->to_proc->pid : 0,
@@ -1624,7 +1992,8 @@ static void binder_transaction(struct binder_proc *proc,
 			target_node = binder_context_mgr_node;
 			if (target_node == NULL) {
 #ifdef BINDER_MONITOR
-				binder_user_error("binder: %d:%d binder_context_mgr_node is NULL\n",
+				binder_user_error("binder: %d:%d "
+					"binder_context_mgr_node is NULL\n",
 					proc->pid, thread->pid);
 #endif
 				return_error = BR_DEAD_REPLY;
@@ -1687,7 +2056,10 @@ static void binder_transaction(struct binder_proc *proc,
 	}
 #ifdef BINDER_MONITOR
 	memcpy(&t->timestamp, &e->timestamp, sizeof(struct timespec));
-	t->checkpoint = BMONITOR_CHECKPOINT_TRANS_CREATE_SUCCESS;
+	/* a little differnt from real starting time */
+	do_gettimeofday(&t->tv);
+	if (!reply)
+		strcpy(t->service, target_node->name);
 #endif
 	binder_stats_created(BINDER_STAT_TRANSACTION);
 
@@ -1700,9 +2072,6 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error = BR_FAILED_REPLY;
 		goto err_alloc_tcomplete_failed;
 	}
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_BWORK_CREATE_SUCCESS;
-#endif
 	binder_stats_created(BINDER_STAT_TRANSACTION_COMPLETE);
 
 	t->debug_id = ++binder_last_id;
@@ -1725,6 +2094,12 @@ static void binder_transaction(struct binder_proc *proc,
 			     tr->data.ptr.buffer, tr->data.ptr.offsets,
 			     tr->data_size, tr->offsets_size);
 
+#ifdef BINDER_MONITOR
+	t->fproc = proc->pid;
+	t->fthrd = thread->pid;
+	t->tproc = target_proc->pid;
+	t->tthrd = target_thread ? target_thread->pid : 0;
+#endif
 	if (!reply && !(tr->flags & TF_ONE_WAY))
 		t->from = thread;
 	else
@@ -1740,6 +2115,9 @@ static void binder_transaction(struct binder_proc *proc,
 	t->policy = current->policy;
 	t->saved_rt_prio = MAX_RT_PRIO;
 #endif
+
+	trace_binder_transaction(reply, t, target_node);
+
 	t->buffer = binder_alloc_buf(target_proc, tr->data_size,
 		tr->offsets_size, !reply && (t->flags & TF_ONE_WAY));
 	if (t->buffer == NULL) {
@@ -1750,13 +2128,11 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error = BR_FAILED_REPLY;
 		goto err_binder_alloc_buf_failed;
 	}
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_BBUFF_CREATE_SUCCESS;
-#endif
 	t->buffer->allow_user_free = 0;
 	t->buffer->debug_id = t->debug_id;
 	t->buffer->transaction = t;
 	t->buffer->target_node = target_node;
+	trace_binder_transaction_alloc_buf(t->buffer);
 	if (target_node)
 		binder_inc_node(target_node, 1, 0, NULL);
 
@@ -1768,18 +2144,12 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error = BR_FAILED_REPLY;
 		goto err_copy_data_failed;
 	}
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_BBUFF_COPY_SUCCESS_1;
-#endif
 	if (copy_from_user(offp, tr->data.ptr.offsets, tr->offsets_size)) {
 		binder_user_error("binder: %d:%d got transaction with invalid "
 			"offsets ptr\n", proc->pid, thread->pid);
 		return_error = BR_FAILED_REPLY;
 		goto err_copy_data_failed;
 	}
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_BBUFF_COPY_SUCCESS_2;
-#endif
 	if (!IS_ALIGNED(tr->offsets_size, sizeof(size_t))) {
 		binder_user_error("binder: %d:%d got transaction with "
 			"invalid offsets size, %zd\n",
@@ -1787,9 +2157,6 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error = BR_FAILED_REPLY;
 		goto err_bad_offset;
 	}
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_BBUFF_COPY_SUCCESS_3;
-#endif
 	off_end = (void *)offp + tr->offsets_size;
 	for (; offp < off_end; offp++) {
 		struct flat_binder_object *fp;
@@ -1822,29 +2189,29 @@ static void binder_transaction(struct binder_proc *proc,
 				node->accept_fds = !!(fp->flags & FLAT_BINDER_FLAG_ACCEPTS_FDS);
 #ifdef BINDER_MONITOR
 				{
-					int i, len = 0;
-					//This is an addService() transaction identified by:
-					//fp->type == BINDER_TYPE_BINDER && tr->target.handle == 0
-					if (tr->target.handle == 0) {
-						//Hack into addService() payload:
-						//Service name string is located at MAGIC_SERVICE_NAME_OFFSET,
-						//and interleaved with character '\0'.
-						//For example, 'p', '\0', 'h', '\0', 'o', '\0', 'n', '\0', 'e'
-						for (i = 0 ; 2*i < tr->data_size ; i++) {
-							if (2*i < MAGIC_SERVICE_NAME_OFFSET) {
-								continue;
-							}
-							if (len >= (MAX_SERVICE_NAME_LEN-1)) {//Prevent array index overflow.
+				int i, len = 0;
+				/* this is an addService() transaction identified by:
+				 * fp->type == BINDER_TYPE_BINDER && tr->target.handle == 0
+				 */
+				if (tr->target.handle == 0) {
+					/* hack into addService() payload:
+					 * service name string is located at MAGIC_SERVICE_NAME_OFFSET,
+					 * and interleaved with character '\0'.
+					 * for example, 'p', '\0', 'h', '\0', 'o', '\0', 'n', '\0', 'e'
+					 */
+					for (i = 0 ; (2 * i) < tr->data_size ; i++) {
+						if ((2 * i) < MAGIC_SERVICE_NAME_OFFSET)
+							continue;
+						/* prevent array index overflow */
+						if (len >= (MAX_SERVICE_NAME_LEN - 1))
 								break;
-							}
-							len += sprintf((node->name)+len, "%c", *((char *)tr->data.ptr.buffer+2*i));
-						}
-						node->name[len] = '\0';
-						//printk("binder: %d:%d node->name=%s(len=%d)\n", proc->pid, thread->pid, node->name, len);
-					} else {
-						node->name[0] = '\0';
-						//printk("binder: %d:%d not to Service Manager\n", proc->pid, thread->pid);
+						len += sprintf((node->name) + len, "%c",
+							       *((char *)tr->data.ptr.buffer + (2 * i)));
 					}
+					node->name[len] = '\0';
+				} else {
+					node->name[0] = '\0';
+				}
 				}
 #endif
 			}
@@ -1873,6 +2240,7 @@ static void binder_transaction(struct binder_proc *proc,
 			binder_inc_ref(ref, fp->type == BINDER_TYPE_HANDLE,
 				       &thread->todo);
 
+			trace_binder_transaction_node_to_ref(t, node, ref);
 			binder_debug(BINDER_DEBUG_TRANSACTION,
 				     "        node %d u%p -> ref %d desc %d\n",
 				     node->debug_id, node->ptr, ref->debug_id,
@@ -1897,6 +2265,7 @@ static void binder_transaction(struct binder_proc *proc,
 				fp->binder = ref->node->ptr;
 				fp->cookie = ref->node->cookie;
 				binder_inc_node(ref->node, fp->type == BINDER_TYPE_BINDER, 0, NULL);
+				trace_binder_transaction_ref_to_node(t, ref);
 				binder_debug(BINDER_DEBUG_TRANSACTION,
 					     "        ref %d desc %d -> node %d u%p\n",
 					     ref->debug_id, ref->desc, ref->node->debug_id,
@@ -1914,6 +2283,8 @@ static void binder_transaction(struct binder_proc *proc,
 				}
 				fp->handle = new_ref->desc;
 				binder_inc_ref(new_ref, fp->type == BINDER_TYPE_HANDLE, NULL);
+				trace_binder_transaction_ref_to_ref(t, ref,
+								    new_ref);
 				binder_debug(BINDER_DEBUG_TRANSACTION,
 					     "        ref %d desc %d -> ref %d desc %d (node %d)\n",
 					     ref->debug_id, ref->desc, new_ref->debug_id,
@@ -1957,6 +2328,7 @@ static void binder_transaction(struct binder_proc *proc,
 				goto err_get_unused_fd_failed;
 			}
 			task_fd_install(target_proc, target_fd, file);
+			trace_binder_transaction_fd(t, fp->handle, target_fd);
 			binder_debug(BINDER_DEBUG_TRANSACTION,
 				     "        fd %ld -> %d\n", fp->handle, target_fd);
 			/* TODO: fput? */
@@ -1971,9 +2343,6 @@ static void binder_transaction(struct binder_proc *proc,
 			goto err_bad_object_type;
 		}
 	}
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_FLAT_BINDER_REBUILD_SUCCESS;
-#endif
 	if (reply) {
 		BUG_ON(t->buffer->async_transaction != 0);
 		binder_pop_transaction(target_thread, in_reply_to);
@@ -1995,11 +2364,8 @@ static void binder_transaction(struct binder_proc *proc,
 	list_add_tail(&t->work.entry, target_list);
 	tcomplete->type = BINDER_WORK_TRANSACTION_COMPLETE;
 	list_add_tail(&tcomplete->entry, &thread->todo);
-#ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_BWORK_ENQUEUE_SUCCESS;
-#endif
-	if (target_wait) {
 #ifdef RT_PRIO_INHERIT
+	if (target_wait) {
 		unsigned long flag;
 		wait_queue_t *curr, *next;
 
@@ -2007,17 +2373,17 @@ static void binder_transaction(struct binder_proc *proc,
 		list_for_each_entry_safe(curr, next, &target_wait->task_list, task_list) {
 			unsigned flags = curr->flags;
 			struct task_struct *tsk = curr->private;
-#ifdef BINDER_MONITOR
+# ifdef BINDER_MONITOR
 			if (tsk->state == TASK_UNINTERRUPTIBLE) {
-				printk(KERN_ERR "binder: from %d:%d to %d:%d target thread state: %ld\n",
-								proc->pid, thread->pid,
-								tsk->tgid, tsk->pid, tsk->state);
+				printk(KERN_ERR "binder: from %d:%d to %d:%d target "
+						"thread state: %ld\n",
+						proc->pid, thread->pid,
+						tsk->tgid, tsk->pid, tsk->state);
 				show_stack(tsk, NULL);
 			}
-#endif
-
-			if ((t->flags & TF_AGGRESSIVE_RT_PI) &&
-			    t->policy == SCHED_RR && t->rt_prio > tsk->rt_priority &&
+# endif
+			if (!reply && t->policy == SCHED_RR &&
+			    t->rt_prio > tsk->rt_priority &&
 			    !(t->flags & TF_ONE_WAY)) {
 				struct sched_param param = {
 					.sched_priority = t->rt_prio,
@@ -2028,28 +2394,19 @@ static void binder_transaction(struct binder_proc *proc,
 				mt_sched_setscheduler_nocheck(tsk, t->policy, &param);
 			}
 			if (curr->func(curr, TASK_INTERRUPTIBLE, 0, NULL) &&
-			    (flags & WQ_FLAG_EXCLUSIVE)) {
+			    (flags & WQ_FLAG_EXCLUSIVE))
 				break;
-			}
 		}
 		spin_unlock_irqrestore(&target_wait->lock, flag);
+	}
 #else
+	if (target_wait)
 		wake_up_interruptible(target_wait);
 #endif
-	}
+
 #ifdef BINDER_MONITOR
-	t->checkpoint = BMONITOR_CHECKPOINT_ALREADY_WAKEUP_RECEIVER;
-#ifndef USER_BUILD_KERNEL
-	if (!reply && e->service[0] != '\0' && e->target_handle != 0) {
-	printk(KERN_DEBUG
-		   "binder: %d: %s from %d:%d to %d:%d node %d handle %d (%s) size %d:%d code %x start %lu.%02lu\n",
-		   e->debug_id, (e->call_type == 2) ? "reply" :
-		   ((e->call_type == 1) ? "async" : "call "), e->from_proc,
-		   e->from_thread, e->to_proc, e->to_thread, e->to_node,
-		   e->target_handle, e->service, e->data_size, e->offsets_size, e->code,
-		   (unsigned long)e->timestamp.tv_sec, (e->timestamp.tv_nsec / (NSEC_PER_SEC / 1000000)));
-	}
-#endif
+	t->wait_on = reply ? WAIT_ON_REPLY_READ : WAIT_ON_READ;
+	binder_queue_bwdog(t, (time_t)WAIT_BUDGET_READ);
 #endif
 	return;
 
@@ -2062,6 +2419,7 @@ err_binder_new_node_failed:
 err_bad_object_type:
 err_bad_offset:
 err_copy_data_failed:
+	trace_binder_transaction_failed_buffer_release(t->buffer);
 	binder_transaction_buffer_release(target_proc, t->buffer, offp);
 	t->buffer->transaction = NULL;
 	binder_free_buf(target_proc, t->buffer);
@@ -2069,6 +2427,9 @@ err_binder_alloc_buf_failed:
 	kfree(tcomplete);
 	binder_stats_deleted(BINDER_STAT_TRANSACTION_COMPLETE);
 err_alloc_tcomplete_failed:
+#ifdef BINDER_MONITOR
+	binder_cancel_bwdog(t);
+#endif
 	kfree(t);
 	binder_stats_deleted(BINDER_STAT_TRANSACTION);
 err_alloc_t_failed:
@@ -2107,6 +2468,7 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 		if (get_user(cmd, (uint32_t __user *)ptr))
 			return -EFAULT;
 		ptr += sizeof(uint32_t);
+		trace_binder_command(cmd);
 		if (_IOC_NR(cmd) < ARRAY_SIZE(binder_stats.bc)) {
 			binder_stats.bc[_IOC_NR(cmd)]++;
 			proc->stats.bc[_IOC_NR(cmd)]++;
@@ -2276,6 +2638,7 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 				else
 					list_move_tail(buffer->target_node->async_todo.next, &thread->todo);
 			}
+			trace_binder_transaction_buffer_release(buffer);
 			binder_transaction_buffer_release(proc, buffer, NULL);
 			binder_free_buf(proc, buffer);
 			break;
@@ -2360,17 +2723,14 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 			}
 #ifdef MTK_DEATH_NOTIFY_MONITOR
 			binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-					"[DN #%s]binder: %d:%d %s "
-					"%d cookie 0x%p\n",
-					cmd == BC_REQUEST_DEATH_NOTIFICATION ?
-                                        "1" :
-                                        "2",
-					proc->pid, thread->pid,
-					cmd == BC_REQUEST_DEATH_NOTIFICATION ?
-					"BC_REQUEST_DEATH_NOTIFICATION" :
-					"BC_CLEAR_DEATH_NOTIFICATION",
-					ref->node->proc ? ref->node->proc->pid : 0,
-					cookie);
+				     "[DN #%s]binder: %d:%d %s %d cookie 0x%p\n",
+				     cmd == BC_REQUEST_DEATH_NOTIFICATION ? "1" : "2",
+				     proc->pid, thread->pid,
+				     cmd == BC_REQUEST_DEATH_NOTIFICATION ?
+				         "BC_REQUEST_DEATH_NOTIFICATION" :
+				         "BC_CLEAR_DEATH_NOTIFICATION",
+				     ref->node->proc ? ref->node->proc->pid : 0,
+				     cookie);
 #else
 			binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
 				     "binder: %d:%d %s %p ref %d desc %d s %d w %d for node %d\n",
@@ -2457,7 +2817,7 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 
 #ifdef MTK_DEATH_NOTIFY_MONITOR
 			binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-			"[DN #6]binder: %d:%d cookie 0x%p\n", proc->pid, thread->pid, cookie);
+				     "[DN #6]binder: %d:%d cookie 0x%p\n", proc->pid, thread->pid, cookie);
 #endif
 
 			ptr += sizeof(void *);
@@ -2503,6 +2863,7 @@ int binder_thread_write(struct binder_proc *proc, struct binder_thread *thread,
 void binder_stat_br(struct binder_proc *proc, struct binder_thread *thread,
 		    uint32_t cmd)
 {
+	trace_binder_return(cmd);
 	if (_IOC_NR(cmd) < ARRAY_SIZE(binder_stats.br)) {
 		binder_stats.br[_IOC_NR(cmd)]++;
 		proc->stats.br[_IOC_NR(cmd)]++;
@@ -2549,6 +2910,7 @@ retry:
 			if (put_user(thread->return_error2, (uint32_t __user *)ptr))
 				return -EFAULT;
 			ptr += sizeof(uint32_t);
+			binder_stat_br(proc, thread, thread->return_error2);
 			if (ptr == end)
 				goto done;
 			thread->return_error2 = BR_OK;
@@ -2556,6 +2918,7 @@ retry:
 		if (put_user(thread->return_error, (uint32_t __user *)ptr))
 			return -EFAULT;
 		ptr += sizeof(uint32_t);
+		binder_stat_br(proc, thread, thread->return_error);
 		thread->return_error = BR_OK;
 		goto done;
 	}
@@ -2564,18 +2927,12 @@ retry:
 	thread->looper |= BINDER_LOOPER_STATE_WAITING;
 	if (wait_for_proc_work)
 		proc->ready_threads++;
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_UNLOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
-	mutex_unlock(&binder_lock);
+
+	binder_unlock(__func__);
+
+	trace_binder_wait_for_work(wait_for_proc_work,
+				   !!thread->transaction_stack,
+				   !list_empty(&thread->todo));
 	if (wait_for_proc_work) {
 		if (!(thread->looper & (BINDER_LOOPER_STATE_REGISTERED |
 					BINDER_LOOPER_STATE_ENTERED))) {
@@ -2587,7 +2944,7 @@ retry:
 						 binder_stop_on_user_error < 2);
 		}
 #ifdef RT_PRIO_INHERIT
-		/* disable preemption to prevent from schedule-out immediately*/
+		/* disable preemption to prevent from schedule-out immediately */
 		preempt_disable();
 #endif
 		binder_set_nice(proc->default_priority);
@@ -2597,9 +2954,9 @@ retry:
 			struct sched_param param = {
 				.sched_priority = proc->default_rt_prio,
 			};
+
 			mt_sched_setscheduler_nocheck(current,
-			                           proc->default_policy,
-			                           &param);
+				    proc->default_policy, &param);
 		}
 		preempt_enable_no_resched();
 #endif
@@ -2615,18 +2972,9 @@ retry:
 		} else
 			ret = wait_event_interruptible(thread->wait, binder_has_thread_work(thread));
 	}
-	mutex_lock(&binder_lock);
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_LOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
+
+	binder_lock(__func__);
+
 	if (wait_for_proc_work)
 		proc->ready_threads--;
 	thread->looper &= ~BINDER_LOOPER_STATE_WAITING;
@@ -2657,7 +3005,7 @@ retry:
 		case BINDER_WORK_TRANSACTION: {
 			t = container_of(w, struct binder_transaction, work);
 #ifdef BINDER_MONITOR
-			t->checkpoint = BMONITOR_CHECKPOINT_BWORK_RECEIVED_BY_RECEIVER;
+			binder_cancel_bwdog(t);
 #endif
 		} break;
 		case BINDER_WORK_TRANSACTION_COMPLETE: {
@@ -2747,19 +3095,23 @@ retry:
 			switch (w->type) {
 				case BINDER_WORK_DEAD_BINDER:
 					binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-					"[DN #4]binder: %d:%d BINDER_WORK_DEAD_BINDER cookie 0x%p\n", proc->pid, thread->pid, death->cookie);
+						     "[DN #4]binder: %d:%d BINDER_WORK_DEAD_BINDER cookie 0x%p\n",
+						     proc->pid, thread->pid, death->cookie);
 					break;
 				case BINDER_WORK_DEAD_BINDER_AND_CLEAR:
 					binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-					"[DN #4]binder: %d:%d BINDER_WORK_DEAD_BINDER_AND_CLEAR cookie 0x%p\n", proc->pid, thread->pid, death->cookie);
+						     "[DN #4]binder: %d:%d BINDER_WORK_DEAD_BINDER_AND_CLEAR cookie "
+						     "0x%p\n", proc->pid, thread->pid, death->cookie);
 					break;
 				case BINDER_WORK_CLEAR_DEATH_NOTIFICATION:
 					binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-					"[DN #4]binder: %d:%d BINDER_WORK_CLEAR_DEATH_NOTIFICATION cookie 0x%p\n", proc->pid, thread->pid, death->cookie);
+						     "[DN #4]binder: %d:%d BINDER_WORK_CLEAR_DEATH_NOTIFICATION cookie "
+						     "0x%p\n", proc->pid, thread->pid, death->cookie);
 					break;
 				default:
 					binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-					"[DN #4]binder: %d:%d UNKNOWN-%d cookie 0x%p\n", proc->pid, thread->pid, w->type, death->cookie);
+						     "[DN #4]binder: %d:%d UNKNOWN-%d cookie 0x%p\n",
+						     proc->pid, thread->pid, w->type, death->cookie);
 					break;
 			}
 #endif
@@ -2774,6 +3126,7 @@ retry:
 			if (put_user(death->cookie, (void * __user *)ptr))
 				return -EFAULT;
 			ptr += sizeof(void *);
+			binder_stat_br(proc, thread, cmd);
 #ifndef MTK_DEATH_NOTIFY_MONITOR
 			binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
 				     "binder: %d:%d %s %p\n",
@@ -2805,6 +3158,9 @@ retry:
 			tr.cookie =  target_node->cookie;
 			t->saved_priority = task_nice(current);
 #ifdef RT_PRIO_INHERIT
+			/* since we may fail the rt inherit due to target
+			 * wait queue task_list is empty, check again here.
+			 */ 
 			if (t->policy == SCHED_RR && t->rt_prio > current->rt_priority &&
 			    !(t->flags & TF_ONE_WAY)) {
 				struct sched_param param = {
@@ -2854,10 +3210,8 @@ retry:
 		if (copy_to_user(ptr, &tr, sizeof(tr)))
 			return -EFAULT;
 		ptr += sizeof(tr);
-#ifdef BINDER_MONITOR
-			t->checkpoint = BMONITOR_CHECKPOINT_BWORK_HANDLE_SUCCESS;
-#endif
 
+		trace_binder_transaction_received(t);
 		binder_stat_br(proc, thread, cmd);
 		binder_debug(BINDER_DEBUG_TRANSACTION,
 			     "binder: %d:%d %s %d %d:%d, cmd %d"
@@ -2871,16 +3225,24 @@ retry:
 			     tr.data.ptr.buffer, tr.data.ptr.offsets);
 
 		list_del(&t->work.entry);
-#ifdef BINDER_MONITOR
-			t->checkpoint = BMONITOR_CHECKPOINT_BWORK_DEQUEUE_SUCCESS;
-#endif
 		t->buffer->allow_user_free = 1;
 		if (cmd == BR_TRANSACTION && !(t->flags & TF_ONE_WAY)) {
 			t->to_parent = thread->transaction_stack;
 			t->to_thread = thread;
 			thread->transaction_stack = t;
+#ifdef BINDER_MONITOR
+			do_posix_clock_monotonic_gettime(&t->exe_timestamp);
+			monotonic_to_bootbased(&t->exe_timestamp);
+			do_gettimeofday(&t->tv);
+			t->wait_on = WAIT_ON_EXEC;
+			t->tthrd = thread->pid;
+			binder_queue_bwdog(t, (time_t)WAIT_BUDGET_EXEC);
+#endif
 		} else {
 			t->buffer->transaction = NULL;
+#ifdef BINDER_MONITOR
+			binder_cancel_bwdog(t);
+#endif
 			kfree(t);
 			binder_stats_deleted(BINDER_STAT_TRANSACTION);
 		}
@@ -2901,6 +3263,7 @@ done:
 			     proc->pid, thread->pid);
 		if (put_user(BR_SPAWN_LOOPER, (uint32_t __user *)buffer))
 			return -EFAULT;
+		binder_stat_br(proc, thread, BR_SPAWN_LOOPER);
 	}
 	return 0;
 }
@@ -2985,16 +3348,16 @@ static int binder_free_thread(struct binder_proc *proc,
 			     (t->to_thread == thread) ? "in" : "out");
 
 #ifdef BINDER_MONITOR
-			printk(KERN_ERR
-		   "binder: %d: %p from %d:%d to %d:%d code %x flags %x pri %ld r%d ckpoint %u start %lu.%02lu",
-		   t->debug_id, t,
-		   t->from ? t->from->proc->pid : 0,
-		   t->from ? t->from->pid : 0,
-		   t->to_proc ? t->to_proc->pid : 0,
-		   t->to_thread ? t->to_thread->pid : 0,
-		   t->code, t->flags, t->priority, t->need_reply,
-		   t->checkpoint,
-		   (unsigned long)t->timestamp.tv_sec, (t->timestamp.tv_nsec / (NSEC_PER_SEC / 1000000)));
+		printk(KERN_ERR "binder: %d: %p from %d:%d to %d:%d code %x flags %x "
+				"pri %ld r%d start %lu.%02lu",
+				t->debug_id, t,
+				t->from ? t->from->proc->pid : 0,
+				t->from ? t->from->pid : 0,
+				t->to_proc ? t->to_proc->pid : 0,
+				t->to_thread ? t->to_thread->pid : 0,
+				t->code, t->flags, t->priority, t->need_reply,
+				(unsigned long)t->timestamp.tv_sec,
+				(t->timestamp.tv_nsec / NSEC_PER_USEC));
 #endif
 		if (t->to_thread == thread) {
 			t->to_proc = NULL;
@@ -3025,34 +3388,14 @@ static unsigned int binder_poll(struct file *filp,
 	struct binder_thread *thread = NULL;
 	int wait_for_proc_work;
 
-	mutex_lock(&binder_lock);
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_LOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
+	binder_lock(__func__);
+
 	thread = binder_get_thread(proc);
 
 	wait_for_proc_work = thread->transaction_stack == NULL &&
 		list_empty(&thread->todo) && thread->return_error == BR_OK;
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_UNLOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
-	mutex_unlock(&binder_lock);
+
+	binder_unlock(__func__);
 
 	if (wait_for_proc_work) {
 		if (binder_has_proc_work(proc, thread))
@@ -3080,22 +3423,13 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	/*printk(KERN_INFO "binder_ioctl: %d:%d %x %lx\n", proc->pid, current->pid, cmd, arg);*/
 
+	trace_binder_ioctl(cmd, arg);
+
 	ret = wait_event_interruptible(binder_user_error_wait, binder_stop_on_user_error < 2);
 	if (ret)
-		return ret;
+		goto err_unlocked;
 
-	mutex_lock(&binder_lock);
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_LOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
+	binder_lock(__func__);
 	thread = binder_get_thread(proc);
 	if (thread == NULL) {
 		ret = -ENOMEM;
@@ -3120,6 +3454,7 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		if (bwr.write_size > 0) {
 			ret = binder_thread_write(proc, thread, (void __user *)bwr.write_buffer, bwr.write_size, &bwr.write_consumed);
+			trace_binder_write_done(ret);
 			if (ret < 0) {
 				bwr.read_consumed = 0;
 				if (copy_to_user(ubuf, &bwr, sizeof(bwr)))
@@ -3129,6 +3464,7 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		if (bwr.read_size > 0) {
 			ret = binder_thread_read(proc, thread, (void __user *)bwr.read_buffer, bwr.read_size, &bwr.read_consumed, filp->f_flags & O_NONBLOCK);
+			trace_binder_read_done(ret);
 			if (!list_empty(&proc->todo))
 				wake_up_interruptible(&proc->wait);
 			if (ret < 0) {
@@ -3207,21 +3543,12 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 err:
 	if (thread)
 		thread->looper &= ~BINDER_LOOPER_STATE_NEED_RETURN;
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_UNLOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
-	mutex_unlock(&binder_lock);
+	binder_unlock(__func__);
 	wait_event_interruptible(binder_user_error_wait, binder_stop_on_user_error < 2);
 	if (ret && ret != -ERESTARTSYS)
 		printk(KERN_INFO "binder: %d:%d ioctl %x %lx returned %d\n", proc->pid, current->pid, cmd, arg, ret);
+err_unlocked:
+	trace_binder_ioctl_done(ret);
 	return ret;
 }
 
@@ -3233,7 +3560,6 @@ static void binder_vma_open(struct vm_area_struct *vma)
 		     proc->pid, vma->vm_start, vma->vm_end,
 		     (vma->vm_end - vma->vm_start) / SZ_1K, vma->vm_flags,
 		     (unsigned long)pgprot_val(vma->vm_page_prot));
-	dump_stack();
 }
 
 static void binder_vma_close(struct vm_area_struct *vma)
@@ -3245,6 +3571,7 @@ static void binder_vma_close(struct vm_area_struct *vma)
 		     (vma->vm_end - vma->vm_start) / SZ_1K, vma->vm_flags,
 		     (unsigned long)pgprot_val(vma->vm_page_prot));
 	proc->vma = NULL;
+	proc->vma_vm_mm = NULL;
 	binder_defer_work(proc, BINDER_DEFERRED_PUT_FILES);
 }
 
@@ -3277,6 +3604,7 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 	vma->vm_flags = (vma->vm_flags | VM_DONTCOPY) & ~VM_MAYWRITE;
 
+	mutex_lock(&binder_mmap_lock);
 	if (proc->buffer) {
 		ret = -EBUSY;
 		failure_string = "already mapped";
@@ -3291,6 +3619,7 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 	proc->buffer = area->addr;
 	proc->user_buffer_offset = vma->vm_start - (uintptr_t)proc->buffer;
+	mutex_unlock(&binder_mmap_lock);
 
 #ifdef CONFIG_CPU_CACHE_VIPT
 	if (cache_is_vipt_aliasing()) {
@@ -3323,8 +3652,9 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 	binder_insert_free_buffer(proc, buffer);
 	proc->free_async_space = proc->buffer_size / 2;
 	barrier();
-	proc->files = get_files_struct(current);
+	proc->files = get_files_struct(proc->tsk);
 	proc->vma = vma;
+	proc->vma_vm_mm = vma->vm_mm;
 
 	/*printk(KERN_INFO "binder_mmap: %d %lx-%lx maps %p\n",
 		 proc->pid, vma->vm_start, vma->vm_end, proc->buffer);*/
@@ -3334,10 +3664,12 @@ err_alloc_small_buf_failed:
 	kfree(proc->pages);
 	proc->pages = NULL;
 err_alloc_pages_failed:
+	mutex_lock(&binder_mmap_lock);
 	vfree(proc->buffer);
 	proc->buffer = NULL;
 err_get_vm_area_failed:
 err_already_mapped:
+	mutex_unlock(&binder_mmap_lock);
 err_bad_arg:
 	printk(KERN_ERR "binder_mmap: %d %lx-%lx %s failed %d\n",
 	       proc->pid, vma->vm_start, vma->vm_end, failure_string, ret);
@@ -3363,35 +3695,16 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	proc->default_rt_prio = current->rt_priority;
 	proc->default_policy = current->policy;
 #endif
-	mutex_lock(&binder_lock);
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_LOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
+
+	binder_lock(__func__);
+
 	binder_stats_created(BINDER_STAT_PROC);
 	hlist_add_head(&proc->proc_node, &binder_procs);
 	proc->pid = current->group_leader->pid;
 	INIT_LIST_HEAD(&proc->delivered_death);
 	filp->private_data = proc;
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_MUTEX_UNLOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
-	mutex_unlock(&binder_lock);
+
+	binder_unlock(__func__);
 
 	if (binder_debugfs_dir_entry_proc) {
 		char strbuf[11];
@@ -3490,7 +3803,8 @@ static void binder_deferred_release(struct binder_proc *proc)
 				if (ref->death) {
 #ifdef MTK_DEATH_NOTIFY_MONITOR
 					binder_debug(BINDER_DEBUG_DEATH_NOTIFICATION,
-					"[DN #3]binder: %d: cookie 0x%p\n", proc->pid, ref->death->cookie);
+						     "[DN #3]binder: %d: cookie 0x%p\n",
+						     proc->pid, ref->death->cookie);
 #endif
 					death++;
 					if (list_empty(&ref->death->work.entry)) {
@@ -3529,16 +3843,16 @@ static void binder_deferred_release(struct binder_proc *proc)
 			       proc->pid, t->debug_id);
 			/*BUG();*/
 #ifdef BINDER_MONITOR
-			printk(KERN_ERR
-		   "binder: %d: %p from %d:%d to %d:%d code %x flags %x pri %ld r%d ckpoint %u start %lu.%02lu",
-		   t->debug_id, t,
-		   t->from ? t->from->proc->pid : 0,
-		   t->from ? t->from->pid : 0,
-		   t->to_proc ? t->to_proc->pid : 0,
-		   t->to_thread ? t->to_thread->pid : 0,
-		   t->code, t->flags, t->priority, t->need_reply,
-		   t->checkpoint,
-		   (unsigned long)t->timestamp.tv_sec, (t->timestamp.tv_nsec / (NSEC_PER_SEC / 1000000)));
+			printk(KERN_ERR "binder: %d: %p from %d:%d to %d:%d code %x flags %x "
+					"pri %ld r%d start %lu.%02lu",
+					t->debug_id, t,
+					t->from ? t->from->proc->pid : 0,
+					t->from ? t->from->pid : 0,
+					t->to_proc ? t->to_proc->pid : 0,
+					t->to_thread ? t->to_thread->pid : 0,
+					t->code, t->flags, t->priority, t->need_reply,
+					(unsigned long)t->timestamp.tv_sec,
+					(t->timestamp.tv_nsec / NSEC_PER_USEC));
 #endif
 		}
 		binder_free_buf(proc, buffer);
@@ -3587,30 +3901,8 @@ static void binder_deferred_func(struct work_struct *work)
 
 	int defer;
 	do {
-		mutex_lock(&binder_lock);
-#ifdef BINDER_MONITOR
-	        {
-			struct binder_mutex_log_entry *e;
-			e = binder_mutex_log_add(&binder_mutex_log);
-			e->proc = current->tgid;
-			e->thread = current->pid;
-			e->action = BMONITOR_MUTEX_LOCK;
-			do_posix_clock_monotonic_gettime(&e->timestamp);
-			monotonic_to_bootbased(&e->timestamp);
-		}
-#endif
+		binder_lock(__func__);
 		mutex_lock(&binder_deferred_lock);
-#ifdef BINDER_MONITOR
-	        {
-			struct binder_mutex_log_entry *e;
-			e = binder_mutex_log_add(&binder_mutex_log);
-			e->proc = current->tgid;
-			e->thread = current->pid;
-			e->action = BMONITOR_DEFERRED_MUTEX_LOCK;
-			do_posix_clock_monotonic_gettime(&e->timestamp);
-			monotonic_to_bootbased(&e->timestamp);
-		}
-#endif
 		if (!hlist_empty(&binder_deferred_list)) {
 			proc = hlist_entry(binder_deferred_list.first,
 					struct binder_proc, deferred_work_node);
@@ -3621,17 +3913,6 @@ static void binder_deferred_func(struct work_struct *work)
 			proc = NULL;
 			defer = 0;
 		}
-#ifdef BINDER_MONITOR
-	        {
-			struct binder_mutex_log_entry *e;
-			e = binder_mutex_log_add(&binder_mutex_log);
-			e->proc = current->tgid;
-			e->thread = current->pid;
-			e->action = BMONITOR_DEFERRED_MUTEX_UNLOCK;
-			do_posix_clock_monotonic_gettime(&e->timestamp);
-			monotonic_to_bootbased(&e->timestamp);
-		}
-#endif
 		mutex_unlock(&binder_deferred_lock);
 
 		files = NULL;
@@ -3647,18 +3928,7 @@ static void binder_deferred_func(struct work_struct *work)
 		if (defer & BINDER_DEFERRED_RELEASE)
 			binder_deferred_release(proc); /* frees proc */
 
-#ifdef BINDER_MONITOR
-	        {
-			struct binder_mutex_log_entry *e;
-			e = binder_mutex_log_add(&binder_mutex_log);
-			e->proc = current->tgid;
-			e->thread = current->pid;
-			e->action = BMONITOR_MUTEX_UNLOCK;
-			do_posix_clock_monotonic_gettime(&e->timestamp);
-			monotonic_to_bootbased(&e->timestamp);
-		}
-#endif
-		mutex_unlock(&binder_lock);
+		binder_unlock(__func__);
 		if (files)
 			put_files_struct(files);
 	} while (proc);
@@ -3669,52 +3939,18 @@ static void
 binder_defer_work(struct binder_proc *proc, enum binder_deferred_state defer)
 {
 	mutex_lock(&binder_deferred_lock);
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_DEFERRED_MUTEX_LOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
 	proc->deferred_work |= defer;
 	if (hlist_unhashed(&proc->deferred_work_node)) {
 		hlist_add_head(&proc->deferred_work_node,
 				&binder_deferred_list);
 		queue_work(binder_deferred_workqueue, &binder_deferred_work);
 	}
-#ifdef BINDER_MONITOR
-        {
-		struct binder_mutex_log_entry *e;
-		e = binder_mutex_log_add(&binder_mutex_log);
-		e->proc = current->tgid;
-		e->thread = current->pid;
-		e->action = BMONITOR_DEFERRED_MUTEX_UNLOCK;
-		do_posix_clock_monotonic_gettime(&e->timestamp);
-		monotonic_to_bootbased(&e->timestamp);
-	}
-#endif
 	mutex_unlock(&binder_deferred_lock);
 }
 
 static void print_binder_transaction(struct seq_file *m, const char *prefix,
 				     struct binder_transaction *t)
 {
-#ifdef BINDER_MONITOR
-	seq_printf(m,
-		   "%s %d: %p from %d:%d to %d:%d code %x flags %x pri %ld r%d ckpoint %u start %lu.%02lu",
-		   prefix, t->debug_id, t,
-		   t->from ? t->from->proc->pid : 0,
-		   t->from ? t->from->pid : 0,
-		   t->to_proc ? t->to_proc->pid : 0,
-		   t->to_thread ? t->to_thread->pid : 0,
-		   t->code, t->flags, t->priority, t->need_reply,
-		   t->checkpoint,
-		   (unsigned long)t->timestamp.tv_sec, (t->timestamp.tv_nsec / (NSEC_PER_SEC / 1000000)));
-#else
 	seq_printf(m,
 		   "%s %d: %p from %d:%d to %d:%d code %x flags %x pri %ld r%d",
 		   prefix, t->debug_id, t,
@@ -3723,7 +3959,6 @@ static void print_binder_transaction(struct seq_file *m, const char *prefix,
 		   t->to_proc ? t->to_proc->pid : 0,
 		   t->to_thread ? t->to_thread->pid : 0,
 		   t->code, t->flags, t->priority, t->need_reply);
-#endif
 	if (t->buffer == NULL) {
 		seq_puts(m, " buffer free\n");
 		return;
@@ -4042,7 +4277,7 @@ static int binder_state_show(struct seq_file *m, void *unused)
 	int do_lock = !binder_debug_no_lock;
 
 	if (do_lock)
-		mutex_lock(&binder_lock);
+		binder_lock(__func__);
 
 	seq_puts(m, "binder state:\n");
 
@@ -4054,7 +4289,7 @@ static int binder_state_show(struct seq_file *m, void *unused)
 	hlist_for_each_entry(proc, pos, &binder_procs, proc_node)
 		print_binder_proc(m, proc, 1);
 	if (do_lock)
-		mutex_unlock(&binder_lock);
+		binder_unlock(__func__);
 	return 0;
 }
 
@@ -4065,7 +4300,7 @@ static int binder_stats_show(struct seq_file *m, void *unused)
 	int do_lock = !binder_debug_no_lock;
 
 	if (do_lock)
-		mutex_lock(&binder_lock);
+		binder_lock(__func__);
 
 	seq_puts(m, "binder stats:\n");
 
@@ -4074,7 +4309,7 @@ static int binder_stats_show(struct seq_file *m, void *unused)
 	hlist_for_each_entry(proc, pos, &binder_procs, proc_node)
 		print_binder_proc_stats(m, proc);
 	if (do_lock)
-		mutex_unlock(&binder_lock);
+		binder_unlock(__func__);
 	return 0;
 }
 
@@ -4085,13 +4320,13 @@ static int binder_transactions_show(struct seq_file *m, void *unused)
 	int do_lock = !binder_debug_no_lock;
 
 	if (do_lock)
-		mutex_lock(&binder_lock);
+		binder_lock(__func__);
 
 	seq_puts(m, "binder transactions:\n");
 	hlist_for_each_entry(proc, pos, &binder_procs, proc_node)
 		print_binder_proc(m, proc, 0);
 	if (do_lock)
-		mutex_unlock(&binder_lock);
+		binder_unlock(__func__);
 	return 0;
 }
 
@@ -4101,11 +4336,11 @@ static int binder_proc_show(struct seq_file *m, void *unused)
 	int do_lock = !binder_debug_no_lock;
 
 	if (do_lock)
-		mutex_lock(&binder_lock);
+		binder_lock(__func__);
 	seq_puts(m, "binder proc state:\n");
 	print_binder_proc(m, proc, 1);
 	if (do_lock)
-		mutex_unlock(&binder_lock);
+		binder_unlock(__func__);
 	return 0;
 }
 
@@ -4114,12 +4349,15 @@ static void print_binder_transaction_log_entry(struct seq_file *m,
 {
 #ifdef BINDER_MONITOR
 	seq_printf(m,
-		   "%d: %s from %d:%d to %d:%d node %d handle %d (%s) size %d:%d code %x start %lu.%02lu\n",
+		   "%d: %s from %d:%d to %d:%d node %d handle %d (%s) size %d:%d "
+		   "dex %d start %lu.%02lu\n",
 		   e->debug_id, (e->call_type == 2) ? "reply" :
-		   ((e->call_type == 1) ? "async" : "call "), e->from_proc,
-		   e->from_thread, e->to_proc, e->to_thread, e->to_node,
-		   e->target_handle, e->service, e->data_size, e->offsets_size, e->code,
-		   (unsigned long)e->timestamp.tv_sec, (e->timestamp.tv_nsec / (NSEC_PER_SEC / 1000000)));
+		                 ((e->call_type == 1) ? "async" : "call "),
+		   e->from_proc, e->from_thread, e->to_proc, e->to_thread,
+		   e->to_node, e->target_handle, e->service,
+		   e->data_size, e->offsets_size, e->code,
+		   (unsigned long)e->timestamp.tv_sec,
+		   (e->timestamp.tv_nsec / NSEC_PER_USEC));
 #else
 	seq_printf(m,
 		   "%d: %s from %d:%d to %d:%d node %d handle %d size %d:%d\n",
@@ -4129,6 +4367,45 @@ static void print_binder_transaction_log_entry(struct seq_file *m,
 		   e->target_handle, e->data_size, e->offsets_size);
 #endif
 }
+
+#ifdef BINDER_MONITOR
+# ifndef USER_BUILD_KERNEL
+static void log_resume_func(struct work_struct *w)
+{
+	printk(KERN_INFO "binder: transaction log is self resumed\n");
+	log_disable = 0;
+}
+
+static DECLARE_DELAYED_WORK(log_resume_work, log_resume_func);
+# endif
+
+static int binder_transaction_log_show(struct seq_file *m, void *unused)
+{
+	struct binder_transaction_log *log = m->private;
+	int i;
+
+	if (!log->entry)
+		return 0;
+
+	if (log->full) {
+		for (i = log->next; i < log->size; i++)
+			print_binder_transaction_log_entry(m, &log->entry[i]);
+	}
+	for (i = 0; i < log->next; i++)
+		print_binder_transaction_log_entry(m, &log->entry[i]);
+
+# ifndef USER_BUILD_KERNEL
+	if (log_disable & BINDER_LOG_RESUME) {
+		printk(KERN_INFO "binder: %d (%s) read transaction log and "
+				 "resume\n",
+				 task_pid_nr(current), current->comm);
+		cancel_delayed_work(&log_resume_work);
+		log_disable = 0;
+	}
+# endif
+	return 0;
+}
+#else
 
 static int binder_transaction_log_show(struct seq_file *m, void *unused)
 {
@@ -4141,33 +4418,6 @@ static int binder_transaction_log_show(struct seq_file *m, void *unused)
 	}
 	for (i = 0; i < log->next; i++)
 		print_binder_transaction_log_entry(m, &log->entry[i]);
-	return 0;
-}
-
-#ifdef BINDER_MONITOR
-static void print_binder_mutex_log_entry(struct seq_file *m,
-					struct binder_mutex_log_entry *e)
-{
-	seq_printf(m,
-		   "%d:%d %s at %lu.%02lu\n",
-		   e->proc, e->thread,
-		   ((e->action == BMONITOR_MUTEX_LOCK) ? "lock" :
-			((e->action == BMONITOR_MUTEX_UNLOCK) ? "unlock" :
-			((e->action == BMONITOR_DEFERRED_MUTEX_LOCK) ? "deferred lock" :
-			((e->action == BMONITOR_DEFERRED_MUTEX_UNLOCK) ? "deferred unlock" : "unknown")))),
-		   (unsigned long)e->timestamp.tv_sec, (e->timestamp.tv_nsec / (NSEC_PER_SEC / 1000000)));
-}
-static int binder_mutex_log_show(struct seq_file *m, void *unused)
-{
-	struct binder_mutex_log *log = m->private;
-	int i;
-
-	if (log->full) {
-		for (i = log->next; i < ARRAY_SIZE(log->entry); i++)
-			print_binder_mutex_log_entry(m, &log->entry[i]);
-	}
-	for (i = 0; i < log->next; i++)
-		print_binder_mutex_log_entry(m, &log->entry[i]);
 	return 0;
 }
 #endif
@@ -4196,66 +4446,159 @@ static int binder_log_level_show(struct seq_file *m, void *unused)
 }
 
 static ssize_t binder_log_level_write(struct file *filp, const char *ubuf,
-	   size_t cnt, loff_t *data)
+				      size_t cnt, loff_t *data)
 {
-    char buf[32];
-    size_t copy_size = cnt;
-    unsigned long val;
-    int ret;
+	char buf[32];
+	size_t copy_size = cnt;
+	unsigned long val;
+	int ret;
  
-    if (cnt >= sizeof(buf)){
-	copy_size = 32 - 1;
-    }
-    buf[copy_size] = '\0';
+	if (cnt >= sizeof(buf))
+		copy_size = 32 - 1;
+	buf[copy_size] = '\0';
 
-    if (copy_from_user(&buf, ubuf, copy_size))
-	return -EFAULT;
+	if (copy_from_user(&buf, ubuf, copy_size))
+		return -EFAULT;
 
-    printk("[Binder] Set binder log level:%lu -> ", binder_log_level);
-    ret = strict_strtoul(buf, 10, &val);
-    if( ret <0 ){
-	printk("Null\ninvalid string, need number foramt, err:%d \n",ret);
-	printk("Log Level:   0  ---- 4 \n");
-	printk("           Less ---- More\n");
-	return cnt;//string to unsined long fail
-    }
-    printk("%lu\n", val);
-    if(val == 0){
-	binder_debug_mask = 
-	    BINDER_DEBUG_USER_ERROR |BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION ;
-	binder_log_level = val;
-    }else if (val == 1){
-	binder_debug_mask = 
-	    BINDER_DEBUG_USER_ERROR |BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION |
-	    BINDER_DEBUG_DEAD_BINDER | BINDER_DEBUG_DEATH_NOTIFICATION ;
-	binder_log_level = val;
-    }else if (val == 2){
-	binder_debug_mask = 
-	    BINDER_DEBUG_USER_ERROR |BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION |
-	    BINDER_DEBUG_DEAD_BINDER | BINDER_DEBUG_DEATH_NOTIFICATION |BINDER_DEBUG_THREADS |
-	    BINDER_DEBUG_TRANSACTION | BINDER_DEBUG_TRANSACTION_COMPLETE ;
-	binder_log_level = val;
-    }else if (val == 3){
-	binder_debug_mask = 
-	    BINDER_DEBUG_USER_ERROR |BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION |
-	    BINDER_DEBUG_DEAD_BINDER | BINDER_DEBUG_DEATH_NOTIFICATION |BINDER_DEBUG_THREADS |
-	    BINDER_DEBUG_TRANSACTION | BINDER_DEBUG_TRANSACTION_COMPLETE |
-	    BINDER_DEBUG_OPEN_CLOSE | BINDER_DEBUG_READ_WRITE ;
-	binder_log_level = val;
-    }else if (val == 4){
-	binder_debug_mask = 
-	    BINDER_DEBUG_USER_ERROR |BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION |
-	    BINDER_DEBUG_DEAD_BINDER | BINDER_DEBUG_DEATH_NOTIFICATION |BINDER_DEBUG_THREADS |
-	    BINDER_DEBUG_OPEN_CLOSE | BINDER_DEBUG_READ_WRITE |
-	    BINDER_DEBUG_TRANSACTION | BINDER_DEBUG_TRANSACTION_COMPLETE |
-	    BINDER_DEBUG_USER_REFS | BINDER_DEBUG_INTERNAL_REFS | BINDER_DEBUG_PRIORITY_CAP|
-	    BINDER_DEBUG_FREE_BUFFER | BINDER_DEBUG_BUFFER_ALLOC ;
-	binder_log_level = val;
-    }else{
-	printk("invalid value:%lu, should be 0 ~ 4\n", val);
-    }
-    return cnt;
+	printk("[Binder] Set binder log level:%lu -> ", binder_log_level);
+	ret = strict_strtoul(buf, 10, &val);
+	if (ret < 0) {
+		printk("Null\ninvalid string, need number foramt, err:%d \n",ret);
+		printk("Log Level:   0  ---- 4 \n");
+		printk("           Less ---- More\n");
+		return cnt; //string to unsined long fail
+	}
+	printk("%lu\n", val);
+	if (val == 0) {
+		binder_debug_mask = 
+			BINDER_DEBUG_USER_ERROR | BINDER_DEBUG_FAILED_TRANSACTION |
+			BINDER_DEBUG_DEAD_TRANSACTION ;
+		binder_log_level = val;
+	} else if (val == 1) {
+		binder_debug_mask = 
+			BINDER_DEBUG_USER_ERROR | BINDER_DEBUG_FAILED_TRANSACTION |
+			BINDER_DEBUG_DEAD_TRANSACTION | BINDER_DEBUG_DEAD_BINDER |
+			BINDER_DEBUG_DEATH_NOTIFICATION ;
+		binder_log_level = val;
+	} else if (val == 2) {
+		binder_debug_mask =
+			BINDER_DEBUG_USER_ERROR | BINDER_DEBUG_FAILED_TRANSACTION |
+			BINDER_DEBUG_DEAD_TRANSACTION | BINDER_DEBUG_DEAD_BINDER |
+			BINDER_DEBUG_DEATH_NOTIFICATION |BINDER_DEBUG_THREADS |
+			BINDER_DEBUG_TRANSACTION | BINDER_DEBUG_TRANSACTION_COMPLETE ;
+		binder_log_level = val;
+	} else if (val == 3) {
+		binder_debug_mask = 
+			BINDER_DEBUG_USER_ERROR | BINDER_DEBUG_FAILED_TRANSACTION |
+			BINDER_DEBUG_DEAD_TRANSACTION | BINDER_DEBUG_DEAD_BINDER |
+			BINDER_DEBUG_DEATH_NOTIFICATION | BINDER_DEBUG_THREADS |
+			BINDER_DEBUG_TRANSACTION | BINDER_DEBUG_TRANSACTION_COMPLETE |
+			BINDER_DEBUG_OPEN_CLOSE | BINDER_DEBUG_READ_WRITE ;
+		binder_log_level = val;
+	} else if (val == 4) {
+		binder_debug_mask = 
+			BINDER_DEBUG_USER_ERROR | BINDER_DEBUG_FAILED_TRANSACTION |
+			BINDER_DEBUG_DEAD_TRANSACTION |	BINDER_DEBUG_DEAD_BINDER |
+			BINDER_DEBUG_DEATH_NOTIFICATION | BINDER_DEBUG_THREADS |
+			BINDER_DEBUG_OPEN_CLOSE | BINDER_DEBUG_READ_WRITE |
+			BINDER_DEBUG_TRANSACTION | BINDER_DEBUG_TRANSACTION_COMPLETE |
+			BINDER_DEBUG_USER_REFS | BINDER_DEBUG_INTERNAL_REFS |
+			BINDER_DEBUG_PRIORITY_CAP |BINDER_DEBUG_FREE_BUFFER |
+			BINDER_DEBUG_BUFFER_ALLOC ;
+		binder_log_level = val;
+	} else {
+		printk("invalid value:%lu, should be 0 ~ 4\n", val);
+	}
+	return cnt;
 }
+
+static void print_binder_timeout_log_entry(struct seq_file *m,
+					   struct binder_timeout_log_entry *e)
+{
+	struct rtc_time tm;
+
+	rtc_time_to_tm(e->tv.tv_sec, &tm);
+	seq_printf(m, "%d:%s %d:%d to %d:%d spends %u000 ms (%s) dex_code %u "
+		      "start_at %lu.%03ld %d-%02d-%02d %02d:%02d:%02d.%03lu\n",
+		      e->r, binder_wait_on_str[e->r],
+		      e->from_proc, e->from_thrd, e->to_proc, e->to_thrd,
+		      e->over_sec, e->service, e->code,
+		      (unsigned long)e->ts.tv_sec,
+		      (e->ts.tv_nsec / NSEC_PER_MSEC),
+		      (tm.tm_year + 1900), (tm.tm_mon + 1), tm.tm_mday,
+		      tm.tm_hour, tm.tm_min, tm.tm_sec,
+		      (unsigned long)(e->tv.tv_usec / USEC_PER_MSEC));
+}
+
+static int binder_timeout_log_show(struct seq_file *m, void *unused)
+{
+	struct binder_timeout_log *log = m->private;
+	int i;
+	int end_idx = ARRAY_SIZE(log->entry) - 1;
+	int latest = log->next ? (log->next - 1) : end_idx;
+
+	if (log->next == 0 && !log->full)
+		return 0;
+	for (i = latest; i >= 0; i--)
+		print_binder_timeout_log_entry(m, &log->entry[i]);
+	if (log->full) {
+		for (i = end_idx; i > latest; i--)
+			print_binder_timeout_log_entry(m, &log->entry[i]);
+	}
+	return 0;
+}
+
+BINDER_DEBUG_SETTING_ENTRY(log_level);
+BINDER_DEBUG_ENTRY(timeout_log);
+
+# ifndef USER_BUILD_KERNEL
+static int binder_transaction_log_enable_show(struct seq_file *m, void *unused)
+{
+	seq_printf(m, " Current transaciton log is %s %s\n",
+		      log_disable ? "disabled" : "enabled",
+		      (log_disable & BINDER_LOG_RESUME) ? "(self resume)" : "");
+	return 0;
+}
+
+static ssize_t binder_transaction_log_enable_write(struct file *filp,
+						   const char *ubuf,
+						   size_t cnt, loff_t *data)
+{
+	char buf[32];
+	size_t copy_size = cnt;
+	unsigned long val;
+	int ret;
+
+	if (cnt >= sizeof(buf))
+		copy_size = 32 - 1;
+
+	buf[copy_size] = '\0';
+
+	if (copy_from_user(&buf, ubuf, copy_size))
+		return -EFAULT;
+
+    	ret = strict_strtoul(buf, 10, &val);
+	if (ret < 0) {
+		printk(KERN_INFO "binder: failed to switch logging, "
+				 "need number format\n");
+		return cnt;
+	}
+
+	log_disable = !(val & 0x1);
+	if (log_disable && (val & BINDER_LOG_RESUME)) {
+		log_disable |= BINDER_LOG_RESUME;
+		queue_delayed_work(binder_deferred_workqueue,
+				   &log_resume_work, (120 * HZ));
+	}
+	printk(KERN_INFO "binder: %d (%s) set transaction log %s %s\n",
+			 task_pid_nr(current), current->comm,
+			 log_disable ? "disabled" : "enabled",
+			 (log_disable & BINDER_LOG_RESUME) ?
+				"(self resume)" : "");
+	return cnt;
+}
+BINDER_DEBUG_SETTING_ENTRY(transaction_log_enable);
+# endif
 #endif
 
 BINDER_DEBUG_ENTRY(state);
@@ -4263,14 +4606,31 @@ BINDER_DEBUG_ENTRY(stats);
 BINDER_DEBUG_ENTRY(transactions);
 BINDER_DEBUG_ENTRY(transaction_log);
 
-#ifdef BINDER_MONITOR
-BINDER_DEBUG_SETTING_ENTRY(log_level);
-BINDER_DEBUG_ENTRY(mutex_log);
-#endif
-
 static int __init binder_init(void)
 {
 	int ret;
+#ifdef BINDER_MONITOR
+	struct task_struct *th;
+
+
+	th = kthread_create(binder_bwdog_thread, NULL, "binder_watchdog");
+	if (IS_ERR(th)) {
+		printk(KERN_INFO "binder: fail to create watchdog thread "
+				 "(err:%li)\n", PTR_ERR(th));
+	} else {
+		wake_up_process(th);
+	}
+
+	binder_transaction_log_failed.entry = &entry_failed[0];
+	binder_transaction_log_failed.size  = ARRAY_SIZE(entry_failed);
+
+# ifdef USER_BUILD_KERNEL
+	binder_transaction_log.entry = NULL;
+# else
+	binder_transaction_log.entry = &entry_t[0];
+	binder_transaction_log.size  = ARRAY_SIZE(entry_t);
+# endif
+#endif
 
 	binder_deferred_workqueue = create_singlethread_workqueue("binder");
 	if (!binder_deferred_workqueue)
@@ -4308,21 +4668,34 @@ static int __init binder_init(void)
 				    &binder_transaction_log_failed,
 				    &binder_transaction_log_fops);
 #ifdef BINDER_MONITOR
+# ifndef USER_BUILD_KERNEL
+		/* system_server is the main writer, remember to
+		 * change group as "system" for write permission
+		 * via related init.rc */
+		debugfs_create_file("transaction_log_enable",
+				    (S_IRUGO | S_IWUSR | S_IWGRP),
+				    binder_debugfs_dir_entry_root,
+				    NULL,
+				    &binder_transaction_log_enable_fops);
+# endif
 		debugfs_create_file("log_level",
-				    0664,
+				    (S_IRUGO | S_IWUSR | S_IWGRP),
 				    binder_debugfs_dir_entry_root,
 				    NULL,
 				    &binder_log_level_fops);
-		debugfs_create_file("mutex_log",
+		debugfs_create_file("timeout_log",
 				    S_IRUGO,
 				    binder_debugfs_dir_entry_root,
-				    &binder_mutex_log,
-				    &binder_mutex_log_fops);
+				    &binder_timeout_log_t,
+				    &binder_timeout_log_fops);
 #endif
 	}
 	return ret;
 }
 
 device_initcall(binder_init);
+
+#define CREATE_TRACE_POINTS
+#include "binder_trace.h"
 
 MODULE_LICENSE("GPL v2");

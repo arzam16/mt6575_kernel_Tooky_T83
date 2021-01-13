@@ -25,9 +25,12 @@
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
 #include <linux/slab.h>
+#include <linux/export.h>
 
 #include "u_serial.h"
 #include "logger.h"
+
+#define ACM_LOG "USB_ACM"
 
 /*
  * This component encapsulates the TTY layer glue needed to provide basic
@@ -122,7 +125,7 @@ struct gs_port {
 };
 
 /* increase N_PORTS if you need more */
-#define N_PORTS		8
+#define N_PORTS		4
 static struct portmaster {
 	struct mutex	lock;			/* protect open/close */
 	struct gs_port	*port;
@@ -134,11 +137,15 @@ static unsigned	n_ports;
 
 
 #ifdef VERBOSE_DEBUG
+#ifndef pr_vdebug
 #define pr_vdebug(fmt, arg...) \
 	pr_debug(fmt, ##arg)
+#endif
 #else
+#ifndef pr_vdebug
 #define pr_vdebug(fmt, arg...) \
 	({ if (0) pr_debug(fmt, ##arg); })
+#endif
 #endif
 
 /*-------------------------------------------------------------------------*/
@@ -365,8 +372,8 @@ __acquires(&port->port_lock)
 	bool			do_tty_wake = false;
 
 	if (!port->port_usb) /* abort immediately after disconnect */
-        return -EINVAL;
-    in = port->port_usb->in;
+		return -EINVAL;
+	in = port->port_usb->in;
 
 	while (!list_empty(pool)) {
 		struct usb_request	*req;
@@ -391,8 +398,14 @@ __acquires(&port->port_lock)
 				port->port_num, len, *((u8 *)req->buf),
 				*((u8 *)req->buf+1), *((u8 *)req->buf+2));
 
+		xlog_printk(ANDROID_LOG_INFO, ACM_LOG, \
+				"%s: ttyGS%d: tx len=%d, 0x%02x 0x%02x 0x%02x ...\n", \
+				__func__, port->port_num, len, *((u8 *)req->buf), \
+				*((u8 *)req->buf+1), *((u8 *)req->buf+2));
+
 		USB_LOGGER(GS_START_TX, GS_START_TX, port->port_num, len);
 
+		#ifdef ENABLE_USB_LOGGER
 		#define OUTPUT_BTYE_NUM 5
 		{
 			int i,j = 0;
@@ -409,6 +422,7 @@ __acquires(&port->port_lock)
 				}
 			}
 		}
+		#endif
 
 		/* Drop lock while we call out of driver; completions
 		 * could be issued while we do so.  Disconnection may
@@ -543,6 +557,12 @@ static void gs_rx_push(unsigned long _port)
 
 		USB_LOGGER(GS_RX_PUSH, GS_RX_PUSH, port->port_num, req->actual, port->n_read);
 
+		xlog_printk(ANDROID_LOG_INFO, ACM_LOG, \
+				"%s: ttyGS%d: actual=%d, n_read=%d 0x%02x 0x%02x 0x%02x ...\n", \
+				__func__, port->port_num, req->actual, port->n_read,
+				*((u8 *)req->buf), *((u8 *)req->buf+1), *((u8 *)req->buf+2));
+
+		#ifdef ENABLE_USB_LOGGER
 		#define OUTPUT_BTYE_NUM 5
 		{
 			int i,j = 0;
@@ -559,6 +579,7 @@ static void gs_rx_push(unsigned long _port)
 				}
 			}
 		}
+		#endif
 
 		/* push data to (open) tty */
 		if (req->actual) {
@@ -595,9 +616,8 @@ recycle:
 	/* Push from tty to ldisc; without low_latency set this is handled by
 	 * a workqueue, so we won't get callbacks and can hold port_lock
 	 */
-	if (tty && do_push) {
+	if (tty && do_push)
 		tty_flip_buffer_push(tty);
-	}
 
 
 	/* We want our data queue to become empty ASAP, keeping data
@@ -768,9 +788,6 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 	struct gs_port	*port;
 	int		status;
 
-	if (port_num < 0 || port_num >= n_ports)
-		return -ENXIO;
-
 	do {
 		mutex_lock(&ports[port_num].lock);
 		port = ports[port_num].port;
@@ -857,6 +874,9 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 
 	pr_debug("gs_open: ttyGS%d (%p,%p)\n", port->port_num, tty, file);
 
+	xlog_printk(ANDROID_LOG_INFO, ACM_LOG, \
+		"gs_open: ttyGS%d (%p,%p)\n", port->port_num, tty, file);
+
 	USB_LOGGER(GS_OPEN, GS_OPEN, port->port_num, tty, file);
 
 	status = 0;
@@ -894,6 +914,9 @@ static void gs_close(struct tty_struct *tty, struct file *file)
 	}
 
 	pr_debug("gs_close: ttyGS%d (%p,%p) ...\n", port->port_num, tty, file);
+
+	xlog_printk(ANDROID_LOG_INFO, ACM_LOG, \
+		"gs_close: ttyGS%d (%p,%p) ...\n", port->port_num, tty, file);
 
 	USB_LOGGER(GS_CLOSE,GS_CLOSE, port->port_num, tty, file);
 
@@ -1134,7 +1157,6 @@ int gserial_setup(struct usb_gadget *g, unsigned count)
 	if (!gs_tty_driver)
 		return -ENOMEM;
 
-	gs_tty_driver->owner = THIS_MODULE;
 	gs_tty_driver->driver_name = "g_serial";
 	gs_tty_driver->name = PREFIX;
 	/* uses dynamically assigned dev_t values */
@@ -1294,12 +1316,12 @@ int gserial_connect(struct gserial *gser, u8 port_num)
 	port = ports[port_num].port;
 
 	/* activate the endpoints */
-	status = usb_ep_enable(gser->in, gser->in_desc);
+	status = usb_ep_enable(gser->in);
 	if (status < 0)
 		return status;
 	gser->in->driver_data = port;
 
-	status = usb_ep_enable(gser->out, gser->out_desc);
+	status = usb_ep_enable(gser->out);
 	if (status < 0)
 		goto fail_out;
 	gser->out->driver_data = port;

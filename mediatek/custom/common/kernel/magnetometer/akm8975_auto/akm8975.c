@@ -1,4 +1,16 @@
-
+/* akm8975.c - akm8975 compass driver
+ * 
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -517,6 +529,14 @@ static int AKECS_GetCloseStatus(void)
 	return atomic_read(&open_flag);
 }
 
+/*
+static void AKECS_CloseDone(void)
+{
+	atomic_set(&m_flag, 1);
+	atomic_set(&a_flag, 1);
+	atomic_set(&mv_flag, 1);
+}
+*/
 
 
 /*----------------------------------------------------------------------------*/

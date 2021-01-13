@@ -59,18 +59,19 @@ void hold_module_trace_bprintk_format(const char **start, const char **end)
 			continue;
 		}
 
+		fmt = NULL;
 		tb_fmt = kmalloc(sizeof(*tb_fmt), GFP_KERNEL);
-		if (tb_fmt)
+		if (tb_fmt) {
 			fmt = kmalloc(strlen(*iter) + 1, GFP_KERNEL);
-		if (tb_fmt && fmt) {
-			list_add_tail(&tb_fmt->list, &trace_bprintk_fmt_list);
-			strcpy(fmt, *iter);
-			tb_fmt->fmt = fmt;
-			*iter = tb_fmt->fmt;
-		} else {
-			kfree(tb_fmt);
-			*iter = NULL;
+			if (fmt) {
+				list_add_tail(&tb_fmt->list, &trace_bprintk_fmt_list);
+				strcpy(fmt, *iter);
+				tb_fmt->fmt = fmt;
+			} else
+				kfree(tb_fmt);
 		}
+		*iter = fmt;
+
 	}
 	mutex_unlock(&btrace_mutex);
 }
@@ -160,6 +161,15 @@ static void format_mod_stop(void)
 }
 
 #else /* !CONFIG_MODULES */
+
+#ifdef CONFIG_FTRACE_MODULE_SUPPORT
+__init static int
+module_trace_bprintk_format_notify(struct notifier_block *self,
+		unsigned long val, void *data)
+{
+	return 0;
+}
+#endif
 static inline const char **
 find_next_mod_format(int start_index, void *v, const char **fmt, loff_t *pos)
 {
@@ -170,7 +180,7 @@ static inline void format_mod_stop(void) { }
 #endif /* CONFIG_MODULES */
 
 
-#if defined(CONFIG_MODULES) && defined(CONFIG_FTRACE_MODULE_SUPPORT)
+#ifdef CONFIG_FTRACE_MODULE_SUPPORT
 __initdata_or_module static
 struct notifier_block module_trace_bprintk_format_nb = {
 	.notifier_call = module_trace_bprintk_format_notify,

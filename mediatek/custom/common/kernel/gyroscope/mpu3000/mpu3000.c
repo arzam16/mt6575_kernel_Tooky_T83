@@ -1,38 +1,3 @@
-/* Copyright Statement:
- *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
- */
-/* MediaTek Inc. (C) 2010. All rights reserved.
- *
- * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
- * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
- */
-
 /* MPU3000 motion sensor driver
  *
  *
@@ -69,27 +34,13 @@
 #include <linux/hwmsen_helper.h>
 #include <linux/kernel.h>
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_boot.h>
 
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
 
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#include <mach/mt6575_boot.h>
-#endif
 
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
@@ -104,6 +55,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_MPU3000	3000
@@ -385,13 +339,13 @@ static int MPU3000_SetPowerMode(struct i2c_client *client, bool enable)
 {
 	u8 databuf[2] = {0};    
 	int res = 0;
-	#if 1
+
 	if(enable == sensor_power)
 	{
 		GYRO_LOG("Sensor power status is newest!\n");
 		return MPU3000_SUCCESS;
 	}
-	#endif
+
 	if(hwmsen_read_byte(client, MPU3000_REG_PWR_CTL, databuf))
 	{
 		GYRO_ERR("read power ctl register err!\n");
@@ -1605,7 +1559,7 @@ static int mpu3000_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
-	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	obj->early_drv.suspend  = mpu3000_early_suspend,
 	obj->early_drv.resume   = mpu3000_late_resume,    
 	register_early_suspend(&obj->early_drv);

@@ -1,4 +1,17 @@
-
+/* ADXL346 motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -21,26 +34,10 @@
 #include "adxl346.h"
 #include <linux/hwmsen_helper.h>
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
-
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#endif
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
 
 
 /*-------------------------MT6516&MT6573 define-------------------------------*/
@@ -53,6 +50,10 @@
 #endif
 
 #ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
+#ifdef MT6577
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
@@ -163,7 +164,7 @@ static struct platform_driver adxl346_gsensor_driver;
 static struct adxl346_i2c_data *obj_i2c_data = NULL;
 static bool sensor_power = false;
 static GSENSOR_VECTOR3D gsensor_gain;
-static char selftestRes[8]= {0}; 
+//static char selftestRes[8]= {0}; 
 
 
 /*----------------------------------------------------------------------------*/
@@ -600,6 +601,8 @@ static int ADXL346_SetIntEnable(struct i2c_client *client, u8 intenable)
 	return ADXL346_SUCCESS;    
 }
 /*----------------------------------------------------------------------------*/
+//Remove it because it is not used now
+/*
 static int adxl346_gpio_config(void)
 {
    //because we donot use EINT to support low power
@@ -617,6 +620,8 @@ static int adxl346_gpio_config(void)
 	mt_set_gpio_pull_select(GPIO_GSE_2_EINT_PIN, GPIO_PULL_DOWN);
 	return 0;
 }
+*/
+
 static int adxl346_init_client(struct i2c_client *client, int reset_cali)
 {
 	struct adxl346_i2c_data *obj = i2c_get_clientdata(client);
@@ -790,6 +795,7 @@ static int ADXL346_ReadRawData(struct i2c_client *client, char *buf)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
+/*
 static int ADXL346_InitSelfTest(struct i2c_client *client)
 {
 	int res = 0;
@@ -815,7 +821,9 @@ static int ADXL346_InitSelfTest(struct i2c_client *client)
 	
 	return ADXL346_SUCCESS;
 }
+*/
 /*----------------------------------------------------------------------------*/
+/*
 static int ADXL346_JudgeTestResult(struct i2c_client *client, s32 prv[ADXL346_AXES_NUM], s32 nxt[ADXL346_AXES_NUM])
 {
     struct criteria {
@@ -866,6 +874,7 @@ static int ADXL346_JudgeTestResult(struct i2c_client *client, s32 prv[ADXL346_AX
     }
     return res;
 }
+*/
 /*----------------------------------------------------------------------------*/
 static ssize_t show_chipinfo_value(struct device_driver *ddri, char *buf)
 {
@@ -970,6 +979,8 @@ static ssize_t store_cali_value(struct device_driver *ddri, const char *buf, siz
 	return count;
 }
 /*----------------------------------------------------------------------------*/
+//Remove it because it is not used now
+/*
 static ssize_t show_self_value(struct device_driver *ddri, char *buf)
 {
 	struct i2c_client *client = adxl346_i2c_client;
@@ -985,9 +996,13 @@ static ssize_t show_self_value(struct device_driver *ddri, char *buf)
 
     return snprintf(buf, 8, "%s\n", selftestRes);
 }
+*/
 /*----------------------------------------------------------------------------*/
+//Remove it because it is not used now
+/*
 static ssize_t store_self_value(struct device_driver *ddri, const char *buf, size_t count)
-{   /*write anything to this register will trigger the process*/
+{   
+    //write anything to this register will trigger the process
 	struct item{
 	s16 raw[ADXL346_AXES_NUM];
 	};
@@ -1038,7 +1053,7 @@ static ssize_t store_self_value(struct device_driver *ddri, const char *buf, siz
 	avg_prv[ADXL346_AXIS_Y] /= num;
 	avg_prv[ADXL346_AXIS_Z] /= num;    
 
-	/*initial setting for self test*/
+	//initial setting for self test
 	ADXL346_InitSelfTest(client);
 	GSE_LOG("SELFTEST:\n");    
 	for(idx = 0; idx < num; idx++)
@@ -1074,13 +1089,16 @@ static ssize_t store_self_value(struct device_driver *ddri, const char *buf, siz
 	}
 	
 	exit:
-	/*restore the setting*/    
+	//restore the setting
 	adxl346_init_client(client, 0);
 	kfree(prv);
 	kfree(nxt);
 	return count;
 }
+*/
 /*----------------------------------------------------------------------------*/
+//Remove it because it is not used now
+/*
 static ssize_t show_selftest_value(struct device_driver *ddri, char *buf)
 {
 	struct i2c_client *client = adxl346_i2c_client;
@@ -1095,8 +1113,10 @@ static ssize_t show_selftest_value(struct device_driver *ddri, char *buf)
 	obj = i2c_get_clientdata(client);
 	return snprintf(buf, PAGE_SIZE, "%d\n", atomic_read(&obj->selftest));
 }
-
+*/
 /*----------------------------------------------------------------------------*/
+//Remove it because it is not used now
+/*
 static ssize_t store_selftest_value(struct device_driver *ddri, const char *buf, size_t count)
 {
 	struct adxl346_i2c_data *obj = obj_i2c_data;
@@ -1113,12 +1133,12 @@ static ssize_t store_selftest_value(struct device_driver *ddri, const char *buf,
 	{        
 		if(atomic_read(&obj->selftest) && !tmp)
 		{
-			/*enable -> disable*/
+			//enable -> disable
 			adxl346_init_client(obj->client, 0);
 		}
 		else if(!atomic_read(&obj->selftest) && tmp)
 		{
-			/*disable -> enable*/
+			//disable -> enable
 			ADXL346_InitSelfTest(obj->client);            
 		}
 		
@@ -1131,6 +1151,7 @@ static ssize_t store_selftest_value(struct device_driver *ddri, const char *buf,
 	}
 	return count;
 }
+*/
 /*----------------------------------------------------------------------------*/
 static ssize_t show_firlen_value(struct device_driver *ddri, char *buf)
 {
@@ -1426,6 +1447,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int adxl346_open(struct inode *inode, struct file *file)
 {
 	file->private_data = adxl346_i2c_client;
@@ -1719,6 +1743,13 @@ static void adxl346_late_resume(struct early_suspend *h)
 //#endif /*CONFIG_HAS_EARLYSUSPEND*/
 /*----------------------------------------------------------------------------*/
 
+/*
+static int adxl346_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+{    
+	strcpy(info->type, ADXL345_DEV_NAME);
+	return 0;
+}
+*/
 
 /*----------------------------------------------------------------------------*/
 static int adxl346_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)

@@ -1,3 +1,38 @@
+# Copyright Statement:
+#
+# This software/firmware and related documentation ("MediaTek Software") are
+# protected under relevant copyright laws. The information contained herein
+# is confidential and proprietary to MediaTek Inc. and/or its licensors.
+# Without the prior written permission of MediaTek inc. and/or its licensors,
+# any reproduction, modification, use or disclosure of MediaTek Software,
+# and information contained herein, in whole or in part, shall be strictly prohibited.
+
+# MediaTek Inc. (C) 2010. All rights reserved.
+#
+# BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+# THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+# RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
+# AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+# NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+# SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+# SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
+# THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
+# THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
+# CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
+# SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
+# STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+# CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+# AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+# OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
+# MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+#
+# The following software/firmware and/or related documentation ("MediaTek Software")
+# have been modified by MediaTek Inc. All revisions are subject to any receiver's
+# applicable license agreements with MediaTek Inc.
+
+export_includes_suffix := _intermediates/export_includes
 ifneq (,$(DO_PUT_ARTIFACTS))
   policy_path := $(call policy-path,$(LOCAL_PATH))
   LOCAL_RELEASE_POLICY :=
@@ -6,6 +41,21 @@ ifneq (,$(DO_PUT_ARTIFACTS))
   $(foreach item,$(strip $(LOCAL_JNI_SHARED_LIBRARIES) $(LOCAL_SHARED_LIBRARIES)),\
     $(eval _item := $(addprefix $($(my_prefix)OUT_INTERMEDIATE_LIBRARIES)/, \
       $(addsuffix $(so_suffix), $(item)))) \
+    $(eval ARTIFACT.$(item).FILES := $(ARTIFACT.$(item).FILES) $(_item):$(patsubst $(OUT_DIR)/%,$(ARTIFACT_DIR)/out/%,$(_item))) \
+  )
+
+  $(foreach item,$(strip $(LOCAL_STATIC_JAVA_LIBRARIES)),\
+    $(eval _item := $($(my_prefix)OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/$(item)_intermediates/javalib.jar) \
+    $(eval ARTIFACT.$(item).FILES := $(ARTIFACT.$(item).FILES) $(_item):$(patsubst $(OUT_DIR)/%,$(ARTIFACT_DIR)/out/%,$(_item))) \
+  )
+
+  $(foreach item,$(strip $(LOCAL_STATIC_LIBRARIES) $(LOCAL_WHOLE_STATIC_LIBRARIES)),\
+    $(eval _item :=  $(addprefix $($(my_prefix)OUT_INTERMEDIATES)/STATIC_LIBRARIES/,$(addsuffix $(export_includes_suffix),$(item))))    \
+    $(eval ARTIFACT.$(item).FILES := $(ARTIFACT.$(item).FILES) $(_item):$(patsubst $(OUT_DIR)/%,$(ARTIFACT_DIR)/out/%,$(_item))) \
+  )
+
+  $(foreach item,$(strip $(LOCAL_SYSTEM_SHARED_LIBRARIES) $(LOCAL_SHARED_LIBRARIES)),\
+    $(eval _item :=  $(addprefix $($(my_prefix)OUT_INTERMEDIATES)/SHARED_LIBRARIES/,$(addsuffix $(export_includes_suffix),$(item))))    \
     $(eval ARTIFACT.$(item).FILES := $(ARTIFACT.$(item).FILES) $(_item):$(patsubst $(OUT_DIR)/%,$(ARTIFACT_DIR)/out/%,$(_item))) \
   )
 
@@ -19,7 +69,6 @@ ifneq (,$(DO_PUT_ARTIFACTS))
     $(error local release policy for $(LOCAL_MODULE) should in $(VALID_RELEASE_POLICY), not $(LOCAL_RELEASE_POLICY))
   endif
   ifeq (,$(filter $(LOCAL_RELEASE_POLICY),$(RELEASE_POLICY)))
-
     ARTIFACT_RELEASE :=
     ifeq (APPS, $(LOCAL_MODULE_CLASS))
       # use product makefile for APP modules
@@ -111,6 +160,37 @@ ifneq (,$(LOCAL_GENERATE_CUSTOM_FOLDER))
      )
 
   endif
+endif
+
+            
+# Check every module that do not use source file or other resource in protect folder
+define protect-err
+$(error $(1): Please do not use this protect source $(2))
+endef
+
+Check_Item := $(LOCAL_SRC_FILES) $(LOCAL_C_INCLUDE)
+Check_Path := mediatek/protect/ \
+              mediatek/protect-bsp/ \
+              mediatek/protect-app/
+PROTECT_FILES :=
+$(foreach path,$(Check_Path), \
+   $(if $(filter $(path)/%,$(LOCAL_PATH)),, \
+      $(foreach item,$(Check_Item),\
+         $(if $(findstring $(path),$(item)),\
+             $(eval PROTECT_FILES += $(item)) \
+         ) \
+      ) \
+   ) \
+)
+# Add exception case for gemini for workaround
+ERROR_FILES :=
+$(foreach item,$(PROTECT_FILES),  \
+  $(if $(filter ../../mediatek/protect/frameworks/base/telephony/java/com/android/internal/telephony/gemini/%,$(PRODUCT_FILES)),  \
+    $(eval ERROR_FILES += $(item))  \
+  ) \
+)
+ifneq ($(ERROR_FILES),)
+  $(call protect-err,$(LOCAL_PATH),$(PROTECT_FILES))
 endif
 
 ifeq ($(DUMP_COMP_BUILD_INFO),true)

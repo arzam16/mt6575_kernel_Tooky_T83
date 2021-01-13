@@ -1,4 +1,70 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   ov5642_Sensor.h
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Header file of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 12 07 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * [Camera] Modify the custom tuning files for AE.
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048194] [Need Patch] [Volunteer Patch]
+ * [Camera]. Chagne the preview size to 1600x1200 for IMX073 sensor.
+ *
+ * 04 01 2011 koli.lin
+ * [ALPS00037670] [MPEG4 recording]the frame rate of fine quality video can not reach 30fps
+ * [Camera]Modify the sensor preview output resolution and line time to fix frame rate at 30fps for video mode.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Change sensor driver preview size ratio to 4:3.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Modify the IMX073 sensor driver for preview mode.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Create IMX073 sensor driver to database.
+ *
+ * 08 19 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Merge dual camera relative settings. Main OV5642, SUB O7675 ready.
+ *
+ * 08 18 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Mmodify ISP setting and add OV5642 sensor driver.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 /* SENSOR FULL SIZE */
 #ifndef __SENSOR_H
 #define __SENSOR_H

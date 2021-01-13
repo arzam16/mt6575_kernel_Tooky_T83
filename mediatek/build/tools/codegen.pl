@@ -3,16 +3,19 @@ my $DEBUG = 0; # global debug switch
 
 &Usage if ($#ARGV < 0);
 #my $workingDir = $ARGV[0];
-my $workingDir = "mediatek/source/cgen/";
+my $workingDir = "mediatek/cgen/";
 die "Can NOT find $workingDir\n" if (!-d $workingDir);
 chdir($workingDir);
 
 $workingDir = "./";
 #die "Log directory $workingDir does NOT exist!\n" if (!-d $workingDir);
 
-my $RelativePath = "./"; #"mediatek/source/cgen/";
-my $CustomPath = "../../custom/"; #"mediatek/custom/";
-my $CommonPath = "../../custom/common/cgen/"; #"mediatek/custom/common/cgen/";
+my $RelativePath = "./"; #"mediatek/cgen/";
+my $CustomPath = "../custom/"; #"mediatek/custom/";
+my $CommonPath = "../custom/common/cgen/"; #"mediatek/custom/common/cgen/";
+#//LGE_CHANGE_S : 2013-01-11 mtk-bsp-sp@lge.com fixed first new build error (is not copyied)
+my $CustomOutPath = "../custom/out/"; #"mediatek/custom/out/";
+#//LGE_CHANGE_E : 2013-01-11 mtk-bsp-sp@lge.com fixed first new build error (is not copyied)
 
 my $PlatformVersion = $ENV{"MTK_PLATFORM"};
 my $ChipSwVersion = $ENV{"MTK_CHIP_VER"};
@@ -34,6 +37,10 @@ my $Output_Dir = "../cfgfileinc/";
 my $Output_Default_Dir = "../cfgdefault/";
 my $Custom_Output_Dir = "../cfgfileinc/";
 my $Custom_Output_Defualt_Dir = "../cfgdefault/";
+
+#//LGE_CHANGE_S : 2013-02-20 mtk-bsp-sp@lge.com for build stop when project folder does not exist
+my $CustomAudioGainHeader_Dir = $CustomPath . $ProjectVersion ."/cgen/lge/". $ProjectVersion;
+#//LGE_CHANGE_E : 2013-02-20 mtk-bsp-sp@lge.com for build stop when project folder does not exist
 
 #my $Custom_dir_include = $workingDir . "custom/cfgfileinc";
 #my $Custom_file_name_include = $workingDir . "custom/inc/custom_cfg_module_file.h";
@@ -90,6 +97,23 @@ if (!-d $dir_APEditor) {
     goto Err;
 }
 
+#//LGE_CHANGE_S : 2013-02-20 mtk-bsp-sp@lge.com for build stop when project folder does not exist
+if (!-d $CustomAudioGainHeader_Dir) {
+    print ERR_FILE "$CustomAudioGainHeader_Dir directory does not exist!\n";
+	print ERR_FILE "You must make folder and data (ex. $ProjectVersion) below to mediatek/custom/lge75_xx_xxx/cgen/lge \n";
+	print "FAILED !! mediatek/custom/lge75_xx_xxx/cgen/lge/$ProjectVersion folder does not exist !!\n";
+	print "FAILED !! audio calibration data does not exist !!\n";
+	print "FAILED !! Please, Check calibration audio folder and parameters !!\n";
+	print "FAILED !!\n";
+	print "FAILED !!\n";
+    goto Err;
+}
+#//LGE_CHANGE_E : 2013-02-20 mtk-bsp-sp@lge.com for build stop when project folder does not exist
+
+#//LGE_CHANGE_S : 2012-12-11 mtk-bsp-sp@lge.com separating audio gain based on model
+&AutoLGEVendorCopyFile;
+#//LGE_CHANGE_E : 2012-12-11 mtk-bsp-sp@lge.com separating audio gain based on model
+
 # Step1. Auto generated the relative .h
 &AutoGenHeaderFile( $dir_include, $file_name_include, $Output_Dir);
 &AutoGenHeaderFile( $dir_default_include, $file_DefaultN_include, $Output_Default_Dir);
@@ -132,7 +156,7 @@ if (-f $flagLog) {
 
 system("echo MTK_CDEFS = $flags > $flagLog");
 
-system("gcc -E $flags -I${CustomPath}${ProjectVersion}/cgen/inc -I../../custom/common/cgen/inc " . $AP_Parse_File . ">$AP_Temp_CL");
+system("gcc -E $flags -I${CustomPath}${ProjectVersion}/cgen/inc -I../custom/common/cgen/inc " . $AP_Parse_File . ">$AP_Temp_CL");
 
 # Step3. call Cgen
 # Delete the old db files at fist
@@ -179,6 +203,32 @@ exit 0;
 
 Err:
 exit -1;
+
+#//LGE_CHANGE_S : 2012-12-11 mtk-bsp-sp@lge.com separating audio gain based on model
+sub AutoLGEVendorCopyFile
+{
+#    $productMakefile = "../../" . $ENV{"MTK_HYBRID_PRODUCTFILE"};
+#    if ($productMakefile ne "") { # Hybrid build system
+#      open (CURFILE, $productMakefile) or die "Cannot open $productMakefile: $!\n";
+#      while (<CURFILE>) {
+#        $baseProject = $1 if (/^\s*BASE_PROJECT\s*:=\s*(\S+)/);
+#      }
+#      close CURFILE;
+#    }
+    system("echo Copy custom Cgen files to distinguish Audio calibration value of " . $ProjectVersion);
+#	system("echo If ProjectVersion folder does not exist, the model will use the default value !!!");
+#   system("rm -rf " . $CustomPath . $ProjectVersion . "/cgen/inc");
+#   system("rm -rf " . $CustomPath . $ProjectVersion . "/cgen/cfgdefault");
+#   system("rm -rf " . $CustomPath . $ProjectVersion . "/cgen/cfgfileinc");
+#//LGE_CHANGE_S : 2013-01-11 mtk-bsp-sp@lge.com fixed first new build error (is not copyied)
+	system("cp -a " . $CustomPath . $ProjectVersion . "/cgen/lge/" . $ProjectVersion . "/* " . $CustomOutPath . $ProjectVersion . "/cgen/lge/");
+#//LGE_CHANGE_E : 2013-01-11 mtk-bsp-sp@lge.com fixed first new build error (is not copyied)
+	system("cp -a " . $CustomPath . $ProjectVersion . "/cgen/lge/" . $ProjectVersion . "/* " . $CustomPath . $ProjectVersion . "/cgen/");
+#//LGE_CHANGE_S : 2013-01-11 mtk-bsp-sp@lge.com fixed first new build error (is not copyied)
+	system("cp -a " . $CustomOutPath . $ProjectVersion . "/cgen/lge/" . $ProjectVersion . "/* " . $CustomOutPath . $ProjectVersion . "/cgen/");
+#//LGE_CHANGE_E : 2013-01-11 mtk-bsp-sp@lge.com fixed first new build error (is not copyied)
+}
+#//LGE_CHANGE_E : 2012-12-11 mtk-bsp-sp@lge.com separating audio gain based on model
 
 sub AutoGenHeaderFile
 # $dir_path, the searched directory

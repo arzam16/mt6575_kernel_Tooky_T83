@@ -13,7 +13,10 @@
  *
  */
 
+#include <linux/aee.h>
+#include <linux/atomic.h>
 #include <linux/console.h>
+#include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -21,17 +24,38 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/io.h>
-#include <linux/platform_data/ram_console.h>
+#include "ram_console.h"
 
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_ERROR_CORRECTION
 #include <linux/rslib.h>
 #endif
 
+#define RC_CPU_COUNT 2
+
 struct ram_console_buffer {
 	uint32_t    sig;
 	uint32_t    start;
 	uint32_t    size;
-	uint8_t     data[0];
+
+	uint8_t     hw_status;
+	uint8_t     shutdown_mode;
+	uint8_t     in_idle;
+	uint8_t     __pad3;
+
+	uint32_t    jiffies_current;
+	uint32_t    jiffies_idle;
+	uint32_t    jiffies_wdk_kick;
+
+	uint32_t    last_irq_enter[RC_CPU_COUNT];
+	uint64_t    jiffies_last_irq_enter[RC_CPU_COUNT];
+
+	uint32_t    last_irq_exit[RC_CPU_COUNT];
+	uint64_t    jiffies_last_irq_exit[RC_CPU_COUNT];
+
+	uint64_t    jiffies_last_sched[RC_CPU_COUNT];
+	char        last_sched_comm[RC_CPU_COUNT][TASK_COMM_LEN];
+
+ 	uint8_t     data[0];
 };
 
 #define RAM_CONSOLE_SIG (0x43474244) /* DBGC */
@@ -40,6 +64,8 @@ struct ram_console_buffer {
 static char __initdata
 	ram_console_old_log_init_buffer[CONFIG_ANDROID_RAM_CONSOLE_EARLY_SIZE];
 #endif
+
+static struct ram_console_buffer ram_console_old_header;
 static char *ram_console_old_log;
 static size_t ram_console_old_log_size;
 
@@ -55,6 +81,67 @@ static int ram_console_bad_blocks;
 #define ECC_SYMSIZE CONFIG_ANDROID_RAM_CONSOLE_ERROR_CORRECTION_SYMBOL_SIZE
 #define ECC_POLY CONFIG_ANDROID_RAM_CONSOLE_ERROR_CORRECTION_POLYNOMIAL
 #endif
+
+void aee_rr_rec_current_jiffies(u32 j)
+{
+	if (ram_console_buffer) {
+		ram_console_buffer->jiffies_current = j;
+	}
+}
+
+void aee_rr_rec_wdk_kick_jiffies(u32 j)
+{
+	if (ram_console_buffer) {
+		ram_console_buffer->jiffies_wdk_kick = j;
+		ram_console_buffer->in_idle = 0;
+	}
+}
+
+void aee_rr_rec_idle_jiffies(u32 j)
+{
+	if (ram_console_buffer) {
+		if (raw_smp_processor_id() == 0) {
+			ram_console_buffer->jiffies_idle = j;
+			if (j != 0) {
+				ram_console_buffer->in_idle++;
+			}
+		}
+	}
+}
+
+void aee_rr_rec_last_irq_enter(int cpu, int irq, u64 j)
+{
+	if ((ram_console_buffer != NULL) && (cpu >= 0) && (cpu < RC_CPU_COUNT)) {
+		ram_console_buffer->last_irq_enter[cpu] = irq;
+		ram_console_buffer->jiffies_last_irq_enter[cpu] = j;
+	}
+	mb();
+}
+
+void aee_rr_rec_last_irq_exit(int cpu, int irq, u64 j)
+{
+	if ((ram_console_buffer != NULL) && (cpu >= 0) && (cpu < RC_CPU_COUNT)) {
+		ram_console_buffer->last_irq_exit[cpu] = irq;
+		ram_console_buffer->jiffies_last_irq_exit[cpu] = j;
+	}
+	mb();
+}
+
+void aee_rr_rec_last_sched_jiffies(int cpu, u64 j, const char *comm)
+{
+	if ((ram_console_buffer != NULL) && (cpu >= 0) && (cpu < RC_CPU_COUNT)) {
+		ram_console_buffer->jiffies_last_sched[cpu] = j;
+		strlcpy(ram_console_buffer->last_sched_comm[cpu], comm, TASK_COMM_LEN);
+	}
+	mb();
+}
+
+void aee_rr_rec_shutdown_mode(u8 mode)
+{
+	if (ram_console_buffer) {
+		ram_console_buffer->shutdown_mode = mode;
+	}
+}
 
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_ERROR_CORRECTION
 static void ram_console_encode_rs8(uint8_t *data, size_t len, uint8_t *ecc)
@@ -114,11 +201,54 @@ static void ram_console_update_header(void)
 #endif
 }
 
-static void
+static DEFINE_SPINLOCK(ram_console_lock);
+
+static atomic_t rc_in_fiq = ATOMIC_INIT(0);
+
+void aee_sram_fiq_log(const char *msg)
+{
+	int count = strlen(msg), rem, delay = 100;
+	struct ram_console_buffer *buffer = ram_console_buffer;
+
+	if (atomic_xchg(&rc_in_fiq, 1))
+		return;
+
+	while ((delay > 0) && (spin_is_locked(&ram_console_lock))) {
+		udelay(1);
+		delay--;
+	}
+
+	if (count > ram_console_buffer_size) {
+		msg += count - ram_console_buffer_size;
+		count = ram_console_buffer_size;
+	}
+	rem = ram_console_buffer_size - buffer->start;
+	if (rem < count) {
+		memcpy(buffer->data + buffer->start, msg, rem);
+		msg += rem;
+		count -= rem;
+		buffer->start = 0;
+		buffer->size = ram_console_buffer_size;
+	}
+	memcpy(buffer->data + buffer->start, msg, count);
+
+	buffer->start += count;
+	if (buffer->size < ram_console_buffer_size)
+		buffer->size += count;
+}
+
+void
 ram_console_write(struct console *console, const char *s, unsigned int count)
 {
+	unsigned long flags;
 	int rem;
-	struct ram_console_buffer *buffer = ram_console_buffer;
+    struct ram_console_buffer *buffer = ram_console_buffer;
+
+    if (atomic_read(&rc_in_fiq)) {
+        return;
+    }
+
+	spin_lock_irqsave(&ram_console_lock, flags);
 
 	if (count > ram_console_buffer_size) {
 		s += count - ram_console_buffer_size;
@@ -138,6 +268,8 @@ ram_console_write(struct console *console, const char *s, unsigned int count)
 	if (buffer->size < ram_console_buffer_size)
 		buffer->size += count;
 	ram_console_update_header();
+
+	spin_unlock_irqrestore(&ram_console_lock, flags);
 }
 
 static struct console ram_console = {
@@ -220,6 +352,8 @@ ram_console_save_old(struct ram_console_buffer *buffer, const char *bootinfo,
 		}
 	}
 
+	memcpy(&ram_console_old_header, buffer, sizeof(struct ram_console_buffer));
+
 	ram_console_old_log = dest;
 	ram_console_old_log_size = total_size;
 	memcpy(ram_console_old_log,
@@ -243,6 +377,8 @@ static int __init ram_console_init(struct ram_console_buffer *buffer,
 				   size_t buffer_size, const char *bootinfo,
 				   char *old_buf)
 {
+	int i;
+
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_ERROR_CORRECTION
 	int numerr;
 	uint8_t *par;
@@ -318,6 +454,18 @@ static int __init ram_console_init(struct ram_console_buffer *buffer,
 	buffer->sig = RAM_CONSOLE_SIG;
 	buffer->start = 0;
 	buffer->size = 0;
+	buffer->hw_status = 0;
+	buffer->shutdown_mode = 0;
+	buffer->jiffies_current = buffer->jiffies_wdk_kick = buffer->jiffies_idle = INITIAL_JIFFIES;
+	for (i = 0; i < RC_CPU_COUNT; i++) {
+		buffer->last_irq_enter[i] = 0;
+		buffer->jiffies_last_irq_enter[i] = 0;
+		buffer->last_irq_exit[i] = 0;
+		buffer->jiffies_last_irq_exit[i] = 0;
+
+		buffer->jiffies_last_sched[i] = 0;
+		memset(buffer->last_sched_comm[i], i, TASK_COMM_LEN);
+	}
 
 	register_console(&ram_console);
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_ENABLE_VERBOSE
@@ -409,9 +557,34 @@ static const struct file_operations ram_console_file_ops = {
 static int __init ram_console_late_init(void)
 {
 	struct proc_dir_entry *entry;
+	struct last_reboot_reason lrr;
+	int i;
 
+	printk(KERN_ERR"ram_console_late_init\r\n");
+	
 	if (ram_console_old_log == NULL)
 		return 0;
+
+	lrr.wdt_status = ram_console_old_header.hw_status;
+	lrr.shutdown_mode = ram_console_old_header.shutdown_mode;
+	lrr.in_idle = ram_console_old_header.in_idle;
+	lrr.jiffies_current = ram_console_old_header.jiffies_current;
+	lrr.jiffies_wdk_kick = ram_console_old_header.jiffies_wdk_kick;
+	lrr.jiffies_idle = ram_console_old_header.jiffies_idle;
+
+	for (i = 0; i < RR_CPU_COUNT; i++) {
+		lrr.last_irq_enter[i] = ram_console_old_header.last_irq_enter[i];
+		lrr.jiffies_last_irq_enter[i] = ram_console_old_header.jiffies_last_irq_enter[i];
+
+		lrr.last_irq_exit[i] = ram_console_old_header.last_irq_exit[i];
+		lrr.jiffies_last_irq_exit[i] = ram_console_old_header.jiffies_last_irq_exit[i];
+
+		lrr.jiffies_last_sched[i] = ram_console_old_header.jiffies_last_sched[i];
+		strlcpy(lrr.last_sched_comm[i], ram_console_old_header.last_sched_comm[i], TASK_COMM_LEN);
+	}
+
+	aee_rr_last(&lrr);
+
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_EARLY_INIT
 	ram_console_old_log = kmalloc(ram_console_old_log_size, GFP_KERNEL);
 	if (ram_console_old_log == NULL) {

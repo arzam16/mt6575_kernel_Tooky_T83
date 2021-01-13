@@ -1,4 +1,6 @@
-
+/*
+ * Definitions for mmc328x magnetic sensor chip.
+ */
 #ifndef __MMC328x_H__
 #define __MMC328x_H__
 

@@ -1,4 +1,100 @@
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 02 19 2012 koli.lin
+ * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
+ * [Camera] 1. Modify the AE converge speed in the video mode.
+ *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
+ *
+ * 10 31 2011 koli.lin
+ * [ALPS00081266] [Li Zhen]
 
+P49?�O�s�b��?�H
+
+
+[Wenjing]
+
+Hi,Koli:
+
+tester?�����??�X??��?��A��O?�y�z�ݡA??�򤧫e6573�W��?���bvideo mode���@?issue�ۦP�A��??��check
+
+thanks
+
+
+����  61204
+
+ * [Camera] 1. Modify the preview output speed 648Mbps/lane.
+ *                2. Fix the flicker min limitation value. (max 1 fps)
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048684] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor software power down mode.
+ *
+ * 04 12 2011 koli.lin
+ * [ALPS00039760] [Need Patch] [Volunteer Patch]
+ * [Camera] Add the sensor 2D or 3D information to sensor driver.
+ *
+ * 04 11 2011 koli.lin
+ * [ALPS00039429] [Need Patch] [Volunteer Patch]
+ * [Camera] Add flicker frame rate and sensor test pattern feature id.
+ *
+ * 03 15 2011 koli.lin
+ * [ALPS00034474] [Need Patch] [Volunteer Patch]
+ * Move sensor driver current setting to isp of middleware.
+ *
+ * 10 12 2010 koli.lin
+ * [ALPS00127101] [Camera] AE will flash
+ * [Camera]Create Vsync interrupt to handle the exposure time, sensor gain and raw gain control.
+ *
+ * 08 27 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Check in AD5820 Constant AF function.
+ *
+ * 08 26 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Add AD5820 Lens driver function.
+ * must disable SWIC and bus log, otherwise the lens initial time take about 30 second.(without log about 3 sec)
+ *
+ * 08 19 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Merge dual camera relative settings. Main OV5642, SUB O7675 ready.
+ *
+ * 08 18 2010 ronnie.lai
+ * [DUMA00032601] [Camera][ISP]
+ * Mmodify ISP setting and add OV5642 sensor driver.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -83,6 +179,9 @@ extern int iBurstWriteReg(u8 *pData, u32 bytes, u16 i2cId);
 #define OV5642_write_cmos_sensor(addr, para) iWriteReg((u16) addr , (u32) para , 1, OV5642_WRITE_ID)
 #define OV5642_burst_write_cmos_sensor(pData, bytes)  iBurstWriteReg(pData, bytes, OV5642_WRITE_ID)
 
+/*******************************************************************************
+* 
+********************************************************************************/
 kal_uint16 OV5642_read_cmos_sensor(kal_uint32 addr)
 {
 kal_uint16 get_byte=0;
@@ -90,6 +189,9 @@ kal_uint16 get_byte=0;
     return get_byte;
 }
 
+/*******************************************************************************
+* 
+********************************************************************************/
 void OV5642_write_shutter(kal_uint16 shutter)
 {
     kal_uint16 iExp = shutter;
@@ -134,6 +236,9 @@ void OV5642_write_shutter(kal_uint16 shutter)
     OV5642_g_iBackupExtraExp = OV5642_g_iExtra_ExpLines;    
 }   /* write_OV5642_shutter */
 
+/*******************************************************************************
+* 
+********************************************************************************/
 static kal_uint16 OV5642Reg2Gain(const kal_uint8 iReg)
 {
     kal_uint8 iI;
@@ -148,6 +253,9 @@ static kal_uint16 OV5642Reg2Gain(const kal_uint8 iReg)
     return iGain +  iGain * (iReg & 0x0F) / 16;
 }
 
+/*******************************************************************************
+* 
+********************************************************************************/
 static kal_uint8 OV5642Gain2Reg(const kal_uint16 iGain)
 {
     kal_uint8 iReg = 0x00;
@@ -184,6 +292,22 @@ static kal_uint8 OV5642Gain2Reg(const kal_uint16 iGain)
 
 }
 
+/*************************************************************************
+* FUNCTION
+*    OV5642_SetGain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*    the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
  void OV5642_SetGain(UINT16 iGain)
 {
     kal_uint8 iReg;
@@ -213,16 +337,38 @@ static kal_uint8 OV5642Gain2Reg(const kal_uint16 iGain)
     //SENSORDB("[OV5642_SetGain] X Gain = %d \n", iGain); 
 }   /*  OV5642_SetGain  */
 
+/*************************************************************************
+* FUNCTION
+*    read_OV5642_gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 read_OV5642_gain(void)
 {
     return (kal_uint16)OV5642_read_cmos_sensor(0x350B);
 }  /* read_OV5642_gain */
 
+/*******************************************************************************
+* 
+********************************************************************************/
 void write_OV5642_gain(kal_uint16 gain)
 {
     OV5642_SetGain(gain);
 }
 
+/*******************************************************************************
+* 
+********************************************************************************/
 void OV5642_camera_para_to_sensor(void)
 {
     kal_uint32    i;
@@ -241,6 +387,22 @@ void OV5642_camera_para_to_sensor(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV5642_sensor_to_camera_para
+*
+* DESCRIPTION
+*    // update camera_para from sensor register
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642_sensor_to_camera_para(void)
 {
     kal_uint32    i;
@@ -255,6 +417,22 @@ void OV5642_sensor_to_camera_para(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV5642_get_sensor_group_count
+*
+* DESCRIPTION
+*    //
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_int32  OV5642_get_sensor_group_count(void)
 {
     return GROUP_TOTAL_NUMS;
@@ -524,6 +702,9 @@ static void OV5642_SetDummy(const kal_uint16 iPixels, const kal_uint16 iLines)
 }   /*  OV5642_SetDummy */
 
 
+/*******************************************************************************
+*
+********************************************************************************/
 static void OV5642_Sensor_Init(void)
 {
     OV5642_write_cmos_sensor(0x3103, 0x93);//PCLK SELECT
@@ -1161,6 +1342,9 @@ void OV5642_set_720P(void)
     SENSORDB("Set 720P End\n"); 
 }
 
+/*******************************************************************************
+*
+********************************************************************************/
 void OV5642_set_5M15fps(void)
 {
     OV5642_g_RES = OV5642_5M;
@@ -1243,6 +1427,9 @@ void OV5642_set_5M15fps(void)
     SENSORDB("Set 5M End\n"); 
 }
 
+/*******************************************************************************
+*
+********************************************************************************/
 void OV5642_set_5M(void)
 {
     OV5642_g_RES = OV5642_5M;
@@ -1315,6 +1502,22 @@ void OV5642_set_5M(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   OV5642Open
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 OV5642Open(void)
 {
@@ -1344,6 +1547,22 @@ UINT32 OV5642Open(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642GetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642GetSensorID(UINT32 *sensorID) 
 {
     int  retry = 3; 
@@ -1365,6 +1584,22 @@ UINT32 OV5642GetSensorID(UINT32 *sensorID)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of OV5642 to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642_SetShutter(kal_uint16 iShutter)
 {
 #if 0 
@@ -1386,11 +1621,43 @@ void OV5642_SetShutter(kal_uint16 iShutter)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT16 OV5642_read_shutter(void)
 {
     return (UINT16)( (OV5642_read_cmos_sensor(0x3002)<<8) | OV5642_read_cmos_sensor(0x3003) );
 }
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_night_mode
+*
+* DESCRIPTION
+*   This function night mode of OV5642.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV5642_NightMode(kal_bool bEnable)
 {
     /************************************************************************/
@@ -1426,6 +1693,22 @@ void OV5642_NightMode(kal_bool bEnable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642Close
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642Close(void)
 {
     //  CISModulePowerOn(FALSE);
@@ -1436,6 +1719,22 @@ UINT32 OV5642Close(void)
     return ERROR_NONE;
 }	/* OV5642Close() */
 
+/*************************************************************************
+* FUNCTION
+*   OV5642_FOCUS_AD5820_Init
+*
+* DESCRIPTION
+*   This function is to load micro code for AF function
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static u8 AD5820_Config[] = {    
      0x02,
      0x00,
@@ -12673,6 +12972,23 @@ void OV5642_Set_Mirror_Flip(kal_uint8 image_mirror)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   OV5642Preview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5642Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -12751,6 +13067,9 @@ UINT32 OV5642Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
 
 
+/*******************************************************************************
+*
+********************************************************************************/
 UINT32 OV5642Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {

@@ -23,6 +23,10 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
  *
  * Mar 4 2010 mtk70508
  * [DUMA00154792] Sensor driver

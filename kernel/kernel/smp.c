@@ -6,7 +6,7 @@
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/percpu.h>
 #include <linux/init.h>
 #include <linux/gfp.h>
@@ -97,10 +97,22 @@ void __init call_function_init(void)
  * previous function call. For multi-cpu calls its even more interesting
  * as we'll have to ensure no other cpu is observing our csd.
  */
-static void csd_lock_wait(struct call_single_data *data)
+static int csd_lock_wait(struct call_single_data *data)
 {
-	while (data->flags & CSD_FLAG_LOCK)
+	int cpu, nr_online_cpus = 0;
+
+	while (data->flags & CSD_FLAG_LOCK) {
+		for_each_cpu(cpu, data->cpumask) {
+			if (cpu_online(cpu)) {
+				nr_online_cpus++;
+			}
+		}
+		if (!nr_online_cpus)
+			return -ENXIO;
 		cpu_relax();
+	}
+
+	return 0;
 }
 
 static void csd_lock(struct call_single_data *data)
@@ -134,11 +146,12 @@ static void csd_unlock(struct call_single_data *data)
  * ->func, ->info, and ->flags set.
  */
 static
-void generic_exec_single(int cpu, struct call_single_data *data, int wait)
+int generic_exec_single(int cpu, struct call_single_data *data, int wait)
 {
 	struct call_single_queue *dst = &per_cpu(call_single_queue, cpu);
 	unsigned long flags;
 	int ipi;
+	int err = 0;
 
 	raw_spin_lock_irqsave(&dst->lock, flags);
 	ipi = list_empty(&dst->list);
@@ -160,7 +173,9 @@ void generic_exec_single(int cpu, struct call_single_data *data, int wait)
 		arch_send_call_function_single_ipi(cpu);
 
 	if (wait)
-		csd_lock_wait(data);
+		err = csd_lock_wait(data);
+
+	return err;
 }
 
 /*
@@ -224,6 +239,7 @@ void generic_smp_call_function_interrupt(void)
 			WARN(1, "%pf enabled interrupts and double executed\n", func);
 			continue;
 		}
+		cpumask_clear_cpu(cpu, data->csd.cpumask);
 
 		refs = atomic_dec_return(&data->refs);
 		WARN_ON(refs < 0);
@@ -332,6 +348,7 @@ int smp_call_function_single(int cpu, smp_call_func_t func, void *info,
 
 			csd_lock(data);
 
+			cpumask_set_cpu(cpu, data->cpumask);
 			data->func = func;
 			data->info = info;
 			generic_exec_single(cpu, data, wait);
@@ -345,6 +362,51 @@ int smp_call_function_single(int cpu, smp_call_func_t func, void *info,
 	return err;
 }
 EXPORT_SYMBOL(smp_call_function_single);
+
+/* This function can be used by MTK Monitor only */
+/* Dont use this function directly               */
+int mtk_smp_call_function_single(int cpu, smp_call_func_t func, void *info,
+                             int wait)
+{
+        struct call_single_data d = {
+                .flags = 0,
+        };
+        unsigned long flags;
+        int this_cpu;
+        int err = 0;
+
+        /*
+         * prevent preemption and reschedule on another processor,
+         * as well as CPU removal
+         */
+        this_cpu = get_cpu();
+
+        if (cpu == this_cpu) {
+                local_irq_save(flags);
+                func(info);
+                local_irq_restore(flags);
+        } else {
+                if ((unsigned)cpu < nr_cpu_ids && cpu_online(cpu)) {
+                        struct call_single_data *data = &d;
+
+                        if (!wait)
+                                data = &__get_cpu_var(csd_data);
+
+                        csd_lock(data);
+
+                        cpumask_set_cpu(cpu, data->cpumask);
+                        data->func = func;
+                        data->info = info;
+                        generic_exec_single(cpu, data, wait);
+                } else {
+                        err = -ENXIO;   /* CPU not online */
+                }
+        }
+
+        put_cpu();
+
+        return err;
+}
 
 /*
  * smp_call_function_any - Run a function on any of the given cpus
@@ -423,6 +485,7 @@ void __smp_call_function_single(int cpu, struct call_single_data *data,
 		local_irq_restore(flags);
 	} else {
 		csd_lock(data);
+		cpumask_set_cpu(cpu, data->cpumask);
 		generic_exec_single(cpu, data, wait);
 	}
 	put_cpu();
@@ -517,6 +580,7 @@ void smp_call_function_many(const struct cpumask *mask,
 	cpumask_and(data->cpumask, mask, cpu_online_mask);
 	cpumask_clear_cpu(this_cpu, data->cpumask);
 	refs = cpumask_weight(data->cpumask);
+	cpumask_and(data->csd.cpumask, data->cpumask, data->cpumask);
 
 	/* Some callers race with other cpus changing the passed mask */
 	if (unlikely(!refs)) {
@@ -701,3 +765,93 @@ int on_each_cpu(void (*func) (void *info), void *info, int wait)
 	return ret;
 }
 EXPORT_SYMBOL(on_each_cpu);
+
+/**
+ * on_each_cpu_mask(): Run a function on processors specified by
+ * cpumask, which may include the local processor.
+ * @mask: The set of cpus to run on (only runs on online subset).
+ * @func: The function to run. This must be fast and non-blocking.
+ * @info: An arbitrary pointer to pass to the function.
+ * @wait: If true, wait (atomically) until function has completed
+ *        on other CPUs.
+ *
+ * If @wait is true, then returns once @func has returned.
+ *
+ * You must not call this function with disabled interrupts or
+ * from a hardware interrupt handler or from a bottom half handler.
+ */
+void on_each_cpu_mask(const struct cpumask *mask, smp_call_func_t func,
+			void *info, bool wait)
+{
+	int cpu = get_cpu();
+
+	smp_call_function_many(mask, func, info, wait);
+	if (cpumask_test_cpu(cpu, mask)) {
+		local_irq_disable();
+		func(info);
+		local_irq_enable();
+	}
+	put_cpu();
+}
+EXPORT_SYMBOL(on_each_cpu_mask);
+
+/*
+ * on_each_cpu_cond(): Call a function on each processor for which
+ * the supplied function cond_func returns true, optionally waiting
+ * for all the required CPUs to finish. This may include the local
+ * processor.
+ * @cond_func:	A callback function that is passed a cpu id and
+ *		the the info parameter. The function is called
+ *		with preemption disabled. The function should
+ *		return a blooean value indicating whether to IPI
+ *		the specified CPU.
+ * @func:	The function to run on all applicable CPUs.
+ *		This must be fast and non-blocking.
+ * @info:	An arbitrary pointer to pass to both functions.
+ * @wait:	If true, wait (atomically) until function has
+ *		completed on other CPUs.
+ * @gfp_flags:	GFP flags to use when allocating the cpumask
+ *		used internally by the function.
+ *
+ * The function might sleep if the GFP flags indicates a non
+ * atomic allocation is allowed.
+ *
+ * Preemption is disabled to protect against CPUs going offline but not online.
+ * CPUs going online during the call will not be seen or sent an IPI.
+ *
+ * You must not call this function with disabled interrupts or
+ * from a hardware interrupt handler or from a bottom half handler.
+ */
+void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
+			smp_call_func_t func, void *info, bool wait,
+			gfp_t gfp_flags)
+{
+	cpumask_var_t cpus;
+	int cpu, ret;
+
+	might_sleep_if(gfp_flags & __GFP_WAIT);
+
+	if (likely(zalloc_cpumask_var(&cpus, (gfp_flags|__GFP_NOWARN)))) {
+		preempt_disable();
+		for_each_online_cpu(cpu)
+			if (cond_func(cpu, info))
+				cpumask_set_cpu(cpu, cpus);
+		on_each_cpu_mask(cpus, func, info, wait);
+		preempt_enable();
+		free_cpumask_var(cpus);
+	} else {
+		/*
+		 * No free cpumask, bother. No matter, we'll
+		 * just have to IPI them one by one.
+		 */
+		preempt_disable();
+		for_each_online_cpu(cpu)
+			if (cond_func(cpu, info)) {
+				ret = smp_call_function_single(cpu, func,
+								info, wait);
+				WARN_ON_ONCE(!ret);
+			}
+		preempt_enable();
+	}
+}
+EXPORT_SYMBOL(on_each_cpu_cond);

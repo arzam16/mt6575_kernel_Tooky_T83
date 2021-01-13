@@ -1,4 +1,45 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   mt9p015_Sensor.c
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Guangye Yang (mtk70662)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 02 19 2012 koli.lin
+ * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
+ * [Camera] 1. Modify the AE converge speed in the video mode.
+ *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
+ *
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -37,6 +78,23 @@ static MT9P015_sensor_struct MT9P015_sensor =
 
 static void MT9P015_camera_para_to_sensor(void);
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_write_cmos_sensor
+*
+* DESCRIPTION
+*    This function wirte data to CMOS sensor through I2C
+*
+* PARAMETERS
+*    addr: the 16bit address of register
+*    para: the 8bit value of register
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_write_cmos_sensor(kal_uint16 addr, kal_uint8 para)
 {
   kal_int32 rt;
@@ -55,6 +113,22 @@ static void MT9P015_write_cmos_sensor_16Bit(kal_uint16 addr, kal_uint16 para)
   if (rt < 0) printk("[MT9P015] I2C 16 bit write %x, %x error\n", addr, para);
 #endif
 }
+/*************************************************************************
+* FUNCTION
+*    MT9P015_read_cmos_sensor
+*
+* DESCRIPTION
+*    This function read data from CMOS sensor through I2C.
+*
+* PARAMETERS
+*    addr: the 16bit address of register
+*
+* RETURNS
+*    8bit data read through I2C
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint8 MT9P015_read_cmos_sensor(kal_uint16 addr)
 {
   kal_int32 rt;
@@ -68,6 +142,22 @@ static kal_uint8 MT9P015_read_cmos_sensor(kal_uint16 addr)
   return data;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_set_mirror
+*
+* DESCRIPTION
+*    This function set the mirror to the CMOS sensor
+*
+* PARAMETERS
+*    mirror
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 inline static void MT9P015_set_mirror(kal_uint8 mirror)
 {
   kal_uint8 sensor_mirror = 0;
@@ -91,6 +181,22 @@ inline static void MT9P015_set_mirror(kal_uint8 mirror)
   MT9P015_write_cmos_sensor(0x0101, sensor_mirror); /* image_orientation */
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_gain2reg
+*
+* DESCRIPTION
+*    This function translate gain to sensor register value
+*
+* PARAMETERS
+*    gain: sensor gain, max gain is 12.7x, base(0x40)
+*
+* RETURNS
+*    reg value
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 inline static kal_uint16 MT9P015_gain2reg(kal_uint16 gain)
 {
   kal_uint16 reg;
@@ -100,6 +206,22 @@ inline static kal_uint16 MT9P015_gain2reg(kal_uint16 gain)
   return reg > 0x7F ? 0x7F : reg;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_set_clock
+*
+* DESCRIPTION
+*    This function set sensor vt clock and op clock
+*
+* PARAMETERS
+*    clk: vt clock
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_set_clock(kal_uint32 clk)
 {
   static const kal_uint8 clk_setting[][6] =
@@ -137,6 +259,22 @@ static void MT9P015_set_clock(kal_uint32 clk)
   mdelay(1); /* allow PLL to lock */
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_write_shutter
+*
+* DESCRIPTION
+*    This function apply shutter to sensor
+*
+* PARAMETERS
+*    course: course integration time
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_write_shutter(kal_uint16 course)
 {
   if (!course) course = 1; /* avoid 0 */
@@ -146,6 +284,22 @@ static void MT9P015_write_shutter(kal_uint16 course)
   MT9P015_write_cmos_sensor(0x0104, 0x00);
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_array_window
+*
+* DESCRIPTION
+*    This function config sensor array window
+*
+* PARAMETERS
+*    startx, starty, width, height
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_array_window(kal_uint16 startx, kal_uint16 starty, kal_uint16 width, kal_uint16 height)
 {
   const kal_uint16 endx = startx + width - 1;
@@ -161,6 +315,23 @@ static void MT9P015_array_window(kal_uint16 startx, kal_uint16 starty, kal_uint1
   MT9P015_write_cmos_sensor(0x034B, endy);
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_output_window
+*
+* DESCRIPTION
+*    This function config output window
+*
+* PARAMETERS
+*    pv_size: KAL_TRUE means switch to 1/4 size to preview, KAL_FALSE means switch to full size to caputre
+*    dummy_pixel, dummy_line
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_output_window(kal_bool pv_size, kal_uint16 dummy_pixel, kal_uint16 dummy_line)
 {
   kal_uint16 hactive, vactive, line_length, frame_height;
@@ -212,6 +383,22 @@ static void MT9P015_output_window(kal_bool pv_size, kal_uint16 dummy_pixel, kal_
   MT9P015_write_cmos_sensor(0x0104, 0x00);
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_initial_setting
+*
+* DESCRIPTION
+*    This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_initial_setting(void)
 {
   MT9P015_write_cmos_sensor(0x0103, 0x01); /* software reset */
@@ -259,6 +446,22 @@ static void MT9P015_initial_setting(void)
   MT9P015_write_cmos_sensor(0x0100, 0x01); /* streaming */
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_power_on
+*
+* DESCRIPTION
+*    This function power on CMOS sensor and check sensor id
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    sensor ID
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint16 MT9P015_power_on(void)
 {
   const kal_uint8 i2c_addr[] = {MT9P015_SLV1_WRITE_ID, MT9P015_SLV2_WRITE_ID, MT9P015_SLV3_WRITE_ID, MT9P015_SLV4_WRITE_ID};
@@ -284,18 +487,69 @@ static kal_uint16 MT9P015_power_on(void)
   return sensor_id;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_get_size
+*
+* DESCRIPTION
+*    This function return the image width and height of image sensor.
+*
+* PARAMETERS
+*    *sensor_width: address pointer of horizontal effect pixels of image sensor
+*    *sensor_height: address pointer of vertical effect pixels of image sensor
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_get_size(kal_uint16 *sensor_width, kal_uint16 *sensor_height)
 {
   *sensor_width = MT9P015_IMAGE_SENSOR_FULL_WIDTH; /* must be 4:3 */
   *sensor_height = MT9P015_IMAGE_SENSOR_FULL_HEIGHT;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_get_period
+*
+* DESCRIPTION
+*    This function return the image width and height of image sensor.
+*
+* PARAMETERS
+*    *pixel_number: address pointer of pixel numbers in one period of HSYNC
+*    *line_number: address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_get_period(kal_uint16 *pixel_number, kal_uint16 *line_number)
 {
   *pixel_number = MT9P015_sensor.line_length;
   *line_number = MT9P015_sensor.frame_height;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_preview
+*
+* DESCRIPTION
+*    This function config CMOS sensor to preview state
+*
+* PARAMETERS
+*    image_window: grab window
+*    sensor_config_data
+*
+* RETURNS
+*    error code
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window, MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
   kal_uint16 dummy_line;
@@ -329,6 +583,23 @@ static kal_uint32 MT9P015_preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_wind
   return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_capture
+*
+* DESCRIPTION
+*    This function config CMOS sensor to capture state
+*
+* PARAMETERS
+*    image_window: grab window and size
+*    sensor_config_data
+*
+* RETURNS
+*    error code
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window, MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
   const kal_uint16 pv_line_length = MT9P015_PV_PERIOD_PIXEL_NUMS;
@@ -389,12 +660,44 @@ static kal_uint32 MT9P015_capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_wind
   return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_set_shutter
+*
+* DESCRIPTION
+*    This function set e-shutter to change exposure time.
+*
+* PARAMETERS
+*    shutter: exposured lines
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_set_shutter(kal_uint16 shutter)
 {
   MT9P015_sensor.shutter = shutter;
   MT9P015_write_shutter(MT9P015_sensor.shutter);
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_night_mode
+*
+* DESCRIPTION
+*    This function night mode
+*
+* PARAMETERS
+*    enable
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_night_mode(kal_bool enable)
 {
   const kal_uint16 dummy_pixel = MT9P015_sensor.line_length - MT9P015_PV_PERIOD_PIXEL_NUMS;
@@ -411,6 +714,22 @@ static void MT9P015_night_mode(kal_bool enable)
   MT9P015_output_window(KAL_TRUE, dummy_pixel, dummy_line);
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_set_gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    gain: sensor global gain(base: 0x40)
+*
+* RETURNS
+*    the actually gain set to sensor.
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint16 MT9P015_set_gain(kal_uint16 gain)
 {
   kal_uint16 reg, new_gain;
@@ -438,6 +757,22 @@ static kal_uint16 MT9P015_set_gain(kal_uint16 gain)
   return gain;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_set_flashlight
+*
+* DESCRIPTION
+*    turn on/off flashlight.
+*
+* PARAMETERS
+*    enable
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_set_flashlight(kal_bool enable)
 {
   /* not ready */
@@ -672,6 +1007,22 @@ inline static kal_bool MT9P015_set_sensor_item_info(MSDK_SENSOR_ITEM_INFO_STRUCT
   return KAL_TRUE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_set_video_mode
+*
+* DESCRIPTION
+*    This function set video frame rate
+*
+* PARAMETERS
+*    fps: frame rate per second
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void MT9P015_set_video_mode(kal_uint16 fps)
 {
   kal_uint16 frame_height;
@@ -684,6 +1035,21 @@ static void MT9P015_set_video_mode(kal_uint16 fps)
   MT9P015_output_window(KAL_TRUE, MT9P015_sensor.line_length - MT9P015_PV_PERIOD_PIXEL_NUMS, frame_height - MT9P015_PV_PERIOD_LINE_NUMS);
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_init
+*
+* DESCRIPTION
+*    This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_init(void)
 {
   if (MT9P015_SENSOR_ID != MT9P015_power_on()) return ERROR_SENSOR_CONNECT_FAIL;
@@ -691,6 +1057,22 @@ static kal_uint32 MT9P015_init(void)
   
   return ERROR_NONE;
 }
+/*************************************************************************
+* FUNCTION
+*	MT9P015_GetSensorID
+*
+* DESCRIPTION
+*	This function get the sensor ID
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_GetSensorID(kal_uint32 *sensorID)
 
 {
@@ -709,6 +1091,24 @@ static kal_uint32 MT9P015_GetSensorID(kal_uint32 *sensorID)
 }   /* MT9P015Open  */
 
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_get_info
+*
+* DESCRIPTION
+*    This function provide information to upper layer
+*
+* PARAMETERS
+*    id: scenario id
+*    info: info struct
+*    cfg_data: config data
+*
+* RETURNS
+*    error code
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_get_info(MSDK_SCENARIO_ID_ENUM id, MSDK_SENSOR_INFO_STRUCT *info, MSDK_SENSOR_CONFIG_STRUCT *cfg_data)
 {
   info->SensorPreviewResolutionX = MT9P015_IMAGE_SENSOR_PV_WIDTH_DRV;
@@ -808,6 +1208,22 @@ static kal_uint32 MT9P015_get_info(MSDK_SCENARIO_ID_ENUM id, MSDK_SENSOR_INFO_ST
   return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_get_resolution
+*
+* DESCRIPTION
+*    This function provide resolution to upper layer
+*
+* PARAMETERS
+*    res
+*
+* RETURNS
+*    error code
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_get_resolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *res)
 {
   res->SensorFullWidth = MT9P015_IMAGE_SENSOR_FULL_WIDTH;
@@ -845,6 +1261,24 @@ UINT32 MT9P015SetCalData(PSET_SENSOR_CALIBRATION_DATA_STRUCT pSetSensorCalData)
 	return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_feature_control
+*
+* DESCRIPTION
+*    This function control sensor mode
+*
+* PARAMETERS
+*    id: scenario id
+*    image_window: image grab window
+*    cfg_data: config data
+*
+* RETURNS
+*    error code
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_feature_control(MSDK_SENSOR_FEATURE_ENUM id, kal_uint8 *para, kal_uint32 *len)
 {
 	UINT32 *pFeatureData32=(UINT32 *) para;
@@ -963,6 +1397,24 @@ static kal_uint32 MT9P015_feature_control(MSDK_SENSOR_FEATURE_ENUM id, kal_uint8
   return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_control
+*
+* DESCRIPTION
+*    This function set sensor mode
+*
+* PARAMETERS
+*    id: scenario id
+*    image_window: image grab window
+*    cfg_data: config data
+*
+* RETURNS
+*    error code
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_control(MSDK_SCENARIO_ID_ENUM id, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window, MSDK_SENSOR_CONFIG_STRUCT *cfg_data)
 {
   switch (id)
@@ -979,6 +1431,22 @@ static kal_uint32 MT9P015_control(MSDK_SCENARIO_ID_ENUM id, MSDK_SENSOR_EXPOSURE
   }
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015_power_off
+*
+* DESCRIPTION
+*    This function is to turn off sensor module power.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9P015_power_off(void)
 {
   MT9P015_write_cmos_sensor(0x0100, 0x00);
@@ -987,6 +1455,22 @@ static kal_uint32 MT9P015_power_off(void)
   return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*    MT9P015SensorInit
+*
+* DESCRIPTION
+*    This function maps the external camera module function API structure.
+*
+* PARAMETERS
+*    pfunc: function pointer
+*
+* RETURNS
+*    error code
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P015SensorInit(PSENSOR_FUNCTION_STRUCT *pfunc)
 {
   static SENSOR_FUNCTION_STRUCT MT9P015_sensor_func =

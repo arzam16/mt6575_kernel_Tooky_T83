@@ -12,6 +12,7 @@ my $base_name;
 my $curr_line;
 my $cnt;
 my $outdir = dirname($0);
+my $multiline;
 
 sub collect_aidl
 {
@@ -32,13 +33,30 @@ foreach $name (@aidl) {
 	while ($curr_line = <AIDL>) {
 		if ($curr_line =~ /^[\s\w\d]*interface[\s]*$base_name/) {
 			print FMAP "$base_name:\n";
-			$cnt++;
+			$cnt = 1;
 		}
 		if ($cnt > 0) {
 			if ($curr_line =~ /\); *\r?\n$/) {
 				$curr_line =~ s/^[^\w\d]+//g;
-				print FMAP "$cnt: $curr_line";
+				if ($multiline) {
+					print FMAP "       $curr_line";
+				} else {
+					print FMAP "$cnt: $curr_line";
+				}
 				$cnt++;
+				$multiline = 0;
+				next;
+			}
+
+			if ($multiline) {
+				$curr_line =~ s/^[^\w\d]+//g;
+				print FMAP "       $curr_line";
+			}
+
+			if ($curr_line =~ /[\w]*\s[\w]*\([\w]*\s[\w]*/) {
+				$curr_line =~ s/^[^\w\d]+//g;
+				print FMAP "$cnt: $curr_line";
+				$multiline = 1;
 			}
 		}
 	}

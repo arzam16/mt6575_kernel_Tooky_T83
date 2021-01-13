@@ -34,9 +34,18 @@
 /*============================================================================*/
 /*                             INCLUDE FILES                                  */
 /*============================================================================*/
+#ifndef TMFL_TDA19989 
 #define TMFL_TDA19989 
+#endif
+
+#ifndef TMFL_NO_RTOS 
 #define TMFL_NO_RTOS 
+#endif
+
+#ifndef TMFL_LINUX_OS_KERNEL_DRIVER
 #define TMFL_LINUX_OS_KERNEL_DRIVER
+#endif
+
 
 #include "tmdlHdmiTx_IW.h"
 #include "tmdlHdmiTx.h"
@@ -662,6 +671,10 @@ tmErrorCode_t tmdlHdmiTxOpen
             - TMBSL_ERR_HDMI_I2C_READ: failed when reading the I2C bus
 
 ******************************************************************************/
+
+#include <linux/semaphore.h>
+DEFINE_SEMAPHORE(hdmitx_mutex);
+
 tmErrorCode_t tmdlHdmiTxOpenM
 (
     tmInstance_t   *pInstance,
@@ -681,7 +694,8 @@ tmErrorCode_t tmdlHdmiTxOpenM
     RETIF(pInstance == Null, TMDL_ERR_DLHDMITX_INCONSISTENT_PARAMS)
     
     /* Create the semaphore to protect variables modified under interruption */
-    RETIF( (errCode = tmdlHdmiTxIWSemaphoreCreate(&dlHdmiTxItSemaphore[unit]) ) != TM_OK, errCode)
+    //RETIF( (errCode = tmdlHdmiTxIWSemaphoreCreate(&dlHdmiTxItSemaphore[unit]) ) != TM_OK, errCode)
+    dlHdmiTxItSemaphore[unit] = (tmdlHdmiTxIWSemHandle_t)(&hdmitx_mutex);
 
     /* Take the sempahore */
     RETIF( (errCodeSem = tmdlHdmiTxIWSemaphoreP(dlHdmiTxItSemaphore[unit]) ) != TM_OK, errCodeSem)

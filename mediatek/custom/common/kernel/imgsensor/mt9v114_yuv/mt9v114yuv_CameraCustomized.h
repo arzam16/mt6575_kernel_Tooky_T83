@@ -1,4 +1,42 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.h
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Header file of camera customized parameters.
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * .
+ * Add HI704 YUV sensor driver support
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 
 #ifndef __CAMERA_CUSTOMIZED_H
 #define __CAMERA_CUSTOMIZED_H
@@ -20,6 +58,18 @@
 #define CAM_SIZE_QVGA_HEIGHT 	240
 #define CAM_SIZE_VGA_WIDTH 		640
 #define CAM_SIZE_VGA_HEIGHT 	480
+/*
+#define CAM_SIZE_05M_WIDTH 		800
+#define CAM_SIZE_05M_HEIGHT 	600
+#define CAM_SIZE_1M_WIDTH 		1280
+#define CAM_SIZE_1M_HEIGHT 		960
+#define CAM_SIZE_2M_WIDTH 		1600
+#define CAM_SIZE_2M_HEIGHT 		1200
+#define CAM_SIZE_3M_WIDTH 		2048
+#define CAM_SIZE_3M_HEIGHT 		1536
+#define CAM_SIZE_5M_WIDTH 		2592
+#define CAM_SIZE_5M_HEIGHT 		1944
+*/
 // for main sensor
 #define MAIN_NUM_OF_PREVIEW_RESOLUTION 3
 #define MAIN_NUM_OF_VIDEO_RESOLUTION 3

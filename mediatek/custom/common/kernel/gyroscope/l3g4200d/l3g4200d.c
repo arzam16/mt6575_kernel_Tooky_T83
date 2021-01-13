@@ -1,38 +1,3 @@
-/* Copyright Statement:
- *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
- */
-/* MediaTek Inc. (C) 2010. All rights reserved.
- *
- * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
- * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
- */
-
 /* L3G4200D motion sensor driver
  *
  *
@@ -83,6 +48,21 @@
 #include <mach/mt6573_pll.h>
 #endif
 
+#ifdef MT6575
+#include <mach/mt6575_devs.h>
+#include <mach/mt6575_typedefs.h>
+#include <mach/mt6575_gpio.h>
+#include <mach/mt6575_pm_ldo.h>
+#include <mach/mt6575_boot.h>
+#endif
+
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#include <mach/mt6577_boot.h>
+#endif
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
@@ -92,6 +72,13 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_L3G4200D	3000
 /*----------------------------------------------------------------------------*/
@@ -110,10 +97,11 @@
 #define L3G4200D_DEV_NAME        "L3G4200D"
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id l3g4200d_i2c_id[] = {{L3G4200D_DEV_NAME,0},{}};
+static struct i2c_board_info __initdata i2c_l3g4200d={ I2C_BOARD_INFO(L3G4200D_DEV_NAME, (0xD0>>1))};
 /*the adapter id will be available in customization*/
-static unsigned short l3g4200d_force[] = {0x00, L3G4200D_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const l3g4200d_forces[] = { l3g4200d_force, NULL };
-static struct i2c_client_address_data l3g4200d_addr_data = { .forces = l3g4200d_forces,};
+//static unsigned short l3g4200d_force[] = {0x00, L3G4200D_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const l3g4200d_forces[] = { l3g4200d_force, NULL };
+//static struct i2c_client_address_data l3g4200d_addr_data = { .forces = l3g4200d_forces,};
 
 int packet_thresh = 75; // 600 ms / 8ms/sample
 
@@ -182,7 +170,7 @@ struct l3g4200d_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver l3g4200d_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+//      .owner          = THIS_MODULE,
         .name           = L3G4200D_DEV_NAME,
     },
 	.probe      		= l3g4200d_i2c_probe,
@@ -193,7 +181,7 @@ static struct i2c_driver l3g4200d_i2c_driver = {
     .resume             = l3g4200d_resume,
 #endif
 	.id_table = l3g4200d_i2c_id,
-	.address_data = &l3g4200d_addr_data,
+//	.address_data = &l3g4200d_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -893,7 +881,7 @@ static int l3g4200d_init_client(struct i2c_client *client, bool enable)
 	struct l3g4200d_i2c_data *obj = i2c_get_clientdata(client);
 	int res = 0;
 	GYRO_FUN();	
-    GYRO_LOG(" fwq l3g4200d addr %x!\n",client->addr);
+    	GYRO_LOG(" fwq l3g4200d addr %x!\n",client->addr);
 	res = L3G4200D_CheckDeviceID(client);
 	if(res != L3G4200D_SUCCESS)
 	{
@@ -1019,14 +1007,16 @@ static int l3g4200d_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int l3g4200d_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+//static int l3g4200d_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+//       unsigned long arg)
+static long l3g4200d_ioctl(struct file *file, unsigned int cmd,
        unsigned long arg)
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
 	//struct l3g4200d_i2c_data *obj = (struct l3g4200d_i2c_data*)i2c_get_clientdata(client);	
 	char strbuf[L3G4200D_BUFSIZE] = {0};
 	void __user *data;
-	int err = 0;
+	long err = 0;
 	int copy_cnt = 0;
 	SENSOR_DATA sensor_data;
 	int cali[3];
@@ -1151,10 +1141,10 @@ static int l3g4200d_ioctl(struct inode *inode, struct file *file, unsigned int c
 
 /*----------------------------------------------------------------------------*/
 static struct file_operations l3g4200d_fops = {
-	.owner = THIS_MODULE,
+//	.owner = THIS_MODULE,
 	.open = l3g4200d_open,
 	.release = l3g4200d_release,
-	.ioctl = l3g4200d_ioctl,
+	.unlocked_ioctl = l3g4200d_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice l3g4200d_device = {
@@ -1398,7 +1388,7 @@ static int l3g4200d_probe(struct platform_device *pdev)
 	GYRO_FUN();
 
 	L3G4200D_power(hw, 1);
-	l3g4200d_force[0] = hw->i2c_num;
+//	l3g4200d_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&l3g4200d_i2c_driver))
 	{
 		GYRO_ERR("add driver error\n");
@@ -1422,7 +1412,7 @@ static struct platform_driver l3g4200d_gyro_driver = {
 	.remove     = l3g4200d_remove,    
 	.driver     = {
 		.name  = "gyroscope",
-		.owner = THIS_MODULE,
+//		.owner = THIS_MODULE,
 	}
 };
 
@@ -1430,6 +1420,7 @@ static struct platform_driver l3g4200d_gyro_driver = {
 static int __init l3g4200d_init(void)
 {
 	GYRO_FUN();
+	i2c_register_board_info(0, &i2c_l3g4200d, 1);
 	if(platform_driver_register(&l3g4200d_gyro_driver))
 	{
 		GYRO_ERR("failed to register driver");

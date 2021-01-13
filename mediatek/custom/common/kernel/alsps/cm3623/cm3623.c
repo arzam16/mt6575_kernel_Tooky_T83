@@ -1,4 +1,17 @@
-
+/* drivers/hwmon/mt6516/amit/cm3623.c - CM3623 ALS/PS driver
+ * 
+ * Author: MingHsien Hsieh <minghsien.hsieh@mediatek.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -22,51 +35,19 @@
 #include <cust_alsps.h>
 #include "cm3623.h"
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
 
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#endif
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
 
 
-#ifdef MT6573
-extern void mt65xx_eint_unmask(unsigned int line);
-extern void mt65xx_eint_mask(unsigned int line);
-extern void mt65xx_eint_set_polarity(kal_uint8 eintno, kal_bool ACT_Polarity);
-extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
-extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
-extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
-                                     kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
-                                     kal_bool auto_umask);
-
-#endif
-
-#ifdef MT6575
-extern void mt65xx_eint_unmask(unsigned int line);
-extern void mt65xx_eint_mask(unsigned int line);
-extern void mt65xx_eint_set_polarity(kal_uint8 eintno, kal_bool ACT_Polarity);
-extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
-extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
-extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
-                                     kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
-                                     kal_bool auto_umask);
-
-#endif
+	extern void mt65xx_eint_unmask(unsigned int line);
+	extern void mt65xx_eint_mask(unsigned int line);
+	extern void mt65xx_eint_set_polarity(unsigned int eint_num, unsigned int pol);
+	extern void mt65xx_eint_set_hw_debounce(unsigned int eint_num, unsigned int ms);
+	extern unsigned int mt65xx_eint_set_sens(unsigned int eint_num, unsigned int sens);
+	extern void mt65xx_eint_registration(unsigned int eint_num, unsigned int is_deb_en, unsigned int pol, void (EINT_FUNC_PTR)(void), unsigned int is_auto_umask);
 
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
@@ -81,6 +62,12 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+/******************************************************************************
+ * configuration
+*******************************************************************************/
 #define I2C_DRIVERID_CM3623 3623
 /*----------------------------------------------------------------------------*/
 #define CM3623_I2C_ADDR_RAR 0   /*!< the index in obj->hw->i2c_addr: alert response address */
@@ -92,17 +79,7 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #define APS_FUN(f)               printk(KERN_INFO APS_TAG"%s\n", __FUNCTION__)
 #define APS_ERR(fmt, args...)    printk(KERN_ERR APS_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
 #define APS_LOG(fmt, args...)    printk(KERN_INFO APS_TAG fmt, ##args)
-#define APS_DBG(fmt, args...)    printk(KERN_INFO fmt, ##args)                 
-#ifdef MT6516
-extern void MT6516_EINTIRQUnmask(unsigned int line);
-extern void MT6516_EINTIRQMask(unsigned int line);
-extern void MT6516_EINT_Set_Polarity(kal_uint8 eintno, kal_bool ACT_Polarity);
-extern void MT6516_EINT_Set_HW_Debounce(kal_uint8 eintno, kal_uint32 ms);
-extern kal_uint32 MT6516_EINT_Set_Sensitivity(kal_uint8 eintno, kal_bool sens);
-extern void MT6516_EINT_Registration(kal_uint8 eintno, kal_bool Dbounce_En,
-                                     kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
-                                     kal_bool auto_umask);
-#endif
+#define APS_DBG(fmt, args...)    printk(KERN_INFO fmt, ##args)                
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 static struct i2c_client *cm3623_i2c_client = NULL;
@@ -235,8 +212,24 @@ int cm3623_get_addr(struct alsps_hw *hw, struct cm3623_i2c_addr *addr)
 int cm3623_get_timing(void)
 {
 return 200;
+/*
+	u32 base = I2C2_BASE; 
+	return (__raw_readw(mt6516_I2C_HS) << 16) | (__raw_readw(mt6516_I2C_TIMING));
+*/
 }
 /*----------------------------------------------------------------------------*/
+/*
+int cm3623_config_timing(int sample_div, int step_div)
+{
+	u32 base = I2C2_BASE; 
+	unsigned long tmp;
+
+	tmp  = __raw_readw(mt6516_I2C_TIMING) & ~((0x7 << 8) | (0x1f << 0));
+	tmp  = (sample_div & 0x7) << 8 | (step_div & 0x1f) << 0 | tmp;
+
+	return (__raw_readw(mt6516_I2C_HS) << 16) | (tmp);
+}
+*/
 /*----------------------------------------------------------------------------*/
 int cm3623_master_recv(struct i2c_client *client, u16 addr, char *buf ,int count)
 {
@@ -679,7 +672,6 @@ static void cm3623_eint_work(struct work_struct *work)
 	  sensor_data.values[0] = cm3623_get_ps_value(obj, obj->ps);
 	  sensor_data.value_divide = 1;
 	  sensor_data.status = SENSOR_STATUS_ACCURACY_MEDIUM;
-	  APS_LOG("ps raw %x -> value %d \n", obj->ps, sensor_data.values[0]);
 	  //let up layer to know
 	  if((err = hwmsen_get_interrupt_data(ID_PROXIMITY, &sensor_data)))
 	  {
@@ -694,6 +686,9 @@ static void cm3623_eint_work(struct work_struct *work)
 	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);      
 	#endif
 	#ifdef MT6575
+	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);      
+	#endif
+	#ifdef MT6577
 	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);      
 	#endif
 }
@@ -737,6 +732,14 @@ int cm3623_setup_eint(struct i2c_client *client)
 		mt65xx_eint_unmask(CUST_EINT_ALS_NUM);	
 #endif 
 
+#ifdef MT6577
+		
+		mt65xx_eint_set_sens(CUST_EINT_ALS_NUM, CUST_EINT_ALS_SENSITIVE);
+		mt65xx_eint_set_polarity(CUST_EINT_ALS_NUM, CUST_EINT_ALS_POLARITY);
+		mt65xx_eint_set_hw_debounce(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_CN);
+		mt65xx_eint_registration(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_EN, CUST_EINT_ALS_POLARITY, cm3623_eint_func, 0);
+		mt65xx_eint_unmask(CUST_EINT_ALS_NUM);	
+#endif
     return 0;
 	
 }
@@ -783,6 +786,9 @@ static int cm3623_init_client(struct i2c_client *client)
 	}
 	return 0;
 }
+/******************************************************************************
+ * Sysfs attributes
+*******************************************************************************/
 static ssize_t cm3623_show_config(struct device_driver *ddri, char *buf)
 {
 	ssize_t res;
@@ -1171,6 +1177,9 @@ static int cm3623_create_attr(struct device_driver *driver)
 	
 	return err;
 }
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int cm3623_get_als_value(struct cm3623_priv *obj, u16 als)
 {
 	int idx;
@@ -1288,6 +1297,9 @@ static int cm3623_get_ps_value(struct cm3623_priv *obj, u16 ps)
 		return -1;
 	}	
 }
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int cm3623_open(struct inode *inode, struct file *file)
 {
 	file->private_data = cm3623_i2c_client;
@@ -1475,10 +1487,10 @@ static struct miscdevice cm3623_device = {
 /*----------------------------------------------------------------------------*/
 static int cm3623_i2c_suspend(struct i2c_client *client, pm_message_t msg) 
 {
-	struct cm3623_priv *obj = i2c_get_clientdata(client);    
-	int err;
+	//struct cm3623_priv *obj = i2c_get_clientdata(client);    
+	//int err;
 	APS_FUN();  
-
+	/*
 	if(msg.event == PM_EVENT_SUSPEND)
 	{   
 		if(!obj)
@@ -1503,22 +1515,18 @@ static int cm3623_i2c_suspend(struct i2c_client *client, pm_message_t msg)
 			return err;
 		}
 		
-		//cm3623_power(obj->hw, 0);
-		mt_set_gpio_mode(GPIO22, 0);
-		mt_set_gpio_dir(GPIO22, GPIO_DIR_OUT);
-		mt_set_gpio_out(GPIO22, GPIO_OUT_ZERO);
-		mdelay(10);
+		cm3623_power(obj->hw, 0);
 	}
-
+	*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
 static int cm3623_i2c_resume(struct i2c_client *client)
 {
-	struct cm3623_priv *obj = i2c_get_clientdata(client);        
-	int err;
+	//struct cm3623_priv *obj = i2c_get_clientdata(client);        
+	//int err;
 	APS_FUN();
-
+	/*
 
 	if(!obj)
 	{
@@ -1526,11 +1534,7 @@ static int cm3623_i2c_resume(struct i2c_client *client)
 		return -EINVAL;
 	}
 
-	//cm3623_power(obj->hw, 1);
-	mt_set_gpio_mode(GPIO22, 0);
-	mt_set_gpio_dir(GPIO22, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO22, GPIO_OUT_ONE);
-	mdelay(10);
+	cm3623_power(obj->hw, 1);
 	if((err = cm3623_init_client(client)))
 	{
 		APS_ERR("initialize client fail!!\n");
@@ -1554,7 +1558,7 @@ static int cm3623_i2c_resume(struct i2c_client *client)
 			APS_ERR("enable ps fail: %d\n", err);                
 		}
 	}
-
+*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
@@ -1768,6 +1772,13 @@ int cm3623_als_operate(void* self, uint32_t command, void* buff_in, int size_in,
 
 
 /*----------------------------------------------------------------------------*/
+/*
+static int cm3623_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+{    
+	strcpy(info->type, CM3623_DEV_NAME);
+	return 0;
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int cm3623_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -1893,7 +1904,7 @@ static int cm3623_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
-	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	obj->early_drv.suspend  = cm3623_early_suspend,
 	obj->early_drv.resume   = cm3623_late_resume,    
 	register_early_suspend(&obj->early_drv);
@@ -1944,12 +1955,7 @@ static int cm3623_probe(struct platform_device *pdev)
 	struct alsps_hw *hw = get_cust_alsps_hw();
 	struct cm3623_i2c_addr addr;
 
-	//cm3623_power(hw, 1);
-	mt_set_gpio_mode(GPIO22, 0);
-	mt_set_gpio_dir(GPIO22, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO22, GPIO_OUT_ONE);
-	mdelay(10);
-
+	cm3623_power(hw, 1);    
 	cm3623_get_addr(hw, &addr);
 	//cm3623_force[0] = hw->i2c_num;
 	//cm3623_force[1] = addr.init;
@@ -1965,13 +1971,8 @@ static int cm3623_probe(struct platform_device *pdev)
 static int cm3623_remove(struct platform_device *pdev)
 {
 	struct alsps_hw *hw = get_cust_alsps_hw();
-	APS_FUN();
-	mt_set_gpio_mode(GPIO22, 0);
-	mt_set_gpio_dir(GPIO22, GPIO_DIR_OUT);
-	mt_set_gpio_out(GPIO22, GPIO_OUT_ZERO);
-	mdelay(10);
-
-//	cm3623_power(hw, 0);
+	APS_FUN();    
+	cm3623_power(hw, 0);    
 	i2c_del_driver(&cm3623_i2c_driver);
 	return 0;
 }

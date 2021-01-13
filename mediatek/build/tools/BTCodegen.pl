@@ -1,4 +1,6 @@
 #!/usr/bin/perl
+# Programmer: Shengkai Lin (2009-08-05)
+
 use Cwd;
 
 #We have to know how to get $(MTK_PATH_SOURCE) from build system

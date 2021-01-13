@@ -11,7 +11,7 @@
 #include <linux/uio.h>
 #include <linux/fsnotify.h>
 #include <linux/security.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/syscalls.h>
 #include <linux/pagemap.h>
 #include <linux/splice.h>
@@ -19,17 +19,18 @@
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
+
+
 #include <linux/statfs.h>
 #include <linux/mount.h>
-#include <mach/mt_storage_logger.h>
-#define CONFIG_STORAGE_LOGGER_ENABLE
-
-#ifdef CONFIG_STORAGE_LOGGER_ENABLE
-#define LOG_PATH_MAX_LEN	8
-#endif
+#include "mount.h"
 
 #define CHECK_1TH  (10 * 1024 * 1024)
 #define CHECK_2TH  (1 * 1024 * 1024)
+
+#ifdef LIMIT_SDCARD_SIZE
+long long data_free_size_th = DATA_FREE_SIZE_TH_DEFAULT;
+#endif
 
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
@@ -46,23 +47,45 @@ static inline int unsigned_offsets(struct file *file)
 	return file->f_mode & FMODE_UNSIGNED_OFFSET;
 }
 
+static loff_t lseek_execute(struct file *file, struct inode *inode,
+		loff_t offset, loff_t maxsize)
+{
+	if (offset < 0 && !unsigned_offsets(file))
+		return -EINVAL;
+	if (offset > maxsize)
+		return -EINVAL;
+
+	if (offset != file->f_pos) {
+		file->f_pos = offset;
+		file->f_version = 0;
+	}
+	return offset;
+}
+
 /**
- * generic_file_llseek_unlocked - lockless generic llseek implementation
+ * generic_file_llseek_size - generic llseek implementation for regular files
  * @file:	file structure to seek on
  * @offset:	file offset to seek to
  * @origin:	type of seek
+ * @size:	max size of file system
  *
- * Updates the file offset to the value specified by @offset and @origin.
- * Locking must be provided by the caller.
+ * This is a variant of generic_file_llseek that allows passing in a custom
+ * file size.
+ *
+ * Synchronization:
+ * SEEK_SET and SEEK_END are unsynchronized (but atomic on 64bit platforms)
+ * SEEK_CUR is synchronized against other SEEK_CURs, but not read/writes.
+ * read/writes behave like SEEK_SET against seeks.
  */
 loff_t
-generic_file_llseek_unlocked(struct file *file, loff_t offset, int origin)
+generic_file_llseek_size(struct file *file, loff_t offset, int origin,
+		loff_t maxsize)
 {
 	struct inode *inode = file->f_mapping->host;
 
 	switch (origin) {
 	case SEEK_END:
-		offset += inode->i_size;
+		offset += i_size_read(inode);
 		break;
 	case SEEK_CUR:
 		/*
@@ -73,24 +96,38 @@ generic_file_llseek_unlocked(struct file *file, loff_t offset, int origin)
 		 */
 		if (offset == 0)
 			return file->f_pos;
-		offset += file->f_pos;
+		/*
+		 * f_lock protects against read/modify/write race with other
+		 * SEEK_CURs. Note that parallel writes and reads behave
+		 * like SEEK_SET.
+		 */
+		spin_lock(&file->f_lock);
+		offset = lseek_execute(file, inode, file->f_pos + offset,
+				       maxsize);
+		spin_unlock(&file->f_lock);
+		return offset;
+	case SEEK_DATA:
+		/*
+		 * In the generic case the entire file is data, so as long as
+		 * offset isn't at the end of the file then the offset is data.
+		 */
+		if (offset >= i_size_read(inode))
+			return -ENXIO;
+		break;
+	case SEEK_HOLE:
+		/*
+		 * There is a virtual hole at the end of the file, so as long as
+		 * offset isn't i_size or larger, return i_size.
+		 */
+		if (offset >= i_size_read(inode))
+			return -ENXIO;
+		offset = i_size_read(inode);
 		break;
 	}
 
-	if (offset < 0 && !unsigned_offsets(file))
-		return -EINVAL;
-	if (offset > inode->i_sb->s_maxbytes)
-		return -EINVAL;
-
-	/* Special lock needed here? */
-	if (offset != file->f_pos) {
-		file->f_pos = offset;
-		file->f_version = 0;
-	}
-
-	return offset;
+	return lseek_execute(file, inode, offset, maxsize);
 }
-EXPORT_SYMBOL(generic_file_llseek_unlocked);
+EXPORT_SYMBOL(generic_file_llseek_size);
 
 /**
  * generic_file_llseek - generic llseek implementation for regular files
@@ -104,13 +141,10 @@ EXPORT_SYMBOL(generic_file_llseek_unlocked);
  */
 loff_t generic_file_llseek(struct file *file, loff_t offset, int origin)
 {
-	loff_t rval;
+	struct inode *inode = file->f_mapping->host;
 
-	mutex_lock(&file->f_dentry->d_inode->i_mutex);
-	rval = generic_file_llseek_unlocked(file, offset, origin);
-	mutex_unlock(&file->f_dentry->d_inode->i_mutex);
-
-	return rval;
+	return generic_file_llseek_size(file, offset, origin,
+					inode->i_sb->s_maxbytes);
 }
 EXPORT_SYMBOL(generic_file_llseek);
 
@@ -139,12 +173,13 @@ EXPORT_SYMBOL(no_llseek);
 
 loff_t default_llseek(struct file *file, loff_t offset, int origin)
 {
+	struct inode *inode = file->f_path.dentry->d_inode;
 	loff_t retval;
 
-	mutex_lock(&file->f_dentry->d_inode->i_mutex);
+	mutex_lock(&inode->i_mutex);
 	switch (origin) {
 		case SEEK_END:
-			offset += i_size_read(file->f_path.dentry->d_inode);
+			offset += i_size_read(inode);
 			break;
 		case SEEK_CUR:
 			if (offset == 0) {
@@ -152,6 +187,30 @@ loff_t default_llseek(struct file *file, loff_t offset, int origin)
 				goto out;
 			}
 			offset += file->f_pos;
+			break;
+		case SEEK_DATA:
+			/*
+			 * In the generic case the entire file is data, so as
+			 * long as offset isn't at the end of the file then the
+			 * offset is data.
+			 */
+			if (offset >= inode->i_size) {
+				retval = -ENXIO;
+				goto out;
+			}
+			break;
+		case SEEK_HOLE:
+			/*
+			 * There is a virtual hole at the end of the file, so
+			 * as long as offset isn't i_size or larger, return
+			 * i_size.
+			 */
+			if (offset >= inode->i_size) {
+				retval = -ENXIO;
+				goto out;
+			}
+			offset = inode->i_size;
+			break;
 	}
 	retval = -EINVAL;
 	if (offset >= 0 || unsigned_offsets(file)) {
@@ -162,7 +221,7 @@ loff_t default_llseek(struct file *file, loff_t offset, int origin)
 		retval = offset;
 	}
 out:
-	mutex_unlock(&file->f_dentry->d_inode->i_mutex);
+	mutex_unlock(&inode->i_mutex);
 	return retval;
 }
 EXPORT_SYMBOL(default_llseek);
@@ -317,46 +376,14 @@ EXPORT_SYMBOL(do_sync_read);
 ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
 	ssize_t ret;
-#ifdef CONFIG_STORAGE_LOGGER_ENABLE
-	unsigned long long time1 = 0,time2 = 0;
-    bool bwsdcard = false;
-	bool internalFs = false;
-	char pathBuf[80], *path = NULL;	
-#endif
+
 	if (!(file->f_mode & FMODE_READ))
 		return -EBADF;
 	if (!file->f_op || (!file->f_op->read && !file->f_op->aio_read))
 		return -EINVAL;
 	if (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
 		return -EFAULT;
-#ifdef CONFIG_STORAGE_LOGGER_ENABLE
-	if (unlikely(dumpVFS()))
-	{
-		path = d_path(&(file->f_path), pathBuf, sizeof(pathBuf));
-		if (!IS_ERR(path))
-		{
-			//if(!memcmp(file->f_path.mnt->mnt_devname,"/dev/block/vold",15))
-			if((!memcmp(path,"/mnt/sdcard",11))||(!memcmp(path,"/sdcard",7)))	//same meaning as upper line, this will be straightforward.	
-			{
-				bwsdcard = true;				
-				time1 = sched_clock();
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_SDCARD,vfs_read,file->f_path.dentry->d_name.name,count);				
-				//printk(KERN_DEBUG "vfs_read: %s, size: %d", file->f_path.dentry->d_name.name, count);
-			}
-			else if((!memcmp(path,"/data",5))||(!memcmp(path,"/system",7)))
-			{
-				*(path+LOG_PATH_MAX_LEN) = '\0';
-				internalFs = true;	
-				time1 = sched_clock();
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_INTFS,vfs_read,path,count);						
-				//printk(KERN_DEBUG "vfs_read: %s, size: %d", path, count);
-			}
-		}
-	
-	}
 
-
-#endif
 	ret = rw_verify_area(READ, file, pos, count);
 	if (ret >= 0) {
 		count = ret;
@@ -370,34 +397,7 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 		}
 		inc_syscr(current);
 	}
-#ifdef CONFIG_STORAGE_LOGGER_ENABLE
 
-	if (unlikely(dumpVFS()))
-	{
-		if(bwsdcard)
-		{
-			time2 = sched_clock();
-			bwsdcard = false;
-			if((time2 - time1) > (unsigned long long )20000000)
-			{			
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_SDCARD_END,vfs_read,file->f_path.dentry->d_name.name,ret,(time2-time1));
-				//printk(KERN_DEBUG "vfs_read: %s, dt: %lld", file->f_path.dentry->d_name.name, time2-time1);
-			}
-			
-		}
-		else if(internalFs)
-		{
-			time2 = sched_clock();
-			internalFs = false;
-			if((time2 - time1) > (unsigned long long )20000000)
-			{
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_INTFS_END, vfs_read, path, ret, (time2-time1));					
-				//printk(KERN_DEBUG "vfs_read: %s, dt: %lld", path, time2-time1);
-			}
-
-		}
-	}	
-#endif	
 	return ret;
 }
 
@@ -434,40 +434,15 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 	ssize_t ret;
 	struct task_struct *tsk = current;
 	struct kstatfs stat;
-	static long store = 0;
+	static long long store = 0;
 	unsigned char num = 0;
+	struct mount *mount_data;
 	char *file_list[10] = {"ccci_fsd", NULL};
-#ifdef CONFIG_STORAGE_LOGGER_ENABLE
-    bool bwsdcard = false;
-	unsigned long long time1=0,time2=0;
-	bool internalFs = false;
-	char pathBuf[80], *path = NULL;	
 
-	if (unlikely(dumpVFS()))
-	{
-		path = d_path(&(file->f_path), pathBuf, sizeof(pathBuf));
-		if (!IS_ERR(path))
-		{
-			//if(!memcmp(file->f_path.mnt->mnt_devname,"/dev/block/vold",15))
-			if((!memcmp(path,"/mnt/sdcard",11))||(!memcmp(path,"/sdcard",7)))	//same meaning as upper line. this will be straightforward.
-			{
-		    		bwsdcard=true;
-				time1 = sched_clock();
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_SDCARD,vfs_write,file->f_path.dentry->d_name.name,count);			
-				//printk(KERN_DEBUG "vfs_write: %s, size: %d", file->f_path.dentry->d_name.name, count);		
-			}
-			else if((!memcmp(path,"/data",5))||(!memcmp(path,"/system",7)))
-			{		
-				*(path+LOG_PATH_MAX_LEN) = '\0';
-				internalFs = true;				
-				time1 = sched_clock();
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_INTFS,vfs_write,path,count);					
-				//printk(KERN_DEBUG "vfs_write: %s, size: %d", path, count);
-			}
-		}
-	}	
-#endif	
-	if (!memcmp(file->f_path.mnt->mnt_mountpoint->d_name.name, "data", 5)) {
+	
+	mount_data = real_mount(file->f_path.mnt);
+	if (!memcmp(mount_data->mnt_mountpoint->d_name.name, "data", 5)) {
+		//printk(KERN_ERR "write data detect %s",file->f_path.dentry->d_name.name);
 		store -= count;	
 		if (store  <= CHECK_1TH) {		
 			vfs_statfs(&file->f_path, &stat);
@@ -479,11 +454,31 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 						break;
 				}
 				if (file_list[num] == NULL) {
+					store += count;
 					return -ENOSPC;
 				} 
 			}
 		}
 	}
+#ifdef LIMIT_SDCARD_SIZE
+	if(!memcmp(file->f_path.mnt->mnt_sb->s_type->name, "fuse", 5)){	
+		store -= count;
+		if(store <= (data_free_size_th  + CHECK_1TH*2)){		
+			vfs_statfs(&file->f_path, &stat);
+			store = stat.f_bfree * stat.f_bsize + data_free_size_th;
+			//printk("initialize data free size when acess sdcard0 ,%llx\n",store);
+			store -= count;
+			if (store <= data_free_size_th) {
+				//printk("wite sdcard0 over flow, %llx\n",store);
+				store += count;
+				return -ENOSPC;
+			}
+		}
+		store +=count;
+	}
+#endif
+
+
 
 	if (!(file->f_mode & FMODE_WRITE))
 		return -EBADF;
@@ -505,30 +500,7 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 		}
 		inc_syscw(current);
 	}
-#ifdef CONFIG_STORAGE_LOGGER_ENABLE
-	if (unlikely(dumpVFS()))
-	{
-		if(bwsdcard)
-		{
-			time2 = sched_clock();
-			bwsdcard = false;
-	        	if((time2 - time1) > (unsigned long long )20000000)
-			{
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_SDCARD_END,vfs_write,file->f_path.dentry->d_name.name,ret,(time2-time1));
-			}
-		}
-		else if(internalFs)
-		{
-			time2 = sched_clock();
-			internalFs = false;
-			if((time2 - time1) > (unsigned long long )20000000)
-			{
-				AddStorageTrace(STORAGE_LOGGER_MSG_VFS_INTFS_END, vfs_write, path, ret, (time2-time1));					
-				//printk(KERN_DEBUG "vfs_read: %s, dt: %lld", path, time2-time1);
-			}
-		}
-	}
-#endif
+
 	return ret;
 }
 
@@ -560,7 +532,7 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 
 	return ret;
 }
-EXPORT_SYMBOL(sys_read);
+
 SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		size_t, count)
 {
@@ -578,7 +550,6 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 
 	return ret;
 }
-EXPORT_SYMBOL(sys_write);
 
 SYSCALL_DEFINE(pread64)(unsigned int fd, char __user *buf,
 			size_t count, loff_t pos)
@@ -721,7 +692,8 @@ ssize_t do_loop_readv_writev(struct file *filp, struct iovec *iov,
 ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
 			      unsigned long nr_segs, unsigned long fast_segs,
 			      struct iovec *fast_pointer,
-			      struct iovec **ret_pointer)
+			      struct iovec **ret_pointer,
+			      int check_access)
 {
 	unsigned long seg;
 	ssize_t ret;
@@ -777,7 +749,8 @@ ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
 			ret = -EINVAL;
 			goto out;
 		}
-		if (unlikely(!access_ok(vrfy_dir(type), buf, len))) {
+		if (check_access
+		    && unlikely(!access_ok(vrfy_dir(type), buf, len))) {
 			ret = -EFAULT;
 			goto out;
 		}
@@ -809,7 +782,7 @@ static ssize_t do_readv_writev(int type, struct file *file,
 	}
 
 	ret = rw_copy_check_uvector(type, uvector, nr_segs,
-			ARRAY_SIZE(iovstack), iovstack, &iov);
+				    ARRAY_SIZE(iovstack), iovstack, &iov, 1);
 	if (ret <= 0)
 		goto out;
 

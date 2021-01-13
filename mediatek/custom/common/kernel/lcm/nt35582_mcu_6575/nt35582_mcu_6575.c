@@ -1,7 +1,40 @@
-
-
+/*****************************************************************************
+*  Copyright Statement:
+*  --------------------
+*  This software is protected by Copyright and the information contained
+*  herein is confidential. The software may not be copied and the information
+*  contained herein may not be used or disclosed except with the written
+*  permission of MediaTek Inc. (C) 2008
+*
+*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
+*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
+*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
+*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
+*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
+*
+*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
+*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
+*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+*
+*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
+*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
+*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
+*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
+*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
+*
+*****************************************************************************/
+#ifndef BUILD_LK
 #include <linux/string.h>
-
+#endif
 #include "lcm_drv.h"
 
 
@@ -49,55 +82,6 @@ static __inline void set_lcm_register(unsigned int regIndex,
 {
     send_ctrl_cmd(regIndex);
     send_data_cmd(regData);
-}
-
-static void sw_clear_panel(unsigned int color)
-{
-    short  x0, y0, x1, y1, x, y;
-	short   h_X_start,l_X_start,h_X_end,l_X_end,h_Y_start,l_Y_start,h_Y_end,l_Y_end;
-
-		
-    x0 = (short)0;
-    y0 = (short)0;
-    x1 = (short)FRAME_WIDTH-1;
-    y1 = (short)FRAME_HEIGHT-1;
-
-	h_X_start=((x0&0x0300)>>8);
-	l_X_start=(x0&0x00FF);
-	h_X_end=((x1&0x0300)>>8);
-	l_X_end=(x1&0x00FF);
-
-	h_Y_start=((y0&0x0300)>>8);
-	l_Y_start=(y0&0x00FF);
-	h_Y_end=((y1&0x0300)>>8);
-	l_Y_end=(y1&0x00FF);
-
-    send_ctrl_cmd( 0x2A00 );
-    send_data_cmd( h_X_start);
-    send_ctrl_cmd( 0x2A01 );
-    send_data_cmd( l_X_start);
-    send_ctrl_cmd( 0x2A02);
-    send_data_cmd( h_X_end );
-    send_ctrl_cmd( 0x2A03);
-    send_data_cmd( l_X_end );
-	send_ctrl_cmd( 0x2B00 );
-    send_data_cmd( h_Y_start);
-    send_ctrl_cmd( 0x2B01 );
-    send_data_cmd( l_Y_start);
-    send_ctrl_cmd( 0x2B02);
-    send_data_cmd( h_Y_end );
-    send_ctrl_cmd( 0x2B03);
-    send_data_cmd( l_Y_end );
-	send_ctrl_cmd(0x3601);  //enable HSM mode
-	send_data_cmd(0x01);
-    send_ctrl_cmd( 0x2C00 );
-
-    // 18-bit mode (256K color) coding
-    for (y = y0; y <= y1; ++ y) {
-        for (x = x0; x <= x1; ++ x) {
-            lcm_util.send_data(color);
-        }
-    }
 }
 
 static void init_lcm_registers(void)
@@ -287,8 +271,8 @@ static void lcm_get_params(LCM_PARAMS *params)
 	params->dbi.parallel.wait_period    = 1;
 	params->dbi.parallel.cs_high_width  = 0; //cycles of cs high level between each transfer
 	// enable tearing-free
-//    params->dbi.te_mode                 = LCM_DBI_TE_MODE_DISABLED;
-//    params->dbi.te_edge_polarity        = LCM_POLARITY_RISING;
+    params->dbi.te_mode                 = LCM_DBI_TE_MODE_VSYNC_ONLY;
+    params->dbi.te_edge_polarity        = LCM_POLARITY_RISING;
 }
 
 
@@ -300,7 +284,6 @@ static void lcm_init(void)
     MDELAY(50);
 
     init_lcm_registers();
-    sw_clear_panel(0x0);    // Clean panel as black
 }
 
 

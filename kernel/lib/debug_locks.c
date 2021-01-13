@@ -10,7 +10,7 @@
  */
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/spinlock.h>
 #include <linux/debug_locks.h>
 
@@ -21,7 +21,11 @@
  * that would just muddy the log. So we report the first one and
  * shut up after that.
  */
+#ifdef CONFIG_PROVE_LOCKING
+int debug_locks = 0;
+#else
 int debug_locks = 1;
+#endif
 EXPORT_SYMBOL_GPL(debug_locks);
 
 /*

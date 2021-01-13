@@ -1,4 +1,18 @@
-
+/* 
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+/*
+ * Definitions for tmd2771 als/ps sensor chip.
+ */
 #ifndef __TMD2771_H__
 #define __TMD2771_H__
 
@@ -6,6 +20,7 @@
 
 extern int TMD2771_CMM_PPCOUNT_VALUE;
 extern int ZOOM_TIME;
+extern int TMD2771_CMM_CONTROL_VALUE;
 
 #define TMD2771_CMM_ENABLE 		0X80
 #define TMD2771_CMM_ATIME 		0X81

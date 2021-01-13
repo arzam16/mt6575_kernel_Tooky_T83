@@ -1,6 +1,42 @@
+/*****************************************************************************
+*  Copyright Statement:
+*  --------------------
+*  This software is protected by Copyright and the information contained
+*  herein is confidential. The software may not be copied and the information
+*  contained herein may not be used or disclosed except with the written
+*  permission of MediaTek Inc. (C) 2008
+*
+*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
+*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
+*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
+*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
+*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
+*
+*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
+*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
+*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+*
+*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
+*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
+*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
+*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
+*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
+*
+*****************************************************************************/
 
-
+#ifndef BUILD_LK
 #include <linux/string.h>
+#endif
+
 
 #include "lcm_drv.h"
 
@@ -37,7 +73,7 @@ static LCM_UTIL_FUNCS lcm_util = {0};
 #define read_reg											lcm_util.dsi_read_reg()
        
 
-static struct LCM_setting_table {
+struct LCM_setting_table {
     unsigned cmd;
     unsigned char count;
     unsigned char para_list[64];
@@ -95,11 +131,11 @@ static struct LCM_setting_table lcm_initialization_setting[] = {
 };
 
 
-static struct LCM_setting_table lcm_set_window[] = {
-	{0x2A,	4,	{0x00, 0x00, (FRAME_WIDTH>>8), (FRAME_WIDTH&0xFF)}},
-	{0x2B,	4,	{0x00, 0x00, (FRAME_HEIGHT>>8), (FRAME_HEIGHT&0xFF)}},
-	{REGFLAG_END_OF_TABLE, 0x00, {}}
-};
+//static struct LCM_setting_table lcm_set_window[] = {
+//	{0x2A,	4,	{0x00, 0x00, (FRAME_WIDTH>>8), (FRAME_WIDTH&0xFF)}},
+//	{0x2B,	4,	{0x00, 0x00, (FRAME_HEIGHT>>8), (FRAME_HEIGHT&0xFF)}},
+//	{REGFLAG_END_OF_TABLE, 0x00, {}}
+//};
 
 
 static struct LCM_setting_table lcm_sleep_out_setting[] = {
@@ -125,10 +161,10 @@ static struct LCM_setting_table lcm_deep_sleep_mode_in_setting[] = {
 };
 
 
-static struct LCM_setting_table lcm_backlight_level_setting[] = {
-	{0x51, 1, {0xFF}},
-	{REGFLAG_END_OF_TABLE, 0x00, {}}
-};
+//static struct LCM_setting_table lcm_backlight_level_setting[] = {
+//	{0x51, 1, {0xFF}},
+//	{REGFLAG_END_OF_TABLE, 0x00, {}}
+//};
 
 
 static void push_table(struct LCM_setting_table *table, unsigned int count, unsigned char force_update)
@@ -242,7 +278,7 @@ static void lcm_suspend(void)
 static void lcm_resume(void)
 {
 	// Work around for Novatek driver IC. If it entered ULP mode, it must be reset before resume.
-	lcm_init();
+	//lcm_init();
 
 	push_table(lcm_sleep_out_setting, sizeof(lcm_sleep_out_setting) / sizeof(struct LCM_setting_table), 1);
 }
@@ -275,33 +311,33 @@ static void lcm_update(unsigned int x, unsigned int y,
 	data_array[5]= (y1_LSB);
 	data_array[6]= 0x002c3909;
 
-	dsi_set_cmdq(&data_array, 7, 0);
+	dsi_set_cmdq(data_array, 7, 0);
 
 }
 
 
-static void lcm_setbacklight(unsigned int level)
-{
+//static void lcm_setbacklight(unsigned int level)
+//{
 	// Refresh value of backlight level.
-	lcm_backlight_level_setting[0].para_list[0] = level;
+//	lcm_backlight_level_setting[0].para_list[0] = level;
 
-	push_table(lcm_backlight_level_setting, sizeof(lcm_backlight_level_setting) / sizeof(struct LCM_setting_table), 1);
-}
+//	push_table(lcm_backlight_level_setting, sizeof(lcm_backlight_level_setting) / sizeof(struct LCM_setting_table), 1);
+//}
 
 
-static void lcm_setpwm(unsigned int divider)
-{
+//static void lcm_setpwm(unsigned int divider)
+//{
 	// TBD
-}
+//}
 
 
-static unsigned int lcm_getpwm(unsigned int divider)
-{
+//static unsigned int lcm_getpwm(unsigned int divider)
+//{
 	// ref freq = 15MHz, B0h setting 0x80, so 80.6% * freq is pwm_clk;
 	// pwm_clk / 255 / 2(lcm_setpwm() 6th params) = pwm_duration = 23706
-	unsigned int pwm_clk = 23706 / (1<<divider);	
-	return pwm_clk;
-}
+//	unsigned int pwm_clk = 23706 / (1<<divider);	
+//	return pwm_clk;
+//}
 
 LCM_DRIVER nt35565_3d_lcm_drv = 
 {

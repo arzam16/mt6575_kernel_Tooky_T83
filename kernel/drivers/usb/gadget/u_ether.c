@@ -9,15 +9,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 /* #define VERBOSE_DEBUG */
@@ -31,6 +22,9 @@
 
 #include "u_ether.h"
 
+#include "logger.h"
+
+#define UETHER_LOG "UTHER"
 
 /*
  * This component encapsulates the Ethernet link glue needed to provide
@@ -97,16 +91,17 @@ struct eth_dev {
 
 static unsigned qmult = 5;
 module_param(qmult, uint, S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(qmult, "queue length multiplier at high speed");
+MODULE_PARM_DESC(qmult, "queue length multiplier at high/super speed");
 
 #else	/* full speed (low speed doesn't do bulk) */
 #define qmult		1
 #endif
 
-/* for dual-speed hardware, use deeper queues at highspeed */
+/* for dual-speed hardware, use deeper queues at high/super speed */
 static inline int qlen(struct usb_gadget *gadget)
 {
-	if (gadget_is_dualspeed(gadget) && gadget->speed == USB_SPEED_HIGH)
+	if (gadget_is_dualspeed(gadget) && (gadget->speed == USB_SPEED_HIGH ||
+					    gadget->speed == USB_SPEED_SUPER))
 		return qmult * DEFAULT_QLEN;
 	else
 		return DEFAULT_QLEN;
@@ -156,7 +151,7 @@ static int ueth_change_mtu(struct net_device *net, int new_mtu)
 	struct eth_dev	*dev = netdev_priv(net);
 	unsigned long	flags;
 	int		status = 0;
-
+	
 	/* don't change MTU on "live" link (peer won't know) */
 	spin_lock_irqsave(&dev->lock, flags);
 	if (dev->port_usb)
@@ -167,6 +162,8 @@ static int ueth_change_mtu(struct net_device *net, int new_mtu)
 		net->mtu = new_mtu;
 	spin_unlock_irqrestore(&dev->lock, flags);
 
+	xlog_printk(ANDROID_LOG_INFO, UETHER_LOG, "ueth_change_mtu to %d, status is %d\n", new_mtu , status);
+	
 	return status;
 }
 
@@ -598,9 +595,10 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 
 	req->length = length;
 
-	/* throttle highspeed IRQ rate back slightly */
+	/* throttle high/super speed IRQ rate back slightly */
 	if (gadget_is_dualspeed(dev->gadget))
-		req->no_interrupt = (dev->gadget->speed == USB_SPEED_HIGH)
+		req->no_interrupt = (dev->gadget->speed == USB_SPEED_HIGH ||
+				     dev->gadget->speed == USB_SPEED_SUPER)
 			? ((atomic_read(&dev->tx_qlen) % qmult) != 0)
 			: 0;
 
@@ -632,6 +630,7 @@ drop:
 static void eth_start(struct eth_dev *dev, gfp_t gfp_flags)
 {
 	DBG(dev, "%s\n", __func__);
+	xlog_printk(ANDROID_LOG_INFO, UETHER_LOG, "%s\n", __func__);
 
 	/* fill the rx queue */
 	rx_fill(dev, gfp_flags);
@@ -647,6 +646,8 @@ static int eth_open(struct net_device *net)
 	struct gether	*link;
 
 	DBG(dev, "%s\n", __func__);
+	xlog_printk(ANDROID_LOG_INFO, UETHER_LOG, "%s\n", __func__);
+	
 	if (netif_carrier_ok(dev->net))
 		eth_start(dev, GFP_KERNEL);
 
@@ -665,6 +666,8 @@ static int eth_stop(struct net_device *net)
 	unsigned long	flags;
 
 	VDBG(dev, "%s\n", __func__);
+	xlog_printk(ANDROID_LOG_INFO, UETHER_LOG, "%s\n", __func__);
+	
 	netif_stop_queue(net);
 
 	DBG(dev, "stop stats: rx/tx %ld/%ld, errs %ld/%ld\n",
@@ -693,8 +696,8 @@ static int eth_stop(struct net_device *net)
 		usb_ep_disable(link->out_ep);
 		if (netif_carrier_ok(net)) {
 			DBG(dev, "host still using in/out endpoints\n");
-			usb_ep_enable(link->in_ep, link->in);
-			usb_ep_enable(link->out_ep, link->out);
+			usb_ep_enable(link->in_ep);
+			usb_ep_enable(link->out_ep);
 		}
 	}
 	spin_unlock_irqrestore(&dev->lock, flags);
@@ -891,7 +894,7 @@ struct net_device *gether_connect(struct gether *link)
 		return ERR_PTR(-EINVAL);
 
 	link->in_ep->driver_data = dev;
-	result = usb_ep_enable(link->in_ep, link->in);
+	result = usb_ep_enable(link->in_ep);
 	if (result != 0) {
 		DBG(dev, "enable %s --> %d\n",
 			link->in_ep->name, result);
@@ -899,7 +902,7 @@ struct net_device *gether_connect(struct gether *link)
 	}
 
 	link->out_ep->driver_data = dev;
-	result = usb_ep_enable(link->out_ep, link->out);
+	result = usb_ep_enable(link->out_ep);
 	if (result != 0) {
 		DBG(dev, "enable %s --> %d\n",
 			link->out_ep->name, result);
@@ -963,6 +966,7 @@ void gether_disconnect(struct gether *link)
 	struct eth_dev		*dev = link->ioport;
 	struct usb_request	*req;
 
+	WARN_ON(!dev);
 	if (!dev)
 		return;
 
@@ -988,7 +992,7 @@ void gether_disconnect(struct gether *link)
 	}
 	spin_unlock(&dev->req_lock);
 	link->in_ep->driver_data = NULL;
-	link->in = NULL;
+	link->in_ep->desc = NULL;
 
 	usb_ep_disable(link->out_ep);
 	spin_lock(&dev->req_lock);
@@ -1003,7 +1007,7 @@ void gether_disconnect(struct gether *link)
 	}
 	spin_unlock(&dev->req_lock);
 	link->out_ep->driver_data = NULL;
-	link->out = NULL;
+	link->out_ep->desc = NULL;
 
 	/* finish forgetting about this USB link episode */
 	dev->header_len = 0;

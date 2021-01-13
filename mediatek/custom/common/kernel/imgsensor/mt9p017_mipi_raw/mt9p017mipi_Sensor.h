@@ -1,4 +1,40 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   mt9p017mipi_Sensor.h
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Header file of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Guangye Yang (mtk70662)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #ifndef _MT9P017MIPI_SENSOR_H
 #define _MT9P017MIPI_SENSOR_H
 

@@ -1,4 +1,17 @@
-
+/* drivers/i2c/chips/lis33de.c - LIS33DE motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -42,6 +55,13 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
 #endif
@@ -53,6 +73,10 @@
 #ifdef MT6575
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
 /*----------------------------------------------------------------------------*/
 //#define I2C_DRIVERID_LIS33DE 345
 /*----------------------------------------------------------------------------*/
@@ -69,9 +93,11 @@
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id lis33de_i2c_id[] = {{LIS33DE_DEV_NAME,0},{}};
 /*the adapter id will be available in customization*/
-static unsigned short lis33de_force[] = {0x00, LIS33DE_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const lis33de_forces[] = { lis33de_force, NULL };
-static struct i2c_client_address_data lis33de_addr_data = { .forces = lis33de_forces,};
+static struct i2c_board_info __initdata i2c_lis33de={ I2C_BOARD_INFO("LIS33DE", LIS33DE_I2C_SLAVE_ADDR>>1)};
+
+//static unsigned short lis33de_force[] = {0x00, LIS33DE_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const lis33de_forces[] = { lis33de_force, NULL };
+//static struct i2c_client_address_data lis33de_addr_data = { .forces = lis33de_forces,};
 
 /*----------------------------------------------------------------------------*/
 static int lis33de_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
@@ -135,7 +161,7 @@ struct lis33de_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver lis33de_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+       // .owner          = THIS_MODULE,
         .name           = LIS33DE_DEV_NAME,
     },
 	.probe      		= lis33de_i2c_probe,
@@ -146,7 +172,7 @@ static struct i2c_driver lis33de_i2c_driver = {
     .resume             = lis33de_resume,
 #endif
 	.id_table = lis33de_i2c_id,
-	.address_data = &lis33de_addr_data,
+	//.address_data = &lis33de_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -173,6 +199,26 @@ static struct data_resolution lis33de_data_resolution[] = {
 /*----------------------------------------------------------------------------*/
 static struct data_resolution lis33de_offset_resolution = {{15, 6}, 64};
 
+/*
+static int hwmsen_read_byte_sr(struct i2c_client *client, u8 addr, u8 *data)
+{
+   u8 buf;
+    int ret = 0;
+	
+    client->addr = client->addr& I2C_MASK_FLAG | I2C_WR_FLAG |I2C_RS_FLAG;
+    buf = addr;
+	ret = i2c_master_send(client, (const char*)&buf, 1<<8 | 1);
+    //ret = i2c_master_send(client, (const char*)&buf, 1);
+    if (ret < 0) {
+        GSE_ERR("send command error!!\n");
+        return -EFAULT;
+    }
+
+    *data = buf;
+	client->addr = client->addr& I2C_MASK_FLAG;
+    return 0;
+}
+*/
 static void dumpReg(struct i2c_client *client)
 {
   int i=0;
@@ -342,6 +388,14 @@ static int LIS33DE_ReadData(struct i2c_client *client, s16 data[LIS33DE_AXES_NUM
 	return err;
 }
 /*----------------------------------------------------------------------------*/
+/*
+static int LIS33DE_ReadOffset(struct i2c_client *client, s8 ofs[LIS33DE_AXES_NUM])
+{    
+	int err;
+
+	return err;    
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int LIS33DE_ResetCalibration(struct i2c_client *client)
 {
@@ -362,6 +416,32 @@ static int LIS33DE_ReadCalibration(struct i2c_client *client, int dat[LIS33DE_AX
     return 0;
 }
 /*----------------------------------------------------------------------------*/
+/*
+static int LIS33DE_ReadCalibrationEx(struct i2c_client *client, int act[LIS33DE_AXES_NUM], int raw[LIS33DE_AXES_NUM])
+{  
+	
+	struct lis33de_i2c_data *obj = i2c_get_clientdata(client);
+	int err;
+	int mul;
+
+	if(err = LIS33DE_ReadOffset(client, obj->offset))
+	{
+		GSE_ERR("read offset fail, %d\n", err);
+		return err;
+	}    
+
+	mul = obj->reso->sensitivity/lis33de_offset_resolution.sensitivity;
+	raw[LIS33DE_AXIS_X] = obj->offset[LIS33DE_AXIS_X]*mul + obj->cali_sw[LIS33DE_AXIS_X];
+	raw[LIS33DE_AXIS_Y] = obj->offset[LIS33DE_AXIS_Y]*mul + obj->cali_sw[LIS33DE_AXIS_Y];
+	raw[LIS33DE_AXIS_Z] = obj->offset[LIS33DE_AXIS_Z]*mul + obj->cali_sw[LIS33DE_AXIS_Z];
+
+	act[obj->cvt.map[LIS33DE_AXIS_X]] = obj->cvt.sign[LIS33DE_AXIS_X]*raw[LIS33DE_AXIS_X];
+	act[obj->cvt.map[LIS33DE_AXIS_Y]] = obj->cvt.sign[LIS33DE_AXIS_Y]*raw[LIS33DE_AXIS_Y];
+	act[obj->cvt.map[LIS33DE_AXIS_Z]] = obj->cvt.sign[LIS33DE_AXIS_Z]*raw[LIS33DE_AXIS_Z];                        
+	                       
+	return 0;
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int LIS33DE_WriteCalibration(struct i2c_client *client, int dat[LIS33DE_AXES_NUM])
 {
@@ -398,6 +478,37 @@ static int LIS33DE_CheckDeviceID(struct i2c_client *client)
 {
 	u8 databuf[10];    
 	int res = 0;
+/*
+	memset(databuf, 0, sizeof(u8)*10);    
+	databuf[0] = LIS33DE_REG_DEVID;    
+
+	res = i2c_master_send(client, databuf, 0x1);
+	if(res <= 0)
+	{
+		goto exit_LIS33DE_CheckDeviceID;
+	}
+	
+	udelay(500);
+
+	databuf[0] = 0x0;        
+	res = i2c_master_recv(client, databuf, 0x01);
+	if(res <= 0)
+	{
+		goto exit_LIS33DE_CheckDeviceID;
+	}
+	
+
+	if(databuf[0]!=LIS33DE_FIXED_DEVID)
+	{
+		return LIS33DE_ERR_IDENTIFICATION;
+	}
+
+	exit_LIS33DE_CheckDeviceID:
+	if (res <= 0)
+	{
+		return LIS33DE_ERR_I2C;
+	}
+	*/
 	return LIS33DE_SUCCESS;
 }
 /*----------------------------------------------------------------------------*/
@@ -574,6 +685,13 @@ static int LIS33DE_Init(struct i2c_client *client, int reset_cali)
 {
 	struct lis33de_i2c_data *obj = i2c_get_clientdata(client);
 	int res = 0;
+/*
+	res = LIS33DE_CheckDeviceID(client); 
+	if(res != LIS33DE_SUCCESS)
+	{
+		return res;
+	}	
+*/
     // first clear reg1
     res = hwmsen_write_byte(client,LIS33DE_REG_CTL_REG1,0x00);
 	if(res != LIS33DE_SUCCESS)
@@ -933,6 +1051,99 @@ static ssize_t show_power_status(struct device_driver *ddri, char *buf)
 }
 
 /*----------------------------------------------------------------------------*/
+/*
+static ssize_t store_self_value(struct device_driver *ddri, char *buf, size_t count)
+{   //write anything to this register will trigger the process
+	struct item{
+	s16 raw[LIS33DE_AXES_NUM];
+	};
+	
+	struct i2c_client *client = lis33de_i2c_client;  
+	int idx, res, num;
+	struct item *prv = NULL, *nxt = NULL;
+	s32 avg_prv[LIS33DE_AXES_NUM] = {0, 0, 0};
+	s32 avg_nxt[LIS33DE_AXES_NUM] = {0, 0, 0};
+
+
+	if(1 != sscanf(buf, "%d", &num))
+	{
+		GSE_ERR("parse number fail\n");
+		return count;
+	}
+	else if(num == 0)
+	{
+		GSE_ERR("invalid data count\n");
+		return count;
+	}
+
+	prv = kzalloc(sizeof(*prv) * num, GFP_KERNEL);
+	nxt = kzalloc(sizeof(*nxt) * num, GFP_KERNEL);
+	if (!prv || !nxt)
+	{
+		goto exit;
+	}
+
+
+	GSE_LOG("NORMAL:\n");
+	for(idx = 0; idx < num; idx++)
+	{
+		if(res = LIS33DE_ReadData(client, prv[idx].raw))
+		{            
+			GSE_ERR("read data fail: %d\n", res);
+			goto exit;
+		}
+		
+		avg_prv[LIS33DE_AXIS_X] += prv[idx].raw[LIS33DE_AXIS_X];
+		avg_prv[LIS33DE_AXIS_Y] += prv[idx].raw[LIS33DE_AXIS_Y];
+		avg_prv[LIS33DE_AXIS_Z] += prv[idx].raw[LIS33DE_AXIS_Z];        
+		GSE_LOG("[%5d %5d %5d]\n", prv[idx].raw[LIS33DE_AXIS_X], prv[idx].raw[LIS33DE_AXIS_Y], prv[idx].raw[LIS33DE_AXIS_Z]);
+	}
+	
+	avg_prv[LIS33DE_AXIS_X] /= num;
+	avg_prv[LIS33DE_AXIS_Y] /= num;
+	avg_prv[LIS33DE_AXIS_Z] /= num;    
+
+	
+	LIS33DE_InitSelfTest(client);
+	GSE_LOG("SELFTEST:\n");    
+	for(idx = 0; idx < num; idx++)
+	{
+		if(res = LIS33DE_ReadData(client, nxt[idx].raw))
+		{            
+			GSE_ERR("read data fail: %d\n", res);
+			goto exit;
+		}
+		avg_nxt[LIS33DE_AXIS_X] += nxt[idx].raw[LIS33DE_AXIS_X];
+		avg_nxt[LIS33DE_AXIS_Y] += nxt[idx].raw[LIS33DE_AXIS_Y];
+		avg_nxt[LIS33DE_AXIS_Z] += nxt[idx].raw[LIS33DE_AXIS_Z];        
+		GSE_LOG("[%5d %5d %5d]\n", nxt[idx].raw[LIS33DE_AXIS_X], nxt[idx].raw[LIS33DE_AXIS_Y], nxt[idx].raw[LIS33DE_AXIS_Z]);
+	}
+	
+	avg_nxt[LIS33DE_AXIS_X] /= num;
+	avg_nxt[LIS33DE_AXIS_Y] /= num;
+	avg_nxt[LIS33DE_AXIS_Z] /= num;    
+
+	GSE_LOG("X: %5d - %5d = %5d \n", avg_nxt[LIS33DE_AXIS_X], avg_prv[LIS33DE_AXIS_X], avg_nxt[LIS33DE_AXIS_X] - avg_prv[LIS33DE_AXIS_X]);
+	GSE_LOG("Y: %5d - %5d = %5d \n", avg_nxt[LIS33DE_AXIS_Y], avg_prv[LIS33DE_AXIS_Y], avg_nxt[LIS33DE_AXIS_Y] - avg_prv[LIS33DE_AXIS_Y]);
+	GSE_LOG("Z: %5d - %5d = %5d \n", avg_nxt[LIS33DE_AXIS_Z], avg_prv[LIS33DE_AXIS_Z], avg_nxt[LIS33DE_AXIS_Z] - avg_prv[LIS33DE_AXIS_Z]); 
+
+	if(!LIS33DE_JudgeTestResult(client, avg_prv, avg_nxt))
+	{
+		GSE_LOG("SELFTEST : PASS\n");
+	}	
+	else
+	{
+		GSE_LOG("SELFTEST : FAIL\n");
+	}
+	
+	exit:
+	  
+	LIS33DE_Init(client, 0);
+	kfree(prv);
+	kfree(nxt);
+	return count;
+}
+*/
 /*----------------------------------------------------------------------------*/
 static ssize_t show_selftest_value(struct device_driver *ddri, char *buf)
 {
@@ -1335,6 +1546,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int lis33de_open(struct inode *inode, struct file *file)
 {
 	file->private_data = lis33de_i2c_client;
@@ -1353,8 +1567,10 @@ static int lis33de_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int lis33de_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
-       unsigned long arg)
+//static int lis33de_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+      // unsigned long arg)
+static int lis33de_unlocked_ioctl(struct file *file, unsigned int cmd,
+       unsigned long arg)       
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
 	struct lis33de_i2c_data *obj = (struct lis33de_i2c_data*)i2c_get_clientdata(client);	
@@ -1529,10 +1745,10 @@ static int lis33de_ioctl(struct inode *inode, struct file *file, unsigned int cm
 
 /*----------------------------------------------------------------------------*/
 static struct file_operations lis33de_fops = {
-	.owner = THIS_MODULE,
+	//.owner = THIS_MODULE,
 	.open = lis33de_open,
 	.release = lis33de_release,
-	.ioctl = lis33de_ioctl,
+	.unlocked_ioctl = lis33de_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice lis33de_device = {
@@ -1791,7 +2007,7 @@ static int lis33de_probe(struct platform_device *pdev)
 	GSE_FUN();
 
 	LIS33DE_power(hw, 1);
-	lis33de_force[0] = hw->i2c_num;
+	//lis33de_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&lis33de_i2c_driver))
 	{
 		GSE_ERR("add driver error\n");
@@ -1815,7 +2031,7 @@ static struct platform_driver lis33de_gsensor_driver = {
 	.remove     = lis33de_remove,    
 	.driver     = {
 		.name  = "gsensor",
-		.owner = THIS_MODULE,
+		//.owner = THIS_MODULE,
 	}
 };
 
@@ -1823,6 +2039,7 @@ static struct platform_driver lis33de_gsensor_driver = {
 static int __init lis33de_init(void)
 {
 	GSE_FUN();
+	i2c_register_board_info(0, &i2c_lis33de, 1);
 	if(platform_driver_register(&lis33de_gsensor_driver))
 	{
 		GSE_ERR("failed to register driver");

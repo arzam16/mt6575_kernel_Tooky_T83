@@ -1,3 +1,3 @@
-#define UTS_RELEASE "3.0.13"
-#define BUILD_INFO "ALPS.ICS.TDVIP.SP.V1"
-#define BUILD_FINGERPRINT "kpt75_ics"
+#define UTS_RELEASE "3.4.0"
+#define BUILD_INFO "ALPS.JB.MP.V1"
+#define BUILD_FINGERPRINT "kpt75_jb"

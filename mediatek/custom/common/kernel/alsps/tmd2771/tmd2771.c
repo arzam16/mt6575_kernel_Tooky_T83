@@ -1,4 +1,17 @@
-
+/* drivers/hwmon/mt6516/amit/tmd2771.c - TMD2771 ALS/PS driver
+ * 
+ * Author: MingHsien Hsieh <minghsien.hsieh@mediatek.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -13,6 +26,7 @@
 #include <linux/earlysuspend.h>
 #include <linux/platform_device.h>
 #include <asm/atomic.h>
+//#include <mach/mt_gpio.h>
 #ifdef MT6516
 #include <mach/mt6516_devs.h>
 #include <mach/mt6516_typedefs.h>
@@ -28,10 +42,16 @@
 #endif
 
 #ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
+#endif
+#ifdef MT6577
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
 #endif
 
 #ifdef MT6516
@@ -46,6 +66,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 #include <linux/hwmsensor.h>
 #include <linux/hwmsen_dev.h>
 #include <linux/sensors_io.h>
@@ -53,6 +76,9 @@
 #include <cust_eint.h>
 #include <cust_alsps.h>
 #include "tmd2771.h"
+/******************************************************************************
+ * configuration
+*******************************************************************************/
 /*----------------------------------------------------------------------------*/
 
 #define TMD2771_DEV_NAME     "TMD2771"
@@ -62,7 +88,18 @@
 #define APS_ERR(fmt, args...)    printk(KERN_ERR  APS_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
 #define APS_LOG(fmt, args...)    printk(KERN_INFO APS_TAG fmt, ##args)
 #define APS_DBG(fmt, args...)    printk(KERN_INFO APS_TAG fmt, ##args)                 
+/******************************************************************************
+ * extern functions
+*******************************************************************************/
 /*for interrup work mode support --add by liaoxl.lenovo 12.08.2011*/
+#ifdef MT6577
+	extern void mt65xx_eint_unmask(unsigned int line);
+	extern void mt65xx_eint_mask(unsigned int line);
+	extern void mt65xx_eint_set_polarity(unsigned int eint_num, unsigned int pol);
+	extern void mt65xx_eint_set_hw_debounce(unsigned int eint_num, unsigned int ms);
+	extern unsigned int mt65xx_eint_set_sens(unsigned int eint_num, unsigned int sens);
+	extern void mt65xx_eint_registration(unsigned int eint_num, unsigned int is_deb_en, unsigned int pol, void (EINT_FUNC_PTR)(void), unsigned int is_auto_umask);
+#endif
 #ifdef MT6575
 	extern void mt65xx_eint_unmask(unsigned int line);
 	extern void mt65xx_eint_mask(unsigned int line);
@@ -96,7 +133,7 @@ static struct i2c_board_info __initdata i2c_TMD2771={ I2C_BOARD_INFO("TMD2771", 
 /*----------------------------------------------------------------------------*/
 static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
 static int tmd2771_i2c_remove(struct i2c_client *client);
-static int tmd2771_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+static int tmd2771_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
 /*----------------------------------------------------------------------------*/
 static int tmd2771_i2c_suspend(struct i2c_client *client, pm_message_t msg);
 static int tmd2771_i2c_resume(struct i2c_client *client);
@@ -110,7 +147,7 @@ static struct tmd2771_priv *g_tmd2771_ptr = NULL;
     int valid;
 } ;
 
-static struct PS_CALI_DATA_STRUCT ps_cali={{0,0,0},};
+static struct PS_CALI_DATA_STRUCT ps_cali={0,0,0};
 static int intr_flag_value = 0;
 /*----------------------------------------------------------------------------*/
 typedef enum {
@@ -229,8 +266,8 @@ static long tmd2771_enable_als(struct i2c_client *client, int enable)
 		struct tmd2771_priv *obj = i2c_get_clientdata(client);
 		u8 databuf[2];	  
 		long res = 0;
-		u8 buffer[1];
-		u8 reg_value[1];
+		//u8 buffer[1];
+		//u8 reg_value[1];
 		uint32_t testbit_PS;
 		
 	
@@ -382,8 +419,8 @@ static long tmd2771_enable_ps(struct i2c_client *client, int enable)
 	struct tmd2771_priv *obj = i2c_get_clientdata(client);
 	u8 databuf[2];    
 	long res = 0;
-	u8 buffer[1];
-	u8 reg_value[1];
+//	u8 buffer[1];
+//	u8 reg_value[1];
 	uint32_t testbit_ALS;
 
 	if(client == NULL)
@@ -736,6 +773,7 @@ EXIT_ERR:
 	return res;
 }
 /*----------------------------------------------------------------------------*/
+#if 0
 static int tmd2771_enable(struct i2c_client *client, int enable)
 {
 	struct tmd2771_priv *obj = i2c_get_clientdata(client);
@@ -794,12 +832,13 @@ EXIT_ERR:
 	APS_ERR("tmd2771_enable fail\n");
 	return res;
 }
+#endif
 
 /*----------------------------------------------------------------------------*/
 /*for interrup work mode support -- by liaoxl.lenovo 12.08.2011*/
 static int tmd2771_check_and_clear_intr(struct i2c_client *client) 
 {
-	struct tmd2771_priv *obj = i2c_get_clientdata(client);
+	//struct tmd2771_priv *obj = i2c_get_clientdata(client);
 	int res,intp,intl;
 	u8 buffer[2];
 
@@ -868,7 +907,7 @@ EXIT_ERR:
 /*yucong add for interrupt mode support MTK inc 2012.3.7*/
 static int tmd2771_check_intr(struct i2c_client *client) 
 {
-	struct tmd2771_priv *obj = i2c_get_clientdata(client);
+//	struct tmd2771_priv *obj = i2c_get_clientdata(client);
 	int res,intp,intl;
 	u8 buffer[2];
 
@@ -910,7 +949,7 @@ EXIT_ERR:
 
 static int tmd2771_clear_intr(struct i2c_client *client) 
 {
-	struct tmd2771_priv *obj = i2c_get_clientdata(client);
+	//struct tmd2771_priv *obj = i2c_get_clientdata(client);
 	int res;
 	u8 buffer[2];
 
@@ -982,6 +1021,7 @@ int tmd2771_setup_eint(struct i2c_client *client)
 
 /*----------------------------------------------------------------------------*/
 
+#if 0
 static int tmd2771_init_client_for_cali(struct i2c_client *client)
 {
 
@@ -1044,7 +1084,7 @@ static int tmd2771_init_client_for_cali(struct i2c_client *client)
 	}
 
 	databuf[0] = TMD2771_CMM_CONTROL;    
-	databuf[1] = 0x20;//0x22
+	databuf[1] = TMD2771_CMM_CONTROL_VALUE;//0x22
 	res = i2c_master_send(client, databuf, 0x2);
 	if(res <= 0)
 	{
@@ -1067,6 +1107,7 @@ EXIT_ERR:
 	return res;
 
 }
+#endif
 
 static int tmd2771_init_client(struct i2c_client *client)
 {
@@ -1084,7 +1125,7 @@ static int tmd2771_init_client(struct i2c_client *client)
 	}
 	
 	databuf[0] = TMD2771_CMM_ATIME;    
-	databuf[1] = 0xC9;
+	databuf[1] = 0xF6;
 	res = i2c_master_send(client, databuf, 0x2);
 	if(res <= 0)
 	{
@@ -1102,7 +1143,7 @@ static int tmd2771_init_client(struct i2c_client *client)
 	}
 
 	databuf[0] = TMD2771_CMM_WTIME;    
-	databuf[1] = 0xEE;
+	databuf[1] = 0xFC;
 	res = i2c_master_send(client, databuf, 0x2);
 	if(res <= 0)
 	{
@@ -1224,7 +1265,7 @@ static int tmd2771_init_client(struct i2c_client *client)
 
         /*Lenovo-sw chenlj2 add 2011-06-03,modified gain 16  to 1 */
 	databuf[0] = TMD2771_CMM_CONTROL;    
-	databuf[1] = 0x20;
+	databuf[1] = TMD2771_CMM_CONTROL_VALUE;
 	res = i2c_master_send(client, databuf, 0x2);
 	if(res <= 0)
 	{
@@ -1232,12 +1273,12 @@ static int tmd2771_init_client(struct i2c_client *client)
 		return TMD2771_ERR_I2C;
 	}
 	/*for interrup work mode support -- by liaoxl.lenovo 12.08.2011*/
-	if(res = tmd2771_setup_eint(client))
+	if((res = tmd2771_setup_eint(client))!=0)
 	{
 		APS_ERR("setup eint: %d\n", res);
 		return res;
 	}
-	if(res = tmd2771_check_and_clear_intr(client))
+	if((res = tmd2771_check_and_clear_intr(client)))
 	{
 		APS_ERR("check/clear intr: %d\n", res);
 		//    return res;
@@ -1250,6 +1291,9 @@ EXIT_ERR:
 	return res;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 int tmd2771_read_als(struct i2c_client *client, u16 *data)
 {
 	struct tmd2771_priv *obj = i2c_get_clientdata(client);	 
@@ -1258,9 +1302,9 @@ int tmd2771_read_als(struct i2c_client *client, u16 *data)
 	u8 als_value_low[1], als_value_high[1];
 	u8 buffer[1];
 	u16 atio;
-	u16 als_value;
+//	u16 als_value;
 	int res = 0;
-	u8 reg_value[1];
+//	u8 reg_value[1];
 	
 	if(client == NULL)
 	{
@@ -1394,7 +1438,7 @@ EXIT_ERR:
 }
 int tmd2771_read_als_ch0(struct i2c_client *client, u16 *data)
 {
-	struct tmd2771_priv *obj = i2c_get_clientdata(client);	 
+//	struct tmd2771_priv *obj = i2c_get_clientdata(client);	 
 	u16 c0_value;	 
 	u8 als_value_low[1], als_value_high[1];
 	u8 buffer[1];
@@ -1488,8 +1532,8 @@ static int tmd2771_get_als_value(struct tmd2771_priv *obj, u16 als)
 /*----------------------------------------------------------------------------*/
 long tmd2771_read_ps(struct i2c_client *client, u16 *data)
 {
-	struct tmd2771_priv *obj = i2c_get_clientdata(client);    
-	u16 ps_value;    
+//	struct tmd2771_priv *obj = i2c_get_clientdata(client);    
+	//u16 ps_value;    
 	u8 ps_value_low[1], ps_value_high[1];
 	u8 buffer[1];
 	long res = 0;
@@ -1535,11 +1579,11 @@ EXIT_ERR:
 /*----------------------------------------------------------------------------*/
 static int tmd2771_get_ps_value(struct tmd2771_priv *obj, u16 ps)
 {
-	int val, mask = atomic_read(&obj->ps_mask);
+	int val;// mask = atomic_read(&obj->ps_mask);
 	int invalid = 0;
 	static int val_temp=1;
 	 /*Lenovo-sw chenlj2 add 2011-10-12 begin*/
-	 u16 temp_ps[1];
+//	 u16 temp_ps[1];
 	 /*Lenovo-sw chenlj2 add 2011-10-12 end*/
 	 
 	
@@ -1552,18 +1596,20 @@ static int tmd2771_get_ps_value(struct tmd2771_priv *obj, u16 ps)
 	//return 1;
     /*Lenovo-sw zhuhc delete 2011-10-12 end*/
 
-        mdelay(160);
-	tmd2771_read_ps(obj->client,temp_ps);
+        //mdelay(160);
+	//tmd2771_read_ps(obj->client,temp_ps);
 	if(ps_cali.valid == 1)
 		{
 			//APS_LOG("tmd2771_get_ps_value val_temp  = %d",val_temp);
-			if((ps >ps_cali.close)&&(temp_ps[0] >ps_cali.close))
+			//if((ps >ps_cali.close)&&(temp_ps[0] >ps_cali.close))
+			if((ps >ps_cali.close))
 			{
 				val = 0;  /*close*/
 				val_temp = 0;
 				intr_flag_value = 1;
 			}
-			else if((ps <ps_cali.far_away)&&(temp_ps[0] < ps_cali.far_away))
+			//else if((ps <ps_cali.far_away)&&(temp_ps[0] < ps_cali.far_away))
+			else if((ps < ps_cali.far_away))
 			{
 				val = 1;  /*far away*/
 				val_temp = 1;
@@ -1576,13 +1622,15 @@ static int tmd2771_get_ps_value(struct tmd2771_priv *obj, u16 ps)
 	}
 	else
 	{
-			if((ps > atomic_read(&obj->ps_thd_val_high))&&(temp_ps[0]  > atomic_read(&obj->ps_thd_val_high)))
+			//if((ps > atomic_read(&obj->ps_thd_val_high))&&(temp_ps[0]  > atomic_read(&obj->ps_thd_val_high)))
+			if((ps  > atomic_read(&obj->ps_thd_val_high)))
 			{
 				val = 0;  /*close*/
 				val_temp = 0;
 				intr_flag_value = 1;
 			}
-			else if((ps < atomic_read(&obj->ps_thd_val_low))&&(temp_ps[0]  < atomic_read(&obj->ps_thd_val_low)))
+			//else if((ps < atomic_read(&obj->ps_thd_val_low))&&(temp_ps[0]  < atomic_read(&obj->ps_thd_val_low)))
+			else if((ps  < atomic_read(&obj->ps_thd_val_low)))
 			{
 				val = 1;  /*far away*/
 				val_temp = 1;
@@ -1636,8 +1684,8 @@ static void tmd2771_eint_work(struct work_struct *work)
 	struct tmd2771_priv *obj = (struct tmd2771_priv *)container_of(work, struct tmd2771_priv, eint_work);
 	int err;
 	hwm_sensor_data sensor_data;
-	u8 buffer[1];
-	u8 reg_value[1];
+//	u8 buffer[1];
+//	u8 reg_value[1];
 	u8 databuf[2];
 	int res = 0;
 
@@ -1732,6 +1780,9 @@ static void tmd2771_eint_work(struct work_struct *work)
 }
 
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int tmd2771_open(struct inode *inode, struct file *file)
 {
 	file->private_data = tmd2771_i2c_client;
@@ -1751,7 +1802,8 @@ static int tmd2771_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static tmd2771_WriteCalibration(struct PS_CALI_DATA_STRUCT *data_cali)
+#if 0
+static void tmd2771_WriteCalibration(struct PS_CALI_DATA_STRUCT *data_cali)
 {
 
 	   APS_LOG("tmd2771_WriteCalibration  1 %d," ,data_cali->close);
@@ -1782,7 +1834,9 @@ static tmd2771_WriteCalibration(struct PS_CALI_DATA_STRUCT *data_cali)
 	  
 
 }
+#endif
 
+#if 0
 static int tmd2771_read_data_for_cali(struct i2c_client *client, struct PS_CALI_DATA_STRUCT *ps_data_cali)
 {
      int i=0 ,err = 0,j = 0;
@@ -1858,7 +1912,7 @@ static int tmd2771_read_data_for_cali(struct i2c_client *client, struct PS_CALI_
 	 	
 
 }
-
+#endif
 
 /*----------------------------------------------------------------------------*/
 static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
@@ -1870,7 +1924,7 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 	void __user *ptr = (void __user*) arg;
 	int dat;
 	uint32_t enable;
-	struct PS_CALI_DATA_STRUCT ps_cali_temp;
+	//struct PS_CALI_DATA_STRUCT ps_cali_temp;
 
 	switch (cmd)
 	{
@@ -1882,9 +1936,9 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}
 			if(enable)
 			{
-				if(err = tmd2771_enable_ps(obj->client, 1))
+				if((err = tmd2771_enable_ps(obj->client, 1)))
 				{
-					APS_ERR("enable ps fail: %d\n", err); 
+					APS_ERR("enable ps fail: %ld\n", err); 
 					goto err_out;
 				}
 				
@@ -1892,9 +1946,9 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}
 			else
 			{
-				if(err = tmd2771_enable_ps(obj->client, 0))
+				if((err = tmd2771_enable_ps(obj->client, 0)))
 				{
-					APS_ERR("disable ps fail: %d\n", err); 
+					APS_ERR("disable ps fail: %ld\n", err); 
 					goto err_out;
 				}
 				
@@ -1912,7 +1966,7 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			break;
 
 		case ALSPS_GET_PS_DATA:    
-			if(err = tmd2771_read_ps(obj->client, &obj->ps))
+			if((err = tmd2771_read_ps(obj->client, &obj->ps)))
 			{
 				goto err_out;
 			}
@@ -1926,7 +1980,7 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			break;
 
 		case ALSPS_GET_PS_RAW_DATA:    
-			if(err = tmd2771_read_ps(obj->client, &obj->ps))
+			if((err = tmd2771_read_ps(obj->client, &obj->ps)))
 			{
 				goto err_out;
 			}
@@ -1947,18 +2001,18 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}
 			if(enable)
 			{
-				if(err = tmd2771_enable_als(obj->client, 1))
+				if((err = tmd2771_enable_als(obj->client, 1)))
 				{
-					APS_ERR("enable als fail: %d\n", err); 
+					APS_ERR("enable als fail: %ld\n", err); 
 					goto err_out;
 				}
 				set_bit(CMC_BIT_ALS, &obj->enable);
 			}
 			else
 			{
-				if(err = tmd2771_enable_als(obj->client, 0))
+				if((err = tmd2771_enable_als(obj->client, 0)))
 				{
-					APS_ERR("disable als fail: %d\n", err); 
+					APS_ERR("disable als fail: %ld\n", err); 
 					goto err_out;
 				}
 				clear_bit(CMC_BIT_ALS, &obj->enable);
@@ -1975,7 +2029,7 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			break;
 
 		case ALSPS_GET_ALS_DATA: 
-			if(err = tmd2771_read_als(obj->client, &obj->als))
+			if((err = tmd2771_read_als(obj->client, &obj->als)))
 			{
 				goto err_out;
 			}
@@ -1989,7 +2043,7 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			break;
 
 		case ALSPS_GET_ALS_RAW_DATA:    
-			if(err = tmd2771_read_als(obj->client, &obj->als))
+			if((err = tmd2771_read_als(obj->client, &obj->als)))
 			{
 				goto err_out;
 			}
@@ -2002,6 +2056,40 @@ static long tmd2771_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}              
 			break;
 
+/*		case ALSPS_SET_PS_CALI:
+			dat = (void __user*)arg;
+			if(dat == NULL)
+			{
+				APS_LOG("dat == NULL\n");
+				err = -EINVAL;
+				break;	  
+			}
+			if(copy_from_user(&ps_cali_temp,dat, sizeof(ps_cali_temp)))
+			{
+				APS_LOG("copy_from_user\n");
+				err = -EFAULT;
+				break;	  
+			}
+			tmd2771_WriteCalibration(&ps_cali_temp);
+			APS_LOG(" ALSPS_SET_PS_CALI %d,%d,%d\t",ps_cali_temp.close,ps_cali_temp.far_away,ps_cali_temp.valid);
+			break;
+		case ALSPS_GET_PS_RAW_DATA_FOR_CALI:
+			tmd2771_init_client_for_cali(obj->client);
+			err = tmd2771_read_data_for_cali(obj->client,&ps_cali_temp);
+			if(err)
+			{
+			   goto err_out;
+			}
+			tmd2771_init_client(obj->client);
+			// tmd2771_enable_ps(obj->client, 1);
+			tmd2771_enable(obj->client, 0);
+			if(copy_to_user(ptr, &ps_cali_temp, sizeof(ps_cali_temp)))
+			{
+				err = -EFAULT;
+				goto err_out;
+			}              
+			break;
+*/
 		default:
 			APS_ERR("%s not supported = 0x%04x", __FUNCTION__, cmd);
 			err = -ENOIOCTLCMD;
@@ -2113,7 +2201,7 @@ static void tmd2771_early_suspend(struct early_suspend *h)
 	atomic_set(&obj->als_suspend, 1);
 	if(test_bit(CMC_BIT_ALS, &obj->enable))
 	{
-		if(err = tmd2771_enable_als(obj->client, 0))
+		if((err = tmd2771_enable_als(obj->client, 0)))
 		{
 			APS_ERR("disable als fail: %d\n", err); 
 		}
@@ -2137,7 +2225,7 @@ static void tmd2771_late_resume(struct early_suspend *h)
 	atomic_set(&obj->als_suspend, 0);
 	if(test_bit(CMC_BIT_ALS, &obj->enable))
 	{
-		if(err = tmd2771_enable_als(obj->client, 1))
+		if((err = tmd2771_enable_als(obj->client, 1)))
 		{
 			APS_ERR("enable als fail: %d\n", err);        
 
@@ -2177,7 +2265,7 @@ int tmd2771_ps_operate(void* self, uint32_t command, void* buff_in, int size_in,
 				value = *(int *)buff_in;
 				if(value)
 				{
-					if(err = tmd2771_enable_ps(obj->client, 1))
+					if((err = tmd2771_enable_ps(obj->client, 1)))
 					{
 						APS_ERR("enable ps fail: %d\n", err); 
 						return -1;
@@ -2194,7 +2282,7 @@ int tmd2771_ps_operate(void* self, uint32_t command, void* buff_in, int size_in,
 				}
 				else
 				{
-					if(err = tmd2771_enable_ps(obj->client, 0))
+					if((err = tmd2771_enable_ps(obj->client, 0)))
 					{
 						APS_ERR("disable ps fail: %d\n", err); 
 						return -1;
@@ -2271,7 +2359,7 @@ int tmd2771_als_operate(void* self, uint32_t command, void* buff_in, int size_in
 				value = *(int *)buff_in;				
 				if(value)
 				{
-					if(err = tmd2771_enable_als(obj->client, 1))
+					if((err = tmd2771_enable_als(obj->client, 1)))
 					{
 						APS_ERR("enable als fail: %d\n", err); 
 						return -1;
@@ -2280,7 +2368,7 @@ int tmd2771_als_operate(void* self, uint32_t command, void* buff_in, int size_in
 				}
 				else
 				{
-					if(err = tmd2771_enable_als(obj->client, 0))
+					if((err = tmd2771_enable_als(obj->client, 0)))
 					{
 						APS_ERR("disable als fail: %d\n", err); 
 						return -1;
@@ -2333,7 +2421,7 @@ int tmd2771_als_operate(void* self, uint32_t command, void* buff_in, int size_in
 
 
 /*----------------------------------------------------------------------------*/
-static int tmd2771_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+static int tmd2771_i2c_detect(struct i2c_client *client, struct i2c_board_info *info) 
 {    
 	strcpy(info->type, TMD2771_DEV_NAME);
 	return 0;
@@ -2361,10 +2449,10 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	INIT_WORK(&obj->eint_work, tmd2771_eint_work);
 	obj->client = client;
 	i2c_set_clientdata(client, obj);	
-	atomic_set(&obj->als_debounce, 300);
+	atomic_set(&obj->als_debounce, 50);
 	atomic_set(&obj->als_deb_on, 0);
 	atomic_set(&obj->als_deb_end, 0);
-	atomic_set(&obj->ps_debounce, 200);
+	atomic_set(&obj->ps_debounce, 10);
 	atomic_set(&obj->ps_deb_on, 0);
 	atomic_set(&obj->ps_deb_end, 0);
 	atomic_set(&obj->ps_mask, 0);
@@ -2392,20 +2480,28 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	tmd2771_i2c_client = client;
 
 	
-	if(err = tmd2771_init_client(client))
+	if((err = tmd2771_init_client(client)))
 	{
 		goto exit_init_failed;
 	}
 	APS_LOG("tmd2771_init_client() OK!\n");
 
-	if(err = misc_register(&tmd2771_device))
+	if((err = misc_register(&tmd2771_device)))
 	{
 		APS_ERR("tmd2771_device register failed\n");
 		goto exit_misc_device_register_failed;
 	}
+/*
+	if(err = tmd2771_create_attr(&tmd2771_alsps_driver.driver))
+	{
+		APS_ERR("create attribute err = %d\n", err);
+		goto exit_create_attr_failed;
+	}
+*/
 	obj_ps.self = tmd2771_obj;
 	/*for interrup work mode support -- by liaoxl.lenovo 12.08.2011*/
 	if(1 == obj->hw->polling_mode_ps)
+	//if (1)
 	{
 		obj_ps.polling = 1;
 	}
@@ -2415,7 +2511,7 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	}
 
 	obj_ps.sensor_operate = tmd2771_ps_operate;
-	if(err = hwmsen_attach(ID_PROXIMITY, &obj_ps))
+	if((err = hwmsen_attach(ID_PROXIMITY, &obj_ps)))
 	{
 		APS_ERR("attach fail = %d\n", err);
 		goto exit_create_attr_failed;
@@ -2424,7 +2520,7 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	obj_als.self = tmd2771_obj;
 	obj_als.polling = 1;
 	obj_als.sensor_operate = tmd2771_als_operate;
-	if(err = hwmsen_attach(ID_LIGHT, &obj_als))
+	if((err = hwmsen_attach(ID_LIGHT, &obj_als)))
 	{
 		APS_ERR("attach fail = %d\n", err);
 		goto exit_create_attr_failed;
@@ -2432,7 +2528,7 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
-	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	obj->early_drv.suspend  = tmd2771_early_suspend,
 	obj->early_drv.resume   = tmd2771_late_resume,    
 	register_early_suspend(&obj->early_drv);
@@ -2446,7 +2542,7 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	exit_misc_device_register_failed:
 	exit_init_failed:
 	//i2c_detach_client(client);
-	exit_kfree:
+	//exit_kfree:
 	kfree(obj);
 	exit:
 	tmd2771_i2c_client = NULL;           
@@ -2458,7 +2554,13 @@ static int tmd2771_i2c_probe(struct i2c_client *client, const struct i2c_device_
 static int tmd2771_i2c_remove(struct i2c_client *client)
 {
 	int err;	
-	if(err = misc_deregister(&tmd2771_device))
+/*	
+	if(err = tmd2771_delete_attr(&tmd2771_i2c_driver.driver))
+	{
+		APS_ERR("tmd2771_delete_attr fail: %d\n", err);
+	} 
+*/
+	if((err = misc_deregister(&tmd2771_device)))
 	{
 		APS_ERR("misc_deregister fail: %d\n", err);    
 	}

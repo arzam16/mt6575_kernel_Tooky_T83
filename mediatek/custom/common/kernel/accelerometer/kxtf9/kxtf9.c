@@ -1,4 +1,17 @@
-
+/* KXTF9 motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -27,6 +40,20 @@
 #include <mach/mt6573_pll.h>
 #endif
 
+#ifdef MT6575
+#include <mach/mt6575_devs.h>
+#include <mach/mt6575_typedefs.h>
+#include <mach/mt6575_gpio.h>
+#include <mach/mt6575_pm_ldo.h>
+#endif
+
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
 #endif
@@ -35,6 +62,13 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 
 #include <cust_acc.h>
 #include <linux/hwmsensor.h>
@@ -61,10 +95,11 @@
 
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id kxtf9_i2c_id[] = {{KXTF9_DEV_NAME,0},{}};
+static struct i2c_board_info __initdata i2c_kxtf9={ I2C_BOARD_INFO(KXTF9_DEV_NAME, (KXTF9_I2C_SLAVE_ADDR>>1))};
 /*the adapter id will be available in customization*/
-static unsigned short kxtf9_force[] = {0x00, KXTF9_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const kxtf9_forces[] = { kxtf9_force, NULL };
-static struct i2c_client_address_data kxtf9_addr_data = { .forces = kxtf9_forces,};
+//static unsigned short kxtf9_force[] = {0x00, KXTF9_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const kxtf9_forces[] = { kxtf9_force, NULL };
+//static struct i2c_client_address_data kxtf9_addr_data = { .forces = kxtf9_forces,};
 
 /*----------------------------------------------------------------------------*/
 static int kxtf9_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
@@ -129,7 +164,7 @@ struct kxtf9_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver kxtf9_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+//      .owner          = THIS_MODULE,
         .name           = KXTF9_DEV_NAME,
     },
 	.probe      		= kxtf9_i2c_probe,
@@ -140,7 +175,7 @@ static struct i2c_driver kxtf9_i2c_driver = {
     .resume             = kxtf9_resume,
 #endif
 	.id_table = kxtf9_i2c_id,
-	.address_data = &kxtf9_addr_data,
+//	.address_data = &kxtf9_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -1540,6 +1575,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int kxtf9_open(struct inode *inode, struct file *file)
 {
 	file->private_data = kxtf9_i2c_client;
@@ -1558,7 +1596,9 @@ static int kxtf9_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int kxtf9_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+//static int kxtf9_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+//       unsigned long arg)
+static long kxtf9_unlocked_ioctl(struct file *file, unsigned int cmd,
        unsigned long arg)
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
@@ -1566,7 +1606,7 @@ static int kxtf9_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	char strbuf[KXTF9_BUFSIZE];
 	void __user *data;
 	SENSOR_DATA sensor_data;
-	int err = 0;
+	long err = 0;
 	int cali[3];
 
 	//GSE_FUN(f);
@@ -1722,7 +1762,8 @@ static struct file_operations kxtf9_fops = {
 	.owner = THIS_MODULE,
 	.open = kxtf9_open,
 	.release = kxtf9_release,
-	.ioctl = kxtf9_ioctl,
+	//.ioctl = kxtf9_ioctl,
+	.unlocked_ioctl = kxtf9_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice kxtf9_device = {
@@ -1967,7 +2008,7 @@ static int kxtf9_probe(struct platform_device *pdev)
 	GSE_FUN();
 
 	KXTF9_power(hw, 1);
-	kxtf9_force[0] = hw->i2c_num;
+	//kxtf9_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&kxtf9_i2c_driver))
 	{
 		GSE_ERR("add driver error\n");
@@ -1991,7 +2032,7 @@ static struct platform_driver kxtf9_gsensor_driver = {
 	.remove     = kxtf9_remove,    
 	.driver     = {
 		.name  = "gsensor",
-		.owner = THIS_MODULE,
+//		.owner = THIS_MODULE,
 	}
 };
 
@@ -1999,6 +2040,7 @@ static struct platform_driver kxtf9_gsensor_driver = {
 static int __init kxtf9_init(void)
 {
 	GSE_FUN();
+	i2c_register_board_info(0, &i2c_kxtf9, 1);
 	if(platform_driver_register(&kxtf9_gsensor_driver))
 	{
 		GSE_ERR("failed to register driver");

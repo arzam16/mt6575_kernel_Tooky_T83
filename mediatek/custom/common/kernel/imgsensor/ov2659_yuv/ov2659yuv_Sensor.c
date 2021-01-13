@@ -1,4 +1,177 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 10 13 2010 sean.cheng
+ * [ALPS00021684] [Need Patch] [Volunteer Patch] CCT new feature
+ * .
+ *
+ * 09 10 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .10y dual sensor
+ *
+ * 09 02 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .roll back dual sensor
+ *
+ * 07 27 2010 sean.cheng
+ * [ALPS00003112] [Need Patch] [Volunteer Patch] ISP/Sensor driver modification for Customer support
+ * .1. add master clock switcher 
+ *  2. add master enable/disable 
+ *  3. add dummy line/pixel for sensor 
+ *  4. add sensor driving current setting
+ *
+ * 07 01 2010 sean.cheng
+ * [ALPS00121215][Camera] Change color when switch low and high 
+ * .Add video delay frame.
+ *
+ * 07 01 2010 sean.cheng
+ * [ALPS00002805][Need Patch] [Volunteer Patch]10X Patch for DS269 Video Frame Rate 
+ * .Change the sensor clock to let frame rate to be 30fps in vidoe mode
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .
+ * 1. Add set zoom factor and capdelay frame for YUV sensor 
+ * 2. Modify e1k sensor setting
+ *
+ * 05 25 2010 sean.cheng
+ * [ALPS00002250][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for YUV video frame rate 
+ * .
+ * Add 15fps option for video mode
+ *
+ * 05 03 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Fix OV2659 YUV sensor frame rate to 30fps in vidoe mode
+ *
+ * Mar 4 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ * 
+ *
+ * Mar 4 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ * 
+ *
+ * Mar 1 2010 mtk01118
+ * [DUMA00025869] [Camera][YUV I/F & Query feature] check in camera code
+ * 
+ *
+ * Feb 24 2010 mtk01118
+ * [DUMA00025869] [Camera][YUV I/F & Query feature] check in camera code
+ * 
+ *
+ * Nov 24 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Oct 29 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Oct 27 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Aug 13 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Aug 5 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Jul 17 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Jul 7 2009 mtk01051
+ * [DUMA00008051] [Camera Driver] Add drivers for camera high ISO binning mode.
+ * Add ISO query info for Sensor
+ *
+ * May 18 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * Apr 7 2009 mtk02204
+ * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came
+ * 
+ *
+ * Mar 27 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 25 2009 mtk02204
+ * [DUMA00111570] [Camera] The system crash after some operations
+ *
+ *
+ * Mar 20 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 2 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Feb 24 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Dec 27 2008 MTK01813
+ * DUMA_MBJ CheckIn Files
+ * created by clearfsimport
+ *
+ * Dec 10 2008 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Oct 27 2008 mtk01051
+ * [DUMA00000851] Camera related drivers check in
+ * Modify Copyright Header
+ *
+ * Oct 24 2008 mtk02204
+ * [DUMA00000851] Camera related drivers check in
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -8,6 +181,7 @@
 #include <linux/fs.h>
 #include <asm/atomic.h>
 #include <asm/io.h>
+#include <asm/system.h>
 	 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
@@ -26,6 +200,7 @@
 #else
 #define OV2659SENSORDB(x,...)
 #endif
+static DEFINE_SPINLOCK(ov2659_drv_lock);
 
 MSDK_SCENARIO_ID_ENUM CurrentScenarioId = MSDK_SCENARIO_ID_CAMERA_PREVIEW;
 
@@ -81,6 +256,24 @@ static kal_bool OV2659_AE_ENABLE = KAL_TRUE;
 MSDK_SENSOR_CONFIG_STRUCT OV2659SensorConfigData;
 
 
+/*************************************************************************
+* FUNCTION
+*	OV2659_set_dummy
+*
+* DESCRIPTION
+*	This function set the dummy pixels(Horizontal Blanking) & dummy lines(Vertical Blanking), it can be
+*	used to adjust the frame rate or gain more time for back-end process.
+*	
+*	IMPORTANT NOTICE: the base shutter need re-calculate for some sensor, or else flicker may occur.
+*
+* PARAMETERS
+*	1. kal_uint32 : Dummy Pixels (Horizontal Blanking)
+*	2. kal_uint32 : Dummy Lines (Vertical Blanking)
+*
+* RETURNS
+*	None
+*
+*************************************************************************/
 static void OV2659SetDummy(kal_uint32 dummy_pixels, kal_uint32 dummy_lines)
 {
 	kal_uint32 temp_reg1, temp_reg2;
@@ -113,6 +306,20 @@ static void OV2659SetDummy(kal_uint32 dummy_pixels, kal_uint32 dummy_lines)
 	
 }    /* OV2659_set_dummy */
 
+/*************************************************************************
+* FUNCTION
+*	OV2659WriteShutter
+*
+* DESCRIPTION
+*	This function used to write the shutter.
+*
+* PARAMETERS
+*	1. kal_uint32 : The shutter want to apply to sensor.
+*
+* RETURNS
+*	None
+*
+*************************************************************************/
 static void OV2659WriteShutter(kal_uint32 shutter)
 {
 	kal_uint32 extra_exposure_lines = 0;
@@ -167,6 +374,20 @@ static void OV2659WriteShutter(kal_uint32 shutter)
 	
 }    /* OV2659_write_shutter */
 
+/*************************************************************************
+* FUNCTION
+*	OV2659WriteWensorGain
+*
+* DESCRIPTION
+*	This function used to write the sensor gain.
+*
+* PARAMETERS
+*	1. kal_uint32 : The sensor gain want to apply to sensor.
+*
+* RETURNS
+*	None
+*
+*************************************************************************/
 static void OV2659WriteSensorGain(kal_uint32 gain)
 {
 	kal_uint16 temp_reg = 0;
@@ -178,6 +399,20 @@ static void OV2659WriteSensorGain(kal_uint32 gain)
 	OV2659_write_cmos_sensor(0x350B,temp_reg);
 }  /* OV2659_write_sensor_gain */
 
+/*************************************************************************
+* FUNCTION
+*	OV2659ReadShutter
+*
+* DESCRIPTION
+*	This function read current shutter for calculate the exposure.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	kal_uint16 : The current shutter value.
+*
+*************************************************************************/
 static kal_uint32 OV2659ReadShutter(void)
 {
 	kal_uint16 temp_reg1, temp_reg2 ,temp_reg3;
@@ -185,16 +420,34 @@ static kal_uint32 OV2659ReadShutter(void)
 	temp_reg2 = OV2659_read_cmos_sensor(0x3501);    // AEC[b15~b8]
 	temp_reg3 = OV2659_read_cmos_sensor(0x3502);    // AEC[b7~b0]
 	//read out register value and divide 16;
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.PreviewShutter  = (temp_reg1 <<12)| (temp_reg2<<4)|(temp_reg3>>4);
+	spin_unlock(&ov2659_drv_lock);
 	
 	temp_reg1 = OV2659_read_cmos_sensor(0x3506);    // EXVTS[b15~b8]
 	temp_reg2 = OV2659_read_cmos_sensor(0x3507);    // EXVTS[b7~b0]
 	/* Backup the preview mode last shutter & sensor gain. */
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.PreviewExtraShutter = (temp_reg2 & 0xFF) | (temp_reg1 << 8);
+	spin_unlock(&ov2659_drv_lock);
 	
 	return OV2659Sensor.PreviewShutter;
 }    /* OV2659_read_shutter */
 
+/*************************************************************************
+* FUNCTION
+*	OV2659ReadSensorGain
+*
+* DESCRIPTION
+*	This function read current sensor gain for calculate the exposure.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	kal_uint16 : The current sensor gain value.
+*
+*************************************************************************/
 static kal_uint32 OV2659ReadSensorGain(void)
 {
 	kal_uint16 temp_reg = 0;
@@ -247,6 +500,22 @@ static void OV2659_set_AWB_mode(kal_bool AWB_enable)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*	OV2659_night_mode
+*
+* DESCRIPTION
+*	This function night mode of OV2659.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV2659_night_mode(kal_bool enable)
 {
 	kal_uint16 night = OV2659_read_cmos_sensor(0x3A00); 
@@ -298,6 +567,22 @@ void OV2659_night_mode(kal_bool enable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*	OV2659_GetSensorID
+*
+* DESCRIPTION
+*	This function get the sensor ID
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static kal_uint32 OV2659_GetSensorID(kal_uint32 *sensorID)
 {
 	volatile signed char i;
@@ -325,6 +610,22 @@ static kal_uint32 OV2659_GetSensorID(kal_uint32 *sensorID)
 }   
 
 
+/*************************************************************************
+* FUNCTION
+*    OV2659InitialSetting
+*
+* DESCRIPTION
+*    This function initialize the registers of CMOS sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void OV2659InitialSetting(void)
 {
 
@@ -558,6 +859,7 @@ static void OV2659InitialSetting(void)
 	OV2659_write_cmos_sensor(0x5062,0x7d);
 	OV2659_write_cmos_sensor(0x5063,0x69);
 	//////
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.IsPVmode= 1;
 	OV2659Sensor.PreviewDummyPixels= 0;
 	OV2659Sensor.PreviewDummyLines= 0;
@@ -565,9 +867,26 @@ static void OV2659InitialSetting(void)
 	OV2659Sensor.CapturePclk= 480;
 	OV2659Sensor.PreviewShutter=0x0265;
 	OV2659Sensor.SensorGain=0x10;
+	spin_unlock(&ov2659_drv_lock);
 		
 }                                  
 
+/*************************************************************************
+* FUNCTION
+*    OV2659PreviewSetting
+*
+* DESCRIPTION
+*    This function config Preview setting related registers of CMOS sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void OV2659PreviewSetting(void)
 {
 	#ifdef OVT_SIM
@@ -657,13 +976,30 @@ static void OV2659PreviewSetting(void)
 		OV2659_write_cmos_sensor(0x507a, OV2659_read_cmos_sensor(0x507a)&~0x10);//Auto UV
 	}
 	#endif
-
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.IsPVmode = KAL_TRUE;
 	OV2659Sensor.PreviewPclk= 480;
 	OV2659Sensor.SensorMode= SENSOR_MODE_PREVIEW;
+	spin_unlock(&ov2659_drv_lock);
 	
 }
 
+/*************************************************************************
+* FUNCTION
+*     OV2659FullSizeCaptureSetting
+*
+* DESCRIPTION
+*    This function config full size capture setting related registers of CMOS sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void OV2659FullSizeCaptureSetting(void)
 {
 	OV2659_write_cmos_sensor(0x3004,0x10);
@@ -748,14 +1084,31 @@ static void OV2659FullSizeCaptureSetting(void)
 	
 	///////////FULL Size CAPTURE CORLOR DIFFER
 	OV2659_write_cmos_sensor(0x4003, 0x88);
-
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.IsPVmode = KAL_FALSE;
 	OV2659Sensor.CapturePclk= 480;//585
 	OV2659Sensor.SensorMode= SENSOR_MODE_CAPTURE;
+	spin_unlock(&ov2659_drv_lock);
 	
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    OV2659SetHVMirror
+*
+* DESCRIPTION
+*    This function set sensor Mirror
+*
+* PARAMETERS
+*    Mirror
+*
+* RETURNS
+*    None
+*
+* LOCAL AFFECTED
+*
+*************************************************************************/
 static void OV2659SetHVMirror(kal_uint8 Mirror)
 {
   kal_uint8 mirror= 0, flip=0;
@@ -791,6 +1144,22 @@ static void OV2659SetHVMirror(kal_uint8 Mirror)
 	}
 }
 
+/*************************************************************************
+* FUNCTION
+*	OV2659Open
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV2659Open(void)
 {
 	volatile signed int i;
@@ -811,6 +1180,7 @@ UINT32 OV2659Open(void)
 			return ERROR_SENSOR_CONNECT_FAIL;
 		}
 	}
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.VideoMode = KAL_FALSE;
   	OV2659Sensor.NightMode = KAL_FALSE;
 	OV2659Sensor.Fps = 100;
@@ -820,6 +1190,7 @@ UINT32 OV2659Open(void)
 	OV2659Sensor.PreviewDummyPixels = 0;
   	OV2659Sensor.PreviewDummyLines = 0;
 	OV2659Sensor.SensorMode= SENSOR_MODE_INIT;
+	spin_unlock(&ov2659_drv_lock);
 
 	OV2659InitialSetting();
 
@@ -828,12 +1199,45 @@ UINT32 OV2659Open(void)
 	return ERROR_NONE;
 }	/* OV2659Open() */
 
+/*************************************************************************
+* FUNCTION
+*	OV2659Close
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV2659Close(void)
 {
 //	CISModulePowerOn(FALSE);
 
 	return ERROR_NONE;
 }	/* OV2659Close() */
+/*************************************************************************
+* FUNCTION
+*	OV2659Preview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV2659Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -876,20 +1280,25 @@ UINT32 OV2659Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	kal_uint32 shutter = 0, temp_reg = 0;
   	kal_uint32 prev_line_len = 0;
   	kal_uint32 cap_line_len = 0;
+	kal_uint32 temp;
 	
 	if(SENSOR_MODE_PREVIEW == OV2659Sensor.SensorMode )
 	{
 	OV2659SENSORDB("[OV2659]Normal Capture\n ");
 	shutter=OV2659ReadShutter();
-  	OV2659Sensor.SensorGain=OV2659ReadSensorGain();
+	temp =OV2659ReadSensorGain();
+	spin_lock(&ov2659_drv_lock);
+  	OV2659Sensor.SensorGain= temp;
+	spin_unlock(&ov2659_drv_lock);
 	
 	OV2659_set_AE_mode(KAL_FALSE);
 	OV2659_set_AWB_mode(KAL_FALSE);
 	
 	OV2659FullSizeCaptureSetting();
-	
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.CaptureDummyPixels = 0;
   	OV2659Sensor.CaptureDummyLines = 0;
+	spin_unlock(&ov2659_drv_lock);
   	OV2659SetDummy(OV2659Sensor.CaptureDummyPixels, OV2659Sensor.CaptureDummyLines);
 
 	prev_line_len = OV2659_PV_PERIOD_PIXEL_NUMS + OV2659Sensor.PreviewDummyPixels;
@@ -1052,11 +1461,15 @@ BOOL OV2659_set_param_wb(UINT16 para)
     switch (para)
     {
         case AWB_MODE_OFF:
+			spin_lock(&ov2659_drv_lock);
             OV2659_AWB_ENABLE = KAL_FALSE; 
+			spin_unlock(&ov2659_drv_lock);
             OV2659_set_AWB_mode(OV2659_AWB_ENABLE);
             break;                    
         case AWB_MODE_AUTO:
+			spin_lock(&ov2659_drv_lock);
             OV2659_AWB_ENABLE = KAL_TRUE;  //
+            spin_unlock(&ov2659_drv_lock);
             OV2659_set_AWB_mode(KAL_TRUE);
 			break;
 
@@ -1200,7 +1613,9 @@ BOOL OV2659_set_param_banding(UINT16 para)
     switch (para)
     {
         case AE_FLICKER_MODE_50HZ:
+			spin_lock(&ov2659_drv_lock);
 			 OV2659_Banding_setting = AE_FLICKER_MODE_50HZ;
+			 spin_unlock(&ov2659_drv_lock);
 			 /* + (line_length/2) is used fot base_shutter + 0.5 */
 			 //base_shutter=framerate*max exposure line/100=(plck/2/(line_len*frame_len))*max exposure line/100
 			 base_shutter = ((sensor_pixel_clock/100) + (line_length/2)) / line_length;
@@ -1211,7 +1626,9 @@ BOOL OV2659_set_param_banding(UINT16 para)
 			 break;
 
         case AE_FLICKER_MODE_60HZ:			
+			spin_lock(&ov2659_drv_lock);
              OV2659_Banding_setting = AE_FLICKER_MODE_60HZ;
+			 spin_unlock(&ov2659_drv_lock);
 			 /* + (line_length/2) is used fot base_shutter + 0.5 */
 			 base_shutter = ((sensor_pixel_clock/120) + (line_length/2)) / line_length;
 		 	 max_shutter_step = (exposure_limitation / base_shutter);// - 1;
@@ -1317,16 +1734,22 @@ UINT32 OV2659YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
     	case FID_AE_SCENE_MODE: 
 			OV2659SENSORDB("Set AE Mode:%d\n", iPara);
          	if (iPara == AE_MODE_OFF) {
+				spin_lock(&ov2659_drv_lock);
 		 		OV2659_AE_ENABLE = KAL_FALSE; 
+				spin_unlock(&ov2659_drv_lock);
          	}
          	else {
+				spin_lock(&ov2659_drv_lock);
 		 		OV2659_AE_ENABLE = KAL_TRUE; 
+				spin_unlock(&ov2659_drv_lock);
 	     	}
          	OV2659_set_AE_mode(OV2659_AE_ENABLE);
          	break; 
     case FID_ZOOM_FACTOR:
    		 	OV2659SENSORDB("FID_ZOOM_FACTOR:%d\n", iPara); 	    
+			spin_lock(&ov2659_drv_lock);
 	     	zoom_factor = iPara; 
+			spin_unlock(&ov2659_drv_lock);
          	break; 
 	default:
 		 	break;
@@ -1359,7 +1782,9 @@ UINT32 OV2659YUVSetVideoMode(UINT16 u2FrameRate)
 		OV2659_write_cmos_sensor(0x3004,0x20);////////4X
 		OV2659_write_cmos_sensor(0x3005,0x08);////PLUS 8
 		OV2659_write_cmos_sensor(0x3006,0x0d);/////01 101  2X 3X
+		spin_lock(&ov2659_drv_lock);
 		OV2659Sensor.PreviewPclk = 120;
+		spin_unlock(&ov2659_drv_lock);
 		line_length = OV2659Sensor.PreviewPclk*100000/frame_rate/(OV2659_PV_PERIOD_LINE_NUMS + OV2659Sensor.PreviewDummyLines)/2;
 	}
 	else if (line_length >= 0x2000)
@@ -1367,7 +1792,9 @@ UINT32 OV2659YUVSetVideoMode(UINT16 u2FrameRate)
 		OV2659_write_cmos_sensor(0x3004,0x20);////////4X
 		OV2659_write_cmos_sensor(0x3005,0x0F);////PLUS 15
 		OV2659_write_cmos_sensor(0x3006,0x0d);/////01 101  2X 3X
+		spin_lock(&ov2659_drv_lock);
 		OV2659Sensor.PreviewPclk = 160;
+		spin_unlock(&ov2659_drv_lock);
 		line_length = OV2659Sensor.PreviewPclk*100000/frame_rate/(OV2659_PV_PERIOD_LINE_NUMS + OV2659Sensor.PreviewDummyLines)/2;
 	}
 	else if (line_length >= 0x1000)
@@ -1376,7 +1803,9 @@ UINT32 OV2659YUVSetVideoMode(UINT16 u2FrameRate)
 		OV2659_write_cmos_sensor(0x3004,0x20);////////4X
 		OV2659_write_cmos_sensor(0x3005,0x16);////PLUS 22
 		OV2659_write_cmos_sensor(0x3006,0x0d);/////01 101  2X 3X
+		spin_lock(&ov2659_drv_lock);
 		OV2659Sensor.PreviewPclk = 240;
+		spin_unlock(&ov2659_drv_lock);
 		line_length = OV2659Sensor.PreviewPclk*100000/frame_rate/(OV2659_PV_PERIOD_LINE_NUMS + OV2659Sensor.PreviewDummyLines)/2;
 	}
 	if( line_length < OV2659_PV_PERIOD_PIXEL_NUMS )
@@ -1384,11 +1813,14 @@ UINT32 OV2659YUVSetVideoMode(UINT16 u2FrameRate)
 		OV2659_write_cmos_sensor(0x3004,0x10);////////4X
 		OV2659_write_cmos_sensor(0x3005,0x16);////PLUS 22
 		OV2659_write_cmos_sensor(0x3006,0x0d);/////01 101  2X 3X
+		spin_lock(&ov2659_drv_lock);
 		OV2659Sensor.PreviewPclk = 480;
+		spin_unlock(&ov2659_drv_lock);
 		line_length = OV2659Sensor.PreviewPclk*100000/frame_rate/(OV2659_PV_PERIOD_LINE_NUMS + OV2659Sensor.PreviewDummyLines)/2;
 	}
-
+	spin_lock(&ov2659_drv_lock);
 	OV2659Sensor.PreviewDummyPixels = line_length - OV2659_PV_PERIOD_PIXEL_NUMS;
+	spin_unlock(&ov2659_drv_lock);
 	
 	OV2659SetDummy(OV2659Sensor.PreviewDummyPixels, OV2659Sensor.PreviewDummyLines);
 	
@@ -1422,6 +1854,15 @@ static void OV2659GetCurAeAwbInfo(UINT32 pSensorAEAWBCurStruct)
 	Info->SensorAECur.AeCurGain=OV2659ReadSensorGain() * 2;
 	Info->SensorAwbGainCur.AwbCurRgain=OV2659_read_cmos_sensor(0x504c);
 	Info->SensorAwbGainCur.AwbCurBgain=OV2659_read_cmos_sensor(0x504e);
+}
+
+static void OV2659GetCurAeInfo(UINT32 pSensorAECurStruct)
+{
+	PSENSOR_FLASHLIGHT_AE_INFO_STRUCT Info = (PSENSOR_FLASHLIGHT_AE_INFO_STRUCT)pSensorAECurStruct;
+	Info->Exposuretime = OV2659ReadShutter();
+	Info->Gain=OV2659ReadSensorGain() * 2;
+	OV2659SENSORDB("[OV2659][OV2659GetCurAeInfo]Exp:%d,Gain:%d\n",Info->Exposuretime,Info->Gain);
+
 }
 #endif
 
@@ -1570,6 +2011,9 @@ UINT32 OV2659FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 			break;
 		case SENSOR_FEATURE_GET_SHUTTER_GAIN_AWB_GAIN:
 			OV2659GetCurAeAwbInfo(*pFeatureData32);			
+			break;
+		case SENSOR_FEATURE_GET_AE_FLASHLIGHT_INFO:			
+			OV2659GetCurAeInfo(*pFeatureData32);
 			break;
 		#endif
 		default:

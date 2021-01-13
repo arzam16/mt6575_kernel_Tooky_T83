@@ -1,5 +1,3 @@
-
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -27,10 +25,16 @@
 #include "tpd.h"
 #include <cust_eint.h>
 #include <linux/jiffies.h>
-#include <mach/mt6575_pm_ldo.h>
 #include "tpd_custom_tangleM32_16.h"
 #include "tpd_calibrate.h"
 
+#ifdef MT6575
+#include <mach/mt6575_pm_ldo.h>
+#endif
+
+#ifdef MT6577
+#include <mach/mt6577_pm_ldo.h>
+#endif
 
 #ifndef TPD_NO_GPIO 
 #include "cust_gpio_usage.h"
@@ -80,17 +84,18 @@ static int i2c_write_dummy( struct i2c_client *client, u16 addr );
 
 
 static struct i2c_client *i2c_client = NULL;
-static const struct i2c_device_id tpd_i2c_id[] = {{"mtk-tpd",0},{}};
+static const struct i2c_device_id tpd_i2c_id[] = {{"tanglem32_16",0},{}};
 static unsigned short force[] = {0, 0xB8, I2C_CLIENT_END,I2C_CLIENT_END};
 static const unsigned short * const forces[] = { force, NULL };
-static struct i2c_client_address_data addr_data = { .forces = forces,};
+//static struct i2c_client_address_data addr_data = { .forces = forces,};
+static struct i2c_board_info __initdata i2c_tpd = { I2C_BOARD_INFO("tanglem32_16", ( 0xB8 >> 1))};
 struct i2c_driver tpd_i2c_driver = {                       
     .probe = tpd_i2c_probe,                                   
     .remove = tpd_i2c_remove,                           
     .detect = tpd_i2c_detect,                           
-    .driver.name = "mtk-tpd", 
+    .driver.name = "tanglem32_16", 
     .id_table = tpd_i2c_id,                             
-    .address_data = &addr_data,                        
+    .address_list = (const unsigned short*) forces,
 }; 
 
 #define C_I2C_FIFO_SIZE         8       /*according i2c_mt6575.c*/
@@ -590,7 +595,9 @@ static struct tpd_driver_t tpd_device_driver = {
 };
 /* called when loaded into kernel */
 static int __init tpd_driver_init(void) {
-    printk("MediaTek tangleM32_16 touch panel driver init\n");
+	printk("MediaTek tangleM32_16 touch panel driver init\n");
+	
+	i2c_register_board_info(0, &i2c_tpd, 1);
 		if(tpd_driver_add(&tpd_device_driver) < 0)
 			TPD_DMESG("add generic driver failed\n");
     return 0;

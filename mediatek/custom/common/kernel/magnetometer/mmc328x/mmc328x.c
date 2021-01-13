@@ -1,4 +1,16 @@
-
+/* mmc328x.c - mmc328x compass driver
+ * 
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -30,6 +42,12 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
 
 #include <linux/hwmsensor.h>
 #include <linux/hwmsen_dev.h>
@@ -86,14 +104,15 @@ static atomic_t o_flag = ATOMIC_INIT(0);
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id mmc328x_i2c_id[] = {{MMC328x_DEV_NAME,0},{}};
+static struct i2c_board_info __initdata i2c_mmc328x={ I2C_BOARD_INFO("mmc328x", (0X60>>1))};
 /*the adapter id will be available in customization*/
-static unsigned short mmc328x_force[] = {0x00, MMC328x_I2C_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const mmc328x_forces[] = { mmc328x_force, NULL };
-static struct i2c_client_address_data mmc328x_addr_data = { .forces = mmc328x_forces,};
+//static unsigned short mmc328x_force[] = {0x00, MMC328x_I2C_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const mmc328x_forces[] = { mmc328x_force, NULL };
+//static struct i2c_client_address_data mmc328x_addr_data = { .forces = mmc328x_forces,};
 /*----------------------------------------------------------------------------*/
 static int mmc328x_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
 static int mmc328x_i2c_remove(struct i2c_client *client);
-static int mmc328x_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+//static int mmc328x_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
 static int mmc_probe(struct platform_device *pdev);
 static int mmc_remove(struct platform_device *pdev);
 
@@ -132,18 +151,18 @@ struct mmc328x_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver mmc328x_i2c_driver = {
     .driver = {
-        .owner = THIS_MODULE, 
+//      .owner = THIS_MODULE, 
         .name  = MMC328x_DEV_NAME,
     },
 	.probe      = mmc328x_i2c_probe,
 	.remove     = mmc328x_i2c_remove,
-	.detect     = mmc328x_i2c_detect,
+//	.detect     = mmc328x_i2c_detect,
 #if !defined(CONFIG_HAS_EARLYSUSPEND)
 	.suspend    = mmc328x_suspend,
 	.resume     = mmc328x_resume,
 #endif 
 	.id_table = mmc328x_i2c_id,
-	.address_data = &mmc328x_addr_data,
+//	.address_data = &mmc328x_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -152,7 +171,7 @@ static struct platform_driver mmc_sensor_driver = {
 	.remove     = mmc_remove,    
 	.driver     = {
 		.name  = "msensor",
-		.owner = THIS_MODULE,
+//		.owner = THIS_MODULE,
 	}
 };
 
@@ -765,7 +784,7 @@ static int mmc328x_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int mmc328x_ioctl(struct inode *inode, struct file *file, unsigned int cmd,unsigned long arg)
+static int mmc328x_unlocked_ioctl(struct file *file, unsigned int cmd,unsigned long arg)
 {
 	void __user *argp = (void __user *)arg;
 		
@@ -1014,10 +1033,10 @@ static int mmc328x_ioctl(struct inode *inode, struct file *file, unsigned int cm
 }
 /*----------------------------------------------------------------------------*/
 static struct file_operations mmc328x_fops = {
-	.owner = THIS_MODULE,
+//	.owner = THIS_MODULE,
 	.open = mmc328x_open,
 	.release = mmc328x_release,
-	.ioctl = mmc328x_ioctl,
+	.unlocked_ioctl = mmc328x_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice mmc328x_device = {
@@ -1295,12 +1314,13 @@ static void mmc328x_late_resume(struct early_suspend *h)
 /*----------------------------------------------------------------------------*/
 #endif /*CONFIG_HAS_EARLYSUSPEND*/
 /*----------------------------------------------------------------------------*/
+#if 0
 static int mmc328x_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
 {    
 	strcpy(info->type, MMC328x_DEV_NAME);
 	return 0;
 }
-
+#endif
 /*----------------------------------------------------------------------------*/
 static int mmc328x_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -1421,7 +1441,7 @@ static int mmc_probe(struct platform_device *pdev)
 	mmc328x_power(hw, 1);
 	
 	atomic_set(&dev_open_count, 0);
-	mmc328x_force[0] = hw->i2c_num;
+//	mmc328x_force[0] = hw->i2c_num;
 
 	if(i2c_add_driver(&mmc328x_i2c_driver))
 	{
@@ -1443,7 +1463,7 @@ static int mmc_remove(struct platform_device *pdev)
 /*----------------------------------------------------------------------------*/
 static int __init mmc328x_init(void)
 {
-	
+	i2c_register_board_info(0, &i2c_mmc328x, 1);	
 	if(platform_driver_register(&mmc_sensor_driver))
 	{
 		printk(KERN_ERR "failed to register driver");

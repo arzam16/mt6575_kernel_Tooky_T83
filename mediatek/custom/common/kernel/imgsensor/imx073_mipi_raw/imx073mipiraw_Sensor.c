@@ -1,4 +1,182 @@
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   RAW
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 02 21 2012 koli.lin
+ * [ALPS00240109] [Need Patch] [Volunteer Patch]
+ * [Camera] Add a new frame rate (24fps) for video mode.
+ *
+ * 02 19 2012 koli.lin
+ * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
+ * [Camera] 1. Modify the AE converge speed in the video mode.
+ *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
+ *
+ * 11 11 2011 koli.lin
+ * [ALPS00086510] [Camera] preview?�v?�C
+ * [Camera] Modify the exposure line for flicker enable.
+ *
+ * 11 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * [Camera] Modify the flicker frame rate control.
+ *
+ * 11 01 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * [Camera] Add the flicker flag disable control before enter the ZSD mode.
+ *
+ * 10 31 2011 koli.lin
+ * [ALPS00081266] [Li Zhen]
 
+P49?�O�s�b��?�H
+
+
+[Wenjing]
+
+Hi,Koli:
+
+tester?�����??�X??��?��A��O?�y�z�ݡA??�򤧫e6573�W��?���bvideo mode���@?issue�ۦP�A��??��check
+
+thanks
+
+
+����  61204
+
+ * [Camera] 1. Modify the preview output speed 648Mbps/lane.
+ *                2. Fix the flicker min limitation value. (max 1 fps)
+ *
+ * 10 17 2011 koli.lin
+ * [ALPS00074853] [Camera]flicker is serious when preview with light object
+ * [Camera] change the sensor binning mode to 2x from 4x to reduce the flicker serious..
+ *
+ * 10 07 2011 koli.lin
+ * [ALPS00077581] [Need Patch][Sanity Fail] When entering to Camera at the second time, camera cannot work and will see black screen
+ * [Camera] Rest the flicker flag value during the sensor initial.
+ *
+ * 06 13 2011 koli.lin
+ * [ALPS00053429] [Need Patch] [Volunteer Patch]
+ * [Camera] Modify the sensor color order for the CCT tool.
+ *
+ * 06 07 2011 koli.lin
+ * [ALPS00050047] [Camera]AE flash when set EV as -2
+ * [Camera] Rollback the preview resolution to 800x600.
+ *
+ * 06 07 2011 koli.lin
+ * [ALPS00049935] [Camera] AE is not correct when switch between camera still mode and video mode
+ * [Camera] Rollback the preview resolution to 800x600.
+ *
+ * 06 01 2011 koli.lin
+ * [ALPS00051509] [Need Patch] [Volunteer Patch]
+ * [Camera] Fix the mipi color order is not correctly for MT6573.
+ *
+ * 05 17 2011 koli.lin
+ * [ALPS00048194] [Need Patch] [Volunteer Patch]
+ * [Camera]. Chagne the preview size to 1600x1200 for IMX073 sensor.
+ *
+ * 05 02 2011 koli.lin
+ * [ALPS00040837] [Need check with submitter][WW FT][MT6573][Guangzhou]Exception ANR
+ * [Camera] Fix the exposure time calculate mistake.
+ *
+ * 04 22 2011 koli.lin
+ * [ALPS00042482] [Need Patch] [Volunteer Patch]
+ * [Camera] Move the sensor senstivity control to AE for preview and capture mode.
+ *
+ * 04 11 2011 koli.lin
+ * [ALPS00039429] [Need Patch] [Volunteer Patch]
+ * [Camera] Add flicker frame rate and sensor test pattern feature id.
+ *
+ * 04 08 2011 koli.lin
+ * [ALPS00037040] [Display]There is tearing on preview screen
+ * [Camera] Disable the gain group setting and reduce the gain delay frame number.
+ *
+ * 04 06 2011 koli.lin
+ * [ALPS00036187] [Camera]after do EV shot sometimes, part of the preview screen flashes
+ * [Camera] Modify the capture delay frame to get better performance..
+ *
+ * 04 02 2011 koli.lin
+ * [ALPS00036213] [Camera]change EV but it does not work
+ * [Camera] 1.Add the CSI2 debug message for dump register function.
+ *                2.Modify image start position to avoid the black line..
+ *
+ * 04 01 2011 koli.lin
+ * [ALPS00143914] [Android Build Warning Issue] mediatek/custom/out/ztemt73v2/kernel/imgsensor/imx073mipiraw_Sensor.c
+ * [Camera] 1.Clear the compile warning message.
+ *                2. Add the sensor driver 2D/3D information.
+ *                3.Add the auto flicker control and test pattern feature.
+ *
+ * 04 01 2011 koli.lin
+ * [ALPS00037668] [MPEG4 recording]record high quality video with night mode, the frame rate is not 15fps
+ * [Camera] Add the video mode frame rate control function.
+ *
+ * 04 01 2011 koli.lin
+ * [ALPS00037670] [MPEG4 recording]the frame rate of fine quality video can not reach 30fps
+ * [Camera]Modify the sensor preview output resolution and line time to fix frame rate at 30fps for video mode.
+ *
+ * 03 15 2011 koli.lin
+ * [ALPS00034474] [Need Patch] [Volunteer Patch]
+ * Move sensor driver current setting to isp of middleware.
+ *
+ * 03 10 2011 koli.lin
+ * [ALPS00033930] [Need Patch] [Volunteer Patch]
+ * Moving the CSI2 control flow from sensor driver to middleware.
+ *
+ * 03 02 2011 koli.lin
+ * [ALPS00032905] [Need Patch] [Volunteer Patch]
+ * Reset to default.
+ *
+ * 03 02 2011 koli.lin
+ * [ALPS00032905] [Need Patch] [Volunteer Patch]
+ * Provide the sensor width/height sampling ratio..
+ *
+ * 02 25 2011 koli.lin
+ * [ALPS00032248] [Need Patch] [Volunteer Patch]
+ * Close the csi2 before sensor driver close.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Add the csi2 control to imx073 sensor driver.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Change sensor driver preview size ratio to 4:3.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Modify the IMX073 sensor driver for preview mode.
+ *
+ * 02 11 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Create IMX073 sensor driver to database.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
@@ -8,6 +186,7 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <asm/system.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
@@ -96,11 +275,14 @@ kal_uint16 get_byte=0;
 }
 
 #define Sleep(ms) mdelay(ms)
+static DEFINE_SPINLOCK(imx073_drv_lock);
+
 
 void IMX073MIPI_write_shutter(kal_uint16 shutter)
 {
     kal_uint16 iExp = shutter;
     kal_uint16 IMX073MIPI_g_iExtra_ExpLines = 0 ;
+	unsigned long flags;
 		
     if (IMX073MIPI_g_RES == IMX073MIPI_720P) {
         if (iExp <= (IMX073MIPI_PV_EXPOSURE_LIMITATION + IMX073MIPI_PV_PERIOD_EXTRA_LINE_NUMS - IMX073MIPI_SHUTTER_LINES_GAP)) {
@@ -136,8 +318,9 @@ void IMX073MIPI_write_shutter(kal_uint16 shutter)
     
     //printk("[IMX073MIPI_write_shutter] frame line:%d expos line:%d 0x202:0x%02x 0x203:0x%02x 0x340:0x%02x 0x341:0x%02x\n", IMX073MIPI_g_iExtra_ExpLines, iExp, IMX073MIPI_read_cmos_sensor(0x0202), IMX073MIPI_read_cmos_sensor(0x0203), 
     //	IMX073MIPI_read_cmos_sensor(0x0340), IMX073MIPI_read_cmos_sensor(0x0341));
-    
+    spin_lock_irqsave(&imx073_drv_lock,flags);
     IMX073MIPI_g_iBackupExtraExp = IMX073MIPI_g_iExtra_ExpLines;    
+    spin_unlock_irqrestore(&imx073_drv_lock,flags);
 }   /* write_IMX073MIPI_shutter */
 
 static kal_uint16 IMX073MIPIReg2Gain(const kal_uint8 iReg)
@@ -172,6 +355,22 @@ static kal_uint8 IMX073MIPIGain2Reg(const kal_uint16 iGain)
     return IMX073MIPI_sensorGainMapping[iI][1];
 }
 
+/*************************************************************************
+* FUNCTION
+*    IMX073MIPI_SetGain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*    the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX073MIPI_SetGain(UINT16 iGain)
 {
     kal_uint8 iReg;
@@ -184,6 +383,22 @@ void IMX073MIPI_SetGain(UINT16 iGain)
 }   /*  IMX073MIPI_SetGain_SetGain  */
 
 
+/*************************************************************************
+* FUNCTION
+*    read_IMX073MIPI_gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 read_IMX073MIPI_gain(void)
 {
     return (kal_uint16)IMX073MIPI_read_cmos_sensor(0x0205);
@@ -211,19 +426,57 @@ void IMX073MIPI_camera_para_to_sensor(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    IMX073MIPI_sensor_to_camera_para
+*
+* DESCRIPTION
+*    // update camera_para from sensor register
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX073MIPI_sensor_to_camera_para(void)
 {
-    kal_uint32    i;
+    kal_uint32    i, temp_data;
     for(i=0; 0xFFFFFFFF!=IMX073MIPISensorReg[i].Addr; i++)
-    {
-        IMX073MIPISensorReg[i].Para = IMX073MIPI_read_cmos_sensor(IMX073MIPISensorReg[i].Addr);
+    {        
+    	temp_data =  IMX073MIPI_read_cmos_sensor(IMX073MIPISensorReg[i].Addr);
+		spin_lock(&imx073_drv_lock);
+        IMX073MIPISensorReg[i].Para = temp_data;	    
+		spin_unlock(&imx073_drv_lock);
     }
     for(i=ENGINEER_START_ADDR; 0xFFFFFFFF!=IMX073MIPISensorReg[i].Addr; i++)
-    {
-        IMX073MIPISensorReg[i].Para = IMX073MIPI_read_cmos_sensor(IMX073MIPISensorReg[i].Addr);
+    {   
+    	temp_data = IMX073MIPI_read_cmos_sensor(IMX073MIPISensorReg[i].Addr);
+		spin_lock(&imx073_drv_lock);
+        IMX073MIPISensorReg[i].Para = temp_data;	    
+		spin_unlock(&imx073_drv_lock);
     }
 }
 
+/*************************************************************************
+* FUNCTION
+*    IMX073MIPI_get_sensor_group_count
+*
+* DESCRIPTION
+*    //
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_int32  IMX073MIPI_get_sensor_group_count(void)
 {
     return GROUP_TOTAL_NUMS;
@@ -406,17 +659,24 @@ kal_bool IMX073MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_i
 
             temp_para = IMX073MIPIGain2Reg(ItemValue);
 
-
+		    spin_lock(&imx073_drv_lock);
             IMX073MIPISensorCCT[temp_addr].Para = temp_para;
+			spin_unlock(&imx073_drv_lock);
+
             IMX073MIPI_write_cmos_sensor(IMX073MIPISensorCCT[temp_addr].Addr,temp_para);
 
-            IMX073MIPI_sensor_gain_base=read_IMX073MIPI_gain();
+			temp_para = read_IMX073MIPI_gain();
+			spin_lock(&imx073_drv_lock);
+            IMX073MIPI_sensor_gain_base=temp_para;
+			spin_unlock(&imx073_drv_lock);
+
 
             break;
         case CMMCLK_CURRENT:
             switch (item_idx)
             {
                 case 0:
+				    spin_lock(&imx073_drv_lock);
                     if(ItemValue==2)
                     {
                         IMX073MIPISensorReg[CMMCLK_CURRENT_INDEX].Para = ISP_DRIVING_2MA;
@@ -437,6 +697,7 @@ kal_bool IMX073MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_i
                         IMX073MIPISensorReg[CMMCLK_CURRENT_INDEX].Para = ISP_DRIVING_8MA;
                         //IMX073MIPI_set_isp_driving_current(ISP_DRIVING_8MA);
                     }
+				    spin_unlock(&imx073_drv_lock);
                     break;
                 default:
                     ASSERT(0);
@@ -555,15 +816,17 @@ static void IMX073MIPI_Sensor_Init(void)
     IMX073MIPI_write_cmos_sensor(0x330D, 0x06);
     // The register only need to enable 1 time.
     IMX073MIPI_write_cmos_sensor(0x0100, 0x01);   // Streaming 
-    
+    spin_lock(&imx073_drv_lock);
     IMX073MIPI_Auto_Flicker_mode = KAL_FALSE;     // reset the flicker status
-
+	spin_unlock(&imx073_drv_lock);
     printk("[IMX073MIPIRaw] Init Success \n");
 }   /*  IMX073MIPI_Sensor_Init  */
 
 void IMX073MIPI_set_720P(void)
-{	
+{	    
+	spin_lock(&imx073_drv_lock);
     IMX073MIPI_g_RES = IMX073MIPI_720P;
+    spin_unlock(&imx073_drv_lock);
 #if 0  // 1 lane  820x629 V/4 H/4
     IMX073MIPI_write_cmos_sensor(0x3014, 0x08);
     IMX073MIPI_write_cmos_sensor(0x3015, 0x37);    
@@ -652,7 +915,10 @@ void IMX073MIPI_set_720P(void)
 
 void IMX073MIPI_set_8M(void)
 {	
+    spin_lock(&imx073_drv_lock);
+
     IMX073MIPI_g_RES = IMX073MIPI_8M;
+    spin_unlock(&imx073_drv_lock);
 
     //IMX073MIPI_write_cmos_sensor(0x0307, 0x18);//INCK 24MHz   576Mbps/lane
     IMX073MIPI_write_cmos_sensor(0x0307, 0x1b);
@@ -690,17 +956,39 @@ void IMX073MIPI_set_8M(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPIOpen
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 IMX073MIPIOpen(void)
 {
     int  retry = 0; 
+	kal_uint16 temp_data;
 
-	IMX073MIPI_sensor_id = IMX073MIPI_read_cmos_sensor(0x0001);
-
+	temp_data = IMX073MIPI_read_cmos_sensor(0x0001);
+    spin_lock(&imx073_drv_lock);
+	IMX073MIPI_sensor_id = temp_data;
+    spin_unlock(&imx073_drv_lock);
     // check if sensor ID correct
     retry = 3; 
     do {
-        IMX073MIPI_sensor_id = IMX073MIPI_read_cmos_sensor(0x0001);        
+		temp_data = IMX073MIPI_read_cmos_sensor(0x0001);
+	    spin_lock(&imx073_drv_lock);
+        IMX073MIPI_sensor_id = temp_data;        
+	    spin_unlock(&imx073_drv_lock);
         if (IMX073MIPI_sensor_id == IMX073MIPI_SENSOR_ID)
             break; 
         SENSORDB("Read Sensor ID Fail = 0x%04x\n", IMX073MIPI_sensor_id); 
@@ -714,12 +1002,31 @@ UINT32 IMX073MIPIOpen(void)
 
     IMX073MIPI_Sensor_Init();
 
-    IMX073MIPI_sensor_gain_base = read_IMX073MIPI_gain();
+	temp_data = read_IMX073MIPI_gain();
+    spin_lock(&imx073_drv_lock);
+    IMX073MIPI_sensor_gain_base = temp_data;
     
     IMX073MIPI_g_iBackupExtraExp = 0;
+    spin_unlock(&imx073_drv_lock);
     return ERROR_NONE;
 }
 
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPIGetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 IMX073MIPIGetSensorID(UINT32 *sensorID) 
 {
     int  retry = 3; 
@@ -741,8 +1048,25 @@ UINT32 IMX073MIPIGetSensorID(UINT32 *sensorID)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPI_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of IMX073MIPI to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX073MIPI_SetShutter(kal_uint16 iShutter)
 {
+	unsigned long flags;
 #if 0 
     if (iShutter < 4 )
         iShutter = 4;
@@ -750,18 +1074,51 @@ void IMX073MIPI_SetShutter(kal_uint16 iShutter)
     if (iShutter < 1)
         iShutter = 1; 
 #endif     
-    
+     spin_lock_irqsave(&imx073_drv_lock,flags);
     IMX073MIPI_pv_exposure_lines = iShutter;
+    spin_unlock_irqrestore(&imx073_drv_lock,flags);
     IMX073MIPI_write_shutter(iShutter);
 }   /*  IMX073MIPI_SetShutter   */
 
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPI_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT16 IMX073MIPI_read_shutter(void)
 {
     return (UINT16)( (IMX073MIPI_read_cmos_sensor(0x3002)<<8) | IMX073MIPI_read_cmos_sensor(0x3003) );
 }
 
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPI_night_mode
+*
+* DESCRIPTION
+*   This function night mode of IMX073MIPI.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX073MIPI_NightMode(kal_bool bEnable)
 {
 #if 0
@@ -799,6 +1156,22 @@ void IMX073MIPI_NightMode(kal_bool bEnable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPIClose
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 IMX073MIPIClose(void)
 {
     //  CISModulePowerOn(FALSE);
@@ -831,18 +1204,37 @@ void IMX073MIPISetFlipMirror(kal_int32 imgMirror)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX073MIPIPreview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 IMX073MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
     kal_uint16 iStartX = 0, iStartY = 0;
 
+    spin_lock(&imx073_drv_lock);
     g_iIMX073MIPI_Mode = IMX073MIPI_MODE_PREVIEW;
-
+    spin_unlock(&imx073_drv_lock);
     //if(IMX073MIPI_720P == IMX073MIPI_g_RES)
     {
         IMX073MIPI_set_720P();
     }
 
+    spin_lock(&imx073_drv_lock);
     if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		// MPEG4 Encode Mode
     {
         IMX073MIPI_MPEG4_encode_mode = KAL_TRUE;
@@ -851,6 +1243,7 @@ UINT32 IMX073MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     {
         IMX073MIPI_MPEG4_encode_mode = KAL_FALSE;
     }
+    spin_unlock(&imx073_drv_lock);
 
     iStartX += IMX073MIPI_IMAGE_SENSOR_PV_STARTX;
     iStartY += IMX073MIPI_IMAGE_SENSOR_PV_STARTY;
@@ -858,11 +1251,13 @@ UINT32 IMX073MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     //sensor_config_data->SensorImageMirror = IMAGE_HV_MIRROR; 
     
     //IMX073MIPISetFlipMirror(sensor_config_data->SensorImageMirror); 
+    spin_lock(&imx073_drv_lock);
 
     IMX073MIPI_dummy_pixels = 0;
     IMX073MIPI_dummy_lines = 0;
     IMX073MIPI_PV_dummy_pixels = IMX073MIPI_dummy_pixels;
     IMX073MIPI_PV_dummy_lines = IMX073MIPI_dummy_lines;
+    spin_unlock(&imx073_drv_lock);
 
     IMX073MIPI_SetDummy(IMX073MIPI_dummy_pixels, IMX073MIPI_dummy_lines);
 
@@ -882,9 +1277,11 @@ UINT32 IMX073MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     kal_uint32 shutter=IMX073MIPI_pv_exposure_lines;
     kal_uint16 iStartX = 0, iStartY = 0;
 
+    spin_lock(&imx073_drv_lock);
     g_iIMX073MIPI_Mode = IMX073MIPI_MODE_CAPTURE;
     IMX073MIPI_MPEG4_encode_mode = KAL_FALSE; 
     IMX073MIPI_Auto_Flicker_mode = KAL_FALSE;   
+    spin_unlock(&imx073_drv_lock);
     
     SENSORDB("Preview Shutter = %d, Gain = %d\n", shutter, read_IMX073MIPI_gain());     
 
@@ -893,8 +1290,10 @@ UINT32 IMX073MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
     if ((image_window->ImageTargetWidth<= IMX073MIPI_IMAGE_SENSOR_PV_WIDTH) &&
         (image_window->ImageTargetHeight<= IMX073MIPI_IMAGE_SENSOR_PV_HEIGHT)) {
+        spin_lock(&imx073_drv_lock);
         IMX073MIPI_dummy_pixels= 0;
         IMX073MIPI_dummy_lines = 0;
+	    spin_unlock(&imx073_drv_lock);
 
         shutter = (shutter*(IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE + IMX073MIPI_PV_dummy_pixels))/(IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE+IMX073MIPI_dummy_pixels);
         iStartX = IMX073MIPI_IMAGE_SENSOR_PV_STARTX;
@@ -905,8 +1304,10 @@ UINT32 IMX073MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
         image_window->ExposureWindowHeight=IMX073MIPI_IMAGE_SENSOR_PV_HEIGHT- 2*iStartY;
     }
     else { // 8M  Mode
+        spin_lock(&imx073_drv_lock);
         IMX073MIPI_dummy_pixels= 0;
-        IMX073MIPI_dummy_lines = 0;        
+        IMX073MIPI_dummy_lines = 0; 
+	    spin_unlock(&imx073_drv_lock);
         IMX073MIPI_set_8M();
      
         IMX073MIPISetFlipMirror(sensor_config_data->SensorImageMirror); 
@@ -1125,9 +1526,13 @@ UINT32 IMX073MIPIControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_
 UINT32 IMX073MIPISetVideoMode(UINT16 u2FrameRate)
 {
     SENSORDB("[IMX073MIPISetVideoMode] frame rate = %d\n", u2FrameRate);
+    spin_lock(&imx073_drv_lock);
     IMX073MIPI_MPEG4_encode_mode = KAL_TRUE; 
+    spin_unlock(&imx073_drv_lock);
     if (u2FrameRate == 30) {
+	    spin_lock(&imx073_drv_lock);
         IMX073MIPI_MAX_EXPOSURE_LINES = IMX073MIPI_PV_EXPOSURE_LIMITATION + IMX073MIPI_PV_PERIOD_EXTRA_LINE_NUMS; 
+	    spin_unlock(&imx073_drv_lock);
         if(IMX073MIPI_pv_exposure_lines < (IMX073MIPI_PV_EXPOSURE_LIMITATION + IMX073MIPI_PV_PERIOD_EXTRA_LINE_NUMS - IMX073MIPI_SHUTTER_LINES_GAP)) // for avoid the shutter > frame_lines,move the frame lines setting to shutter function
         {
             IMX073MIPI_write_cmos_sensor(0x0104, 1);        
@@ -1136,20 +1541,26 @@ UINT32 IMX073MIPISetVideoMode(UINT16 u2FrameRate)
             IMX073MIPI_write_cmos_sensor(0x0104, 0);
         }
     } else if (u2FrameRate == 15) {
+        spin_lock(&imx073_drv_lock);
         IMX073MIPI_MAX_EXPOSURE_LINES = (IMX073MIPI_PV_EXPOSURE_LIMITATION + IMX073MIPI_PV_PERIOD_EXTRA_LINE_NUMS) * 2;  
+	    spin_unlock(&imx073_drv_lock);
         IMX073MIPI_write_cmos_sensor(0x0104, 1);        
         IMX073MIPI_write_cmos_sensor(0x0340, (IMX073MIPI_MAX_EXPOSURE_LINES >>8) & 0xFF);
         IMX073MIPI_write_cmos_sensor(0x0341, IMX073MIPI_MAX_EXPOSURE_LINES & 0xFF);	
         IMX073MIPI_write_cmos_sensor(0x0104, 0);
         //IMX073MIPI_MAX_EXPOSURE_LINES = IMX073MIPI_MAX_EXPOSURE_LINES - IMX073MIPI_SHUTTER_LINES_GAP;
     } else if ((u2FrameRate < 30) && (u2FrameRate > 5)) {
+   	    spin_lock(&imx073_drv_lock);
         IMX073MIPI_MAX_EXPOSURE_LINES = (IMX073MIPI_PV_EXPOSURE_LIMITATION + IMX073MIPI_PV_PERIOD_EXTRA_LINE_NUMS) * 30/u2FrameRate;  
+	    spin_unlock(&imx073_drv_lock);
         IMX073MIPI_write_cmos_sensor(0x0104, 1);        
         IMX073MIPI_write_cmos_sensor(0x0340, (IMX073MIPI_MAX_EXPOSURE_LINES >>8) & 0xFF);
         IMX073MIPI_write_cmos_sensor(0x0341, IMX073MIPI_MAX_EXPOSURE_LINES & 0xFF);	
         IMX073MIPI_write_cmos_sensor(0x0104, 0);
     } else if(u2FrameRate == 0) {
+   	    spin_lock(&imx073_drv_lock);
         IMX073MIPI_MPEG4_encode_mode = KAL_FALSE; 
+	    spin_unlock(&imx073_drv_lock);
         printk("disable video mode %d\n", u2FrameRate);  
     } else {
         printk("Wrong frame rate setting %d\n", u2FrameRate);
@@ -1162,8 +1573,10 @@ UINT32 IMX073MIPISetAutoFlickerMode(kal_bool bEnable, UINT16 u2FrameRate)
 kal_uint32 pv_max_frame_rate_lines = IMX073MIPI_MAX_EXPOSURE_LINES;
 
     SENSORDB("[IMX073MIPISetAutoFlickerMode] frame rate(10base) = %d %d\n", bEnable, u2FrameRate);
-    if(bEnable) {   // enable auto flicker   
+    if(bEnable) {   // enable auto flicker 
+   	    spin_lock(&imx073_drv_lock);
         IMX073MIPI_Auto_Flicker_mode = KAL_TRUE; 
+	    spin_unlock(&imx073_drv_lock);
         if(IMX073MIPI_MPEG4_encode_mode == KAL_TRUE) {    // in the video mode, reset the frame rate
             pv_max_frame_rate_lines = IMX073MIPI_MAX_EXPOSURE_LINES + (IMX073MIPI_MAX_EXPOSURE_LINES>>7);            
             IMX073MIPI_write_cmos_sensor(0x0104, 1);        
@@ -1172,7 +1585,9 @@ kal_uint32 pv_max_frame_rate_lines = IMX073MIPI_MAX_EXPOSURE_LINES;
             IMX073MIPI_write_cmos_sensor(0x0104, 0);        	
         }
     } else {
+   	    spin_lock(&imx073_drv_lock);
         IMX073MIPI_Auto_Flicker_mode = KAL_FALSE; 
+	    spin_unlock(&imx073_drv_lock);
         if(IMX073MIPI_MPEG4_encode_mode == KAL_TRUE) {    // in the video mode, restore the frame rate
             IMX073MIPI_write_cmos_sensor(0x0104, 1);        
             IMX073MIPI_write_cmos_sensor(0x0340, (IMX073MIPI_MAX_EXPOSURE_LINES >>8) & 0xFF);
@@ -1265,7 +1680,9 @@ UINT32 IMX073MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
         case SENSOR_FEATURE_SET_FLASHLIGHT:
             break;
         case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
+		    spin_lock(&imx073_drv_lock);
             IMX073MIPI_isp_master_clock=*pFeatureData32;
+		    spin_unlock(&imx073_drv_lock);
             break;
         case SENSOR_FEATURE_SET_REGISTER:
             IMX073MIPI_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
@@ -1277,8 +1694,10 @@ UINT32 IMX073MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             SensorRegNumber=FACTORY_END_ADDR;
             for (i=0;i<SensorRegNumber;i++)
             {
+                spin_lock(&imx073_drv_lock);
                 IMX073MIPISensorCCT[i].Addr=*pFeatureData32++;
                 IMX073MIPISensorCCT[i].Para=*pFeatureData32++;
+			    spin_unlock(&imx073_drv_lock);
             }
             break;
         case SENSOR_FEATURE_GET_CCT_REGISTER:
@@ -1296,8 +1715,10 @@ UINT32 IMX073MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             SensorRegNumber=ENGINEER_END;
             for (i=0;i<SensorRegNumber;i++)
             {
+           	    spin_lock(&imx073_drv_lock);
                 IMX073MIPISensorReg[i].Addr=*pFeatureData32++;
                 IMX073MIPISensorReg[i].Para=*pFeatureData32++;
+			    spin_unlock(&imx073_drv_lock);
             }
             break;
         case SENSOR_FEATURE_GET_ENG_REGISTER:

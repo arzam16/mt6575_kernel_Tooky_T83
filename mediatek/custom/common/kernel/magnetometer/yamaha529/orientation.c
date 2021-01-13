@@ -1,4 +1,21 @@
-
+/*
+ * Copyright (c) 2010 Yamaha Corporation
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA  02110-1301, USA.
+ */
 
 #include <linux/delay.h>
 #include <linux/errno.h>
@@ -443,6 +460,36 @@ ioctl_read_posturedata(unsigned long args)
     return 0;
 }
 
+/*
+static int
+orientation_dev_ioctl(struct inode *node, struct file *fp, unsigned int cmd,
+        unsigned long args)
+{
+    int result = 0;
+
+    switch (cmd) {
+    case OSENSOR_IOCTL_READ_POSTUREDATA:
+        result = ioctl_read_posturedata(args);
+        break;
+    default:
+        result = -ENOTTY;
+        break;
+    }
+
+    return result;
+}
+
+static struct file_operations orientation_fileops = {
+    .owner      = THIS_MODULE,
+    .ioctl      = orientation_dev_ioctl,
+};
+
+static struct miscdevice orientation_device = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name  = "osensor",
+    .fops  = &orientation_fileops,
+};
+*/
 
 #endif
 
@@ -588,6 +635,13 @@ printk("orientation sensor_probe!\n");
     sysfs_created = 1;
 
 #ifdef MEDIATEK_CODE
+/*
+    if ((rt = misc_register(&orientation_device)) < 0) {
+        printk(KERN_ERR "misc_register failed[%d]\n", rt);
+        goto err;
+    }
+    misc_registered = 1;
+    */
 #endif
 
 	sobj.self = data;
@@ -607,6 +661,11 @@ printk("orientation sensor_probe!\n");
 err:
     if (data != NULL) {
 #ifdef MEDIATEK_CODE
+/*
+        if (misc_registered) {
+            misc_deregister(&orientation_device);
+        }
+        */
 #endif
         if (input_data != NULL) {
             if (sysfs_created) {
@@ -645,6 +704,9 @@ sensor_remove(struct platform_device *pdev)
     return 0;
 }
 
+/*
+ * Module init and exit
+ */
 static struct platform_driver sensor_driver = {
     .probe      = sensor_probe,
     .remove     = sensor_remove,

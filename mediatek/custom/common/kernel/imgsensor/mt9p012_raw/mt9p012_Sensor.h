@@ -1,4 +1,88 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.h
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Header file of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 09 10 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .alps dual sensor
+ *
+ * 09 02 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .roll back dual sensor
+ *
+ * 05 05 2010 sean.cheng
+ * [ALPS00005476][Performance][Camera] Camera startup time is slow 
+ * .
+ * Decrease the sensor init time from 200ms to 30ms
+ *
+ * Dec 21 2009 mtk70508
+ * [DUMA00147177] Winmo sensor  and lens driver  modification
+ *
+ *
+ * Aug 5 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ *
+ *
+ * Apr 7 2009 mtk02204
+ * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came
+ *
+ *
+ * Mar 26 2009 mtk02204
+ * [DUMA00003515] [PC_Lint] Remove PC_Lint check warnings of camera related drivers.
+ *
+ *
+ * Mar 2 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Feb 24 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Dec 27 2008 MTK01813
+ * DUMA_MBJ CheckIn Files
+ * created by clearfsimport
+ *
+ * Dec 10 2008 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Oct 27 2008 mtk01051
+ * [DUMA00000851] Camera related drivers check in
+ * Modify Copyright Header
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 /* SENSOR FULL SIZE */
 #ifndef __SENSOR_H
 #define __SENSOR_H

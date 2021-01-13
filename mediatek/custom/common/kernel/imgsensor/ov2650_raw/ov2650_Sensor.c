@@ -1,4 +1,172 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 02 19 2012 koli.lin
+ * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
+ * [Camera] 1. Modify the AE converge speed in the video mode.
+ *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
+ *
+ * 01 04 2012 hao.wang
+ * [ALPS00109603] getsensorid func check in
+ * .
+ *
+ * 10 12 2010 koli.lin
+ * [ALPS00127101] [Camera] AE will flash
+ * [Camera]Create Vsync interrupt to handle the exposure time, sensor gain and raw gain control.
+ *
+ * 09 10 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .alps dual sensor
+ *
+ * 09 02 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .roll back dual sensor
+ *
+ * 07 27 2010 sean.cheng
+ * [ALPS00003112] [Need Patch] [Volunteer Patch] ISP/Sensor driver modification for Customer support
+ * .1. add master clock switcher 
+ *  2. add master enable/disable 
+ *  3. add dummy line/pixel for sensor 
+ *  4. add sensor driving current setting
+ *
+ * 07 01 2010 sean.cheng
+ * [ALPS00121215][Camera] Change color when switch low and high 
+ * .Add video delay frame.
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .
+ * 1. Add set zoom factor and capdelay frame for YUV sensor 
+ * 2. Modify e1k sensor setting
+ *
+ * Feb 24 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ *
+ *
+ * Dec 31 2009 mtk70508
+ * [DUMA00149823] check in sensor driver for new
+ *
+ *
+ * Dec 21 2009 mtk70508
+ * [DUMA00147177] Winmo sensor  and lens driver  modification
+ *
+ *
+ * Nov 24 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ *
+ *
+ * Oct 29 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ *
+ *
+ * Oct 27 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ *
+ *
+ *    mtk70508
+ * [DUMA00136264] Fix Video night mode framerate
+ * Fix video night mode framerate
+ *
+ *    mtk70508
+ * [DUMA00133424] [MTK Camera] There will be a darkness preview and it come out again after delete pict
+ *
+ *
+ *    mtk70508
+ * [DUMA00133424] [MTK Camera] There will be a darkness preview and it come out again after delete pict
+ *
+ *
+ *    mtk70508
+ * [DUMA00133424] [MTK Camera] There will be a darkness preview and it come out again after delete pict
+ *
+ *
+ *    mtk70508
+ * [DUMA00134136] DS629 OV2655 sensor driver disable denoise and sharpness function
+ * make full size == exposure size
+ *
+ *    mtk70508
+ * [DUMA00134136] DS629 OV2655 sensor driver disable denoise and sharpness function
+ *
+ *
+ *    mtk70508
+ * [DUMA00134136] DS629 OV2655 sensor driver disable denoise and sharpness function
+ *
+ *
+ *    mtk70508
+ * [DUMA00126076] OV2650 sensor driver check in
+ *
+ *
+ * Apr 7 2009 mtk02204
+ * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came
+ *
+ *
+ * Mar 27 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 25 2009 mtk02204
+ * [DUMA00111570] [Camera] The system crash after some operations
+ *
+ *
+ * Mar 20 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 2 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Feb 24 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Dec 27 2008 MTK01813
+ * DUMA_MBJ CheckIn Files
+ * created by clearfsimport
+ *
+ * Dec 10 2008 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Oct 27 2008 mtk01051
+ * [DUMA00000851] Camera related drivers check in
+ * Modify Copyright Header
+ *
+ * Oct 24 2008 mtk02204
+ * [DUMA00000851] Camera related drivers check in
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
  //s_porting add
 //s_porting add
 //s_porting add
@@ -60,6 +228,17 @@ kal_uint16 get_byte=0;
 //#include "base_regs.h"
 //#include "Sensor.h"
 //#include "camera_sensor_para.h"
+/*
+DBGPARAM dpCurSettings = {
+    TEXT("Sensor"), {
+        TEXT("Preview"),TEXT("Capture"),TEXT("Init"),TEXT("Error"),
+        TEXT("Gain"),TEXT("Shutter"),TEXT("Undef"),TEXT("Undef"),
+        TEXT("Undef"),TEXT("Undef"),TEXT("Undef"),TEXT("Undef"),
+        TEXT("Undef"),TEXT("Undef"),TEXT("Undef"),TEXT("Undef")},
+    0x00FF  // ZONE_INIT | ZONE_WARNING | ZONE_ERROR
+};
+
+*/
 kal_bool  OV2650_MPEG4_encode_mode = KAL_FALSE;
 kal_uint16  OV2650_sensor_gain_base=0x0;
 ///* MAX/MIN Explosure Lines Used By AE Algorithm */
@@ -175,6 +354,24 @@ void OV2650_write_shutter(kal_uint16 shutter)
     }
     //OV2650_g_iBackupExtraExp = OV2650_extra_exposure_lines;
     //for not use extra shutter, don't enable it
+/*
+    if (shutter > OV2650_MAX_EXPOSURE_LINES)
+    {
+     OV2650_write_cmos_sensor(0x302A, (shutter) >> 8);
+     OV2650_write_cmos_sensor(0x302B, (shutter) & 0x00FF);
+     OV2650_CURRENT_FRAME_LINES = shutter;
+    }
+    else
+    {
+        if(OV2650_CURRENT_FRAME_LINES > OV2650_MAX_EXPOSURE_LINES)
+            {
+            OV2650_write_cmos_sensor(0x302A, OV2650_MAX_EXPOSURE_LINES >> 8);
+            OV2650_write_cmos_sensor(0x302B, OV2650_MAX_EXPOSURE_LINES & 0x00FF);
+            OV2650_CURRENT_FRAME_LINES = OV2650_MAX_EXPOSURE_LINES;
+            }
+    }
+    OV2650_write_cmos_sensor(0x3002, (shutter >> 8) & 0xff );
+    OV2650_write_cmos_sensor(0x3003, shutter & 0x00ff );*/
 }   /* write_OV2650_shutter */
 
 
@@ -225,6 +422,22 @@ static kal_uint8 OV2650Gain2Reg(const kal_uint16 iGain)
 
 }
 
+/*************************************************************************
+* FUNCTION
+*   OV2650_SetGain
+*
+* DESCRIPTION
+*   This function is to set global gain to sensor.
+*
+* PARAMETERS
+*   gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*   the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 void OV2650_SetGain(UINT16 iGain)
 {
@@ -277,6 +490,22 @@ void OV2650_SetGain(UINT16 iGain)
 }   /*  OV2650_SetGain  */
 
 
+/*************************************************************************
+* FUNCTION
+*   read_OV2650_gain
+*
+* DESCRIPTION
+*   This function is to set global gain to sensor.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 kal_uint16 read_OV2650_gain(void)
 {
@@ -679,6 +908,19 @@ void OV2650_set_SVGA()
 //LENC BLC offset
         OV2650_write_cmos_sensor(0x3366,0x00);
 //CMX
+/*
+        OV2650_write_cmos_sensor(0x3380,0x20);
+        OV2650_write_cmos_sensor(0x3381,0x64);
+        OV2650_write_cmos_sensor(0x3382,0x08);
+        OV2650_write_cmos_sensor(0x3383,0x30);
+        OV2650_write_cmos_sensor(0x3384,0x90);
+        OV2650_write_cmos_sensor(0x3385,0xc0);
+        OV2650_write_cmos_sensor(0x3386,0xa0);
+        OV2650_write_cmos_sensor(0x3387,0x98);
+        OV2650_write_cmos_sensor(0x3388,0x08);
+        OV2650_write_cmos_sensor(0x3389,0x98);
+        OV2650_write_cmos_sensor(0x338a,0x01);
+*/
 //Gamma
         OV2650_write_cmos_sensor(0x3340,0x0e);
         OV2650_write_cmos_sensor(0x3341,0x1a);
@@ -698,6 +940,14 @@ void OV2650_set_SVGA()
         OV2650_write_cmos_sensor(0x334f,0x20);
 
 //ISP Control Hw component  Enbale  register
+/*  Bit7:SDE_En
+    Bit6:UV_ADJ_En
+    Bit5:CMX_En
+    Bit4:SharpEn_En
+    Bit3:DNC_En
+    Bit2:CIP_En
+    Bit1:BC_En
+    Bit0:WC_En*/
         OV2650_write_cmos_sensor(0x3301,0xbf);
 
 //BLC isuue
@@ -758,6 +1008,20 @@ void OV2650_set_SVGA()
         OV2650_write_cmos_sensor(0x3300,0x83); //8bits. 2008-08-26
 
 //Denoise function, only aviable in 8bits. 2008-08-26
+/*
+//Auto Denoise & Sharpness
+        OV2650_write_cmos_sensor(0x3306,0x00);
+        OV2650_write_cmos_sensor(0x3370,0xd0);//a0->d0
+        OV2650_write_cmos_sensor(0x3373,0x40);//00->10
+        OV2650_write_cmos_sensor(0x3374,0x10);
+        OV2650_write_cmos_sensor(0x3375,0x10);
+
+        //Sharpness function
+        OV2650_write_cmos_sensor(0x3376,0x04);
+        OV2650_write_cmos_sensor(0x3377,0x00);
+        OV2650_write_cmos_sensor(0x3378,0x04);
+            OV2650_write_cmos_sensor(0x3379,0x80);
+    */
     //Manual Denoise & Sharpness
         OV2650_write_cmos_sensor(0x3306,0x0C);
         OV2650_write_cmos_sensor(0x3370,0x00);// Disable Denoise
@@ -789,6 +1053,14 @@ void OV2650_set_SVGA()
         OV2650_write_cmos_sensor(0x3388,0x80);
         OV2650_write_cmos_sensor(0x3389,0x00);
         OV2650_write_cmos_sensor(0x338a,0x04);
+/*  Bit7:SDE_En
+    Bit6:UV_ADJ_En
+    Bit5:CMX_En
+    Bit4:SharpEn_En
+    Bit3:DNC_En
+    Bit2:CIP_En
+    Bit1:BC_En
+    Bit0:WC_En*/
         OV2650_write_cmos_sensor(0x3301,0xbf);
 //reserved
         OV2650_write_cmos_sensor(0x30f3,0x83);
@@ -913,6 +1185,22 @@ void OV2650_set_UXGA()
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   OV2650Open
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 OV2650Open(void)
 {
@@ -972,6 +1260,22 @@ UINT32 OV2650GetSensorID(UINT32 *sensorID)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV2650_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of OV2650 to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 void OV2650_SetShutter(kal_uint16 iShutter)
 {
@@ -984,6 +1288,44 @@ void OV2650_SetShutter(kal_uint16 iShutter)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV2650_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
+/*
+UINT16 OV2650_read_shutter(void)
+{
+    return (UINT16)( (OV2650_read_cmos_sensor(0x3002)<<8) | OV2650_read_cmos_sensor(0x3003) );
+}
+*/
+/*************************************************************************
+* FUNCTION
+*   OV2650_night_mode
+*
+* DESCRIPTION
+*   This function night mode of OV2650.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV2650_NightMode(kal_bool bEnable)
 {
     /************************************************************************/
@@ -1019,6 +1361,22 @@ void OV2650_NightMode(kal_bool bEnable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   OV2650Close
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV2650Close(void)
 {
 //  CISModulePowerOn(FALSE);
@@ -1027,6 +1385,23 @@ UINT32 OV2650Close(void)
     return ERROR_NONE;
 }   /* OV2650Close() */
 
+/*************************************************************************
+* FUNCTION
+*   OV2650Preview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV2650Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                       MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -1151,6 +1526,12 @@ UINT32 OV2650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
 UINT32 OV2650GetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolution)
 {
+/*
+    pSensorResolution->SensorFullWidth=IMAGE_SENSOR_FULL_WIDTH - 4*OV2650_IMAGE_SENSOR_PV_STARTX;
+    pSensorResolution->SensorFullHeight=IMAGE_SENSOR_FULL_HEIGHT - 4*OV2650_IMAGE_SENSOR_PV_STARTY;
+    pSensorResolution->SensorPreviewWidth=IMAGE_SENSOR_PV_WIDTH - 2*OV2650_IMAGE_SENSOR_PV_STARTX;
+    pSensorResolution->SensorPreviewHeight=IMAGE_SENSOR_PV_HEIGHT - 2*OV2650_IMAGE_SENSOR_PV_STARTY;
+*/    
 
     pSensorResolution->SensorFullWidth=IMAGE_SENSOR_FULL_WIDTH  - 2 * IMAGE_SENSOR_START_GRAB_X ;
     pSensorResolution->SensorFullHeight=IMAGE_SENSOR_FULL_HEIGHT - 2 * IMAGE_SENSOR_START_GRAB_Y;

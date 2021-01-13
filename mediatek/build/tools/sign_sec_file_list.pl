@@ -16,7 +16,7 @@ my $sign_tool = "mediatek/build/tools/SignTool/SignTool.sh";
 print "\n\n*** Sign ANDROID Secure File List ***\n\n";
 
 my $and_secfl = "mediatek/custom/$prj/security/sec_file_list/ANDRO_SFL.ini";
-my $s_andro_fl = "mediatek/source/external/seclib/S_ANDRO_SFL.ini";
+my $s_andro_fl = "mediatek/external/seclib/S_ANDRO_SFL.ini";
 
 if (-e "$and_secfl")
 {
@@ -46,7 +46,7 @@ print "\n\n*** Sign SECRO Secure File List ***\n\n";
 
 my $secro_secfl = "mediatek/custom/$prj/security/sec_file_list/SECRO_SFL.ini";
 my $s_secro_fl_o1 = "mediatek/custom/$prj/secro/S_SECRO_SFL.ini";
-my $s_secro_fl_o2 = "mediatek/source/external/seclib/S_SECRO_SFL.ini";
+my $s_secro_fl_o2 = "mediatek/external/seclib/S_SECRO_SFL.ini";
 
 if (-e "$secro_secfl")
 {				

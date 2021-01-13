@@ -1,4 +1,37 @@
-
+/*****************************************************************************
+*  Copyright Statement:
+*  --------------------
+*  This software is protected by Copyright and the information contained
+*  herein is confidential. The software may not be copied and the information
+*  contained herein may not be used or disclosed except with the written
+*  permission of MediaTek Inc. (C) 2008
+*
+*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
+*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
+*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
+*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
+*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
+*
+*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
+*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
+*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+*
+*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
+*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
+*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
+*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
+*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
+*
+*****************************************************************************/
 
 #include <linux/string.h>
 
@@ -30,6 +63,12 @@ static LCM_UTIL_FUNCS lcm_util = {0};
 #define UDELAY(n) (lcm_util.udelay(n))
 #define MDELAY(n) (lcm_util.mdelay(n))
 
+/*
+#define LSA0_GPIO_PIN (GPIO_DISP_LSA0_PIN)
+#define LSCE_GPIO_PIN (GPIO_DISP_LSCE_PIN)
+#define LSCK_GPIO_PIN (GPIO_DISP_LSCK_PIN)
+#define LSDA_GPIO_PIN (GPIO_DISP_LSDA_PIN)
+*/
 #define LSA0_GPIO_PIN (GPIO103)
 #define LSCE_GPIO_PIN (GPIO105)
 #define LSCK_GPIO_PIN (GPIO102)
@@ -38,6 +77,24 @@ static LCM_UTIL_FUNCS lcm_util = {0};
 // ---------------------------------------------------------------------------
 //  Local Functions
 // ---------------------------------------------------------------------------
+/*static void config_gpio(void)
+{
+    lcm_util.set_gpio_mode(LSA0_GPIO_PIN, GPIO_DISP_LSA0_PIN_M_LSA);
+    lcm_util.set_gpio_mode(LSCE_GPIO_PIN, GPIO_DISP_LSCE_PIN_M_LSCE0B);
+    lcm_util.set_gpio_mode(LSCK_GPIO_PIN, GPIO_DISP_LSCK_PIN_M_LSCK);
+    lcm_util.set_gpio_mode(LSDA_GPIO_PIN, GPIO_DISP_LSDA_PIN_M_SDA);
+
+    lcm_util.set_gpio_dir(LSA0_GPIO_PIN, GPIO_DIR_OUT);
+    lcm_util.set_gpio_dir(LSCE_GPIO_PIN, GPIO_DIR_OUT);
+    lcm_util.set_gpio_dir(LSCK_GPIO_PIN, GPIO_DIR_OUT);
+    lcm_util.set_gpio_dir(LSDA_GPIO_PIN, GPIO_DIR_OUT);
+
+	lcm_util.set_gpio_pull_enable(LSA0_GPIO_PIN, GPIO_PULL_DISABLE);
+	lcm_util.set_gpio_pull_enable(LSCE_GPIO_PIN, GPIO_PULL_DISABLE);
+	lcm_util.set_gpio_pull_enable(LSCK_GPIO_PIN, GPIO_PULL_DISABLE);
+	lcm_util.set_gpio_pull_enable(LSDA_GPIO_PIN, GPIO_PULL_DISABLE);
+}
+*/
 static void config_gpio(void)
 {
     lcm_util.set_gpio_mode(LSA0_GPIO_PIN, GPIO_MODE_01);

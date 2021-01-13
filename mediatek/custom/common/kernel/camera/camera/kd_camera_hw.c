@@ -31,7 +31,6 @@
 
  
 
-#if defined(MT6575)||defined(MT6575T)
 
 int kdCISModulePowerOn(CAMERA_DUAL_CAMERA_SENSOR_ENUM SensorIdx, char *currSensorName, BOOL On, char* mode_name)
 {
@@ -218,10 +217,7 @@ _kdCISModulePowerOn_exit_:
 }
 
 EXPORT_SYMBOL(kdCISModulePowerOn);
-#else 
-#error Error !! forget to implement power control for image sensor
 
-#endif 
 
 
 

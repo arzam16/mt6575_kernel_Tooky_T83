@@ -1,4 +1,17 @@
-
+/* drivers/i2c/chips/lis3dh.c - LIS3DH motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -41,6 +54,12 @@
 #include <mach/mt6575_gpio.h>
 #include <mach/mt6575_pm_ldo.h>
 #endif
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
 
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
@@ -50,6 +69,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 #ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+#ifdef MT6577
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
@@ -176,6 +198,26 @@ static struct data_resolution lis3dh_data_resolution[] = {
 /*----------------------------------------------------------------------------*/
 static struct data_resolution lis3dh_offset_resolution = {{15, 6}, 64};
 
+/*
+static int hwmsen_read_byte_sr(struct i2c_client *client, u8 addr, u8 *data)
+{
+   u8 buf;
+    int ret = 0;
+	
+    client->addr = client->addr& I2C_MASK_FLAG | I2C_WR_FLAG |I2C_RS_FLAG;
+    buf = addr;
+	ret = i2c_master_send(client, (const char*)&buf, 1<<8 | 1);
+    //ret = i2c_master_send(client, (const char*)&buf, 1);
+    if (ret < 0) {
+        GSE_ERR("send command error!!\n");
+        return -EFAULT;
+    }
+
+    *data = buf;
+	client->addr = client->addr& I2C_MASK_FLAG;
+    return 0;
+}
+*/
 static void dumpReg(struct i2c_client *client)
 {
   int i=0;
@@ -400,6 +442,14 @@ static int LIS3DH_ReadData(struct i2c_client *client, s16 data[LIS3DH_AXES_NUM])
 	return err;
 }
 /*----------------------------------------------------------------------------*/
+/*
+static int LIS3DH_ReadOffset(struct i2c_client *client, s8 ofs[LIS3DH_AXES_NUM])
+{    
+	int err;
+
+	return err;    
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int LIS3DH_ResetCalibration(struct i2c_client *client)
 {
@@ -420,6 +470,32 @@ static int LIS3DH_ReadCalibration(struct i2c_client *client, int dat[LIS3DH_AXES
     return 0;
 }
 /*----------------------------------------------------------------------------*/
+/*
+static int LIS3DH_ReadCalibrationEx(struct i2c_client *client, int act[LIS3DH_AXES_NUM], int raw[LIS3DH_AXES_NUM])
+{  
+	
+	struct lis3dh_i2c_data *obj = i2c_get_clientdata(client);
+	int err;
+	int mul;
+
+	if(err = LIS3DH_ReadOffset(client, obj->offset))
+	{
+		GSE_ERR("read offset fail, %d\n", err);
+		return err;
+	}    
+
+	mul = obj->reso->sensitivity/lis3dh_offset_resolution.sensitivity;
+	raw[LIS3DH_AXIS_X] = obj->offset[LIS3DH_AXIS_X]*mul + obj->cali_sw[LIS3DH_AXIS_X];
+	raw[LIS3DH_AXIS_Y] = obj->offset[LIS3DH_AXIS_Y]*mul + obj->cali_sw[LIS3DH_AXIS_Y];
+	raw[LIS3DH_AXIS_Z] = obj->offset[LIS3DH_AXIS_Z]*mul + obj->cali_sw[LIS3DH_AXIS_Z];
+
+	act[obj->cvt.map[LIS3DH_AXIS_X]] = obj->cvt.sign[LIS3DH_AXIS_X]*raw[LIS3DH_AXIS_X];
+	act[obj->cvt.map[LIS3DH_AXIS_Y]] = obj->cvt.sign[LIS3DH_AXIS_Y]*raw[LIS3DH_AXIS_Y];
+	act[obj->cvt.map[LIS3DH_AXIS_Z]] = obj->cvt.sign[LIS3DH_AXIS_Z]*raw[LIS3DH_AXIS_Z];                        
+	                       
+	return 0;
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int LIS3DH_WriteCalibration(struct i2c_client *client, int dat[LIS3DH_AXES_NUM])
 {
@@ -456,6 +532,37 @@ static int LIS3DH_CheckDeviceID(struct i2c_client *client)
 {
 	u8 databuf[10];    
 	int res = 0;
+/*
+	memset(databuf, 0, sizeof(u8)*10);    
+	databuf[0] = LIS3DH_REG_DEVID;    
+
+	res = i2c_master_send(client, databuf, 0x1);
+	if(res <= 0)
+	{
+		goto exit_LIS3DH_CheckDeviceID;
+	}
+	
+	udelay(500);
+
+	databuf[0] = 0x0;        
+	res = i2c_master_recv(client, databuf, 0x01);
+	if(res <= 0)
+	{
+		goto exit_LIS3DH_CheckDeviceID;
+	}
+	
+
+	if(databuf[0]!=LIS3DH_FIXED_DEVID)
+	{
+		return LIS3DH_ERR_IDENTIFICATION;
+	}
+
+	exit_LIS3DH_CheckDeviceID:
+	if (res <= 0)
+	{
+		return LIS3DH_ERR_I2C;
+	}
+	*/
 	return LIS3DH_SUCCESS;
 }
 /*----------------------------------------------------------------------------*/
@@ -606,6 +713,13 @@ static int LIS3DH_Init(struct i2c_client *client, int reset_cali)
 {
 	struct lis3dh_i2c_data *obj = i2c_get_clientdata(client);
 	int res = 0;
+/*
+	res = LIS3DH_CheckDeviceID(client); 
+	if(res != LIS3DH_SUCCESS)
+	{
+		return res;
+	}	
+*/
     // first clear reg1
     res = hwmsen_write_byte(client,LIS3DH_REG_CTL_REG1,0x07);
 	if(res != LIS3DH_SUCCESS)
@@ -1163,6 +1277,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int lis3dh_open(struct inode *inode, struct file *file)
 {
 	file->private_data = lis3dh_i2c_client;

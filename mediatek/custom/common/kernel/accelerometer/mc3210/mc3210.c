@@ -1,4 +1,17 @@
-
+/* MC3210 motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -42,6 +55,13 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
@@ -53,6 +73,10 @@
 #endif
 
 #ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
+#ifdef MT6577
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
@@ -246,7 +270,7 @@ static int MC3210_ReadData(struct i2c_client *client, s16 data[MC3210_AXES_NUM])
 	u8 addr = MC3210_REG_DATAX0;
 	u8 buf[MC3210_DATA_LEN] = {0};
 	int err = 0;
-	int i;
+	//int i;
 
 	if(NULL == client)
 	{
@@ -345,7 +369,7 @@ static int MC3210_ReadData(struct i2c_client *client, s16 data[MC3210_AXES_NUM])
 /*----------------------------------------------------------------------------*/
 static int MC3210_ReadOffset(struct i2c_client *client, s8 ofs[MC3210_AXES_NUM])
 {    
-	int err;
+	int err = 0;
 
 #ifdef SW_CALIBRATION
 	ofs[0]=ofs[1]=ofs[2]=0x0;
@@ -362,8 +386,8 @@ static int MC3210_ReadOffset(struct i2c_client *client, s8 ofs[MC3210_AXES_NUM])
 static int MC3210_ResetCalibration(struct i2c_client *client)
 {
 	struct mc3210_i2c_data *obj = i2c_get_clientdata(client);
-	s8 ofs[MC3210_AXES_NUM] = {0x00, 0x00, 0x00};
-	int err;
+	//s8 ofs[MC3210_AXES_NUM] = {0x00, 0x00, 0x00};
+	int err = 0;
 	
 	#ifdef SW_CALIBRATION
 		
@@ -387,10 +411,10 @@ static int MC3210_ReadCalibration(struct i2c_client *client, int dat[MC3210_AXES
     int mul;
 
        #ifdef SW_CALIBRATION
-	  struct mc3210_i2c_data *priv = i2c_get_clientdata(client);        
+	  //struct mc3210_i2c_data *priv = i2c_get_clientdata(client);        
 	  u8 addr = MC3210_REG_DATAX0;
 	  u8 buf[MC3210_DATA_LEN] = {0};
-	  int i;
+	  //int i;
 	  s16 data[MC3210_AXES_NUM] = {0x00,0x00,0x00};
 
 	  if(NULL == client)
@@ -435,7 +459,7 @@ static int MC3210_ReadCalibrationEx(struct i2c_client *client, int act[MC3210_AX
 {  
 	/*raw: the raw calibration data; act: the actual calibration data*/
 	struct mc3210_i2c_data *obj = i2c_get_clientdata(client);
-	int err;
+	//int err = 0;
 	int mul;
 
 	#ifdef SW_CALIBRATION
@@ -549,6 +573,13 @@ static int MC3210_CheckDeviceID(struct i2c_client *client)
 		goto exit_MC3210_CheckDeviceID;
 	}
 	
+/*	remove check id in order to use adxl345 driver for adxl346
+
+	if(databuf[0]!=MC3210_FIXED_DEVID)
+	{
+		return MC3210_ERR_IDENTIFICATION;
+	}
+*/ 
 	exit_MC3210_CheckDeviceID:
 	if (res <= 0)
 	{
@@ -883,13 +914,13 @@ static int MC3210_InitSelfTest(struct i2c_client *client)
 static int MC3210_JudgeTestResult(struct i2c_client *client)
 {
 
-	struct mc3210_i2c_data *obj = (struct mc3210_i2c_data*)i2c_get_clientdata(client);
+	//struct mc3210_i2c_data *obj = (struct mc3210_i2c_data*)i2c_get_clientdata(client);
 	int res = 0;
 	s16  acc[MC3210_AXES_NUM];
 	int  self_result;
 
 	
-	if(res = MC3210_ReadData(client, acc))
+	if( (res = MC3210_ReadData(client, acc)) )
 	{        
 		GSE_ERR("I2C error: ret value=%d", res);
 		return EIO;
@@ -1049,7 +1080,7 @@ static ssize_t store_self_value(struct device_driver *ddri, const char *buf, siz
 	};
 	
 	struct i2c_client *client = mc3210_i2c_client;  
-	int idx, res, num;
+	int num;//idx,res
 	struct item *prv = NULL, *nxt = NULL;
 
 
@@ -1445,6 +1476,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int mc3210_open(struct inode *inode, struct file *file)
 {
 	file->private_data = mc3210_i2c_client;
@@ -1737,6 +1771,13 @@ static void mc3210_late_resume(struct early_suspend *h)
 /*----------------------------------------------------------------------------*/
 //#endif /*CONFIG_HAS_EARLYSUSPEND*/
 /*----------------------------------------------------------------------------*/
+/*
+static int mc3210_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+{    
+	strcpy(info->type, MC3210_DEV_NAME);
+	return 0;
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int mc3210_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {

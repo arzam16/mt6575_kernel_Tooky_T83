@@ -4,17 +4,21 @@ include $(CLEAR_VARS)
 TARGET_PROVIDES_INIT_RC := true
 
 # add your file here (as target) and place the file in this directory
-PRODUCT_COPY_FILES += $(LOCAL_PATH)/mt6575-kpd.kl:system/usr/keylayout/mt6575-kpd.kl \
-                      $(LOCAL_PATH)/mt6575-kpd.kcm:system/usr/keychars/mt6575-kpd.kcm \
+PRODUCT_COPY_FILES += $(LOCAL_PATH)/mtk-kpd.kl:system/usr/keylayout/mtk-kpd.kl \
+                      $(LOCAL_PATH)/mtk-kpd.kcm:system/usr/keychars/mtk-kpd.kcm \
                       $(LOCAL_PATH)/init.rc:root/init.rc \
                       $(LOCAL_PATH)/init.usb.rc:root/init.usb.rc \
+                      $(LOCAL_PATH)/init.xlog.rc:root/init.xlog.rc \
                       $(LOCAL_PATH)/vold.fstab:system/etc/vold.fstab \
                       $(LOCAL_PATH)/vold.fstab.nand:system/etc/vold.fstab.nand \
                       $(LOCAL_PATH)/player.cfg:system/etc/player.cfg \
                       $(LOCAL_PATH)/mtk_omx_core.cfg:system/etc/mtk_omx_core.cfg \
+                      $(LOCAL_PATH)/media_codecs.xml:system/etc/media_codecs.xml \
                       $(LOCAL_PATH)/advanced_meta_init.rc:root/advanced_meta_init.rc \
                       $(LOCAL_PATH)/meta_init.rc:root/meta_init.rc \
-                      $(LOCAL_PATH)/mpeg4_venc_parameter.cfg:system/etc/mpeg4_venc_parameter.cfg
+                      $(LOCAL_PATH)/mpeg4_venc_parameter.cfg:system/etc/mpeg4_venc_parameter.cfg \
+                      $(LOCAL_PATH)/audio_policy.conf:system/etc/audio_policy.conf \
+                      $(LOCAL_PATH)/ACCDET.kl:system/usr/keylayout/ACCDET.kl
 
 
 _init_project_rc := $(MTK_ROOT_CONFIG_OUT)/init.project.rc
@@ -51,7 +55,7 @@ ifeq ($(strip $(HAVE_SRSAUDIOEFFECT_FEATURE)),yes)
 endif
 
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES := mt6575-kpd.kcm
+LOCAL_SRC_FILES := mtk-kpd.kcm
 LOCAL_MODULE_TAGS := user
 include $(BUILD_KEY_CHAR_MAP)
 
@@ -80,6 +84,20 @@ LOCAL_SRC_FILES := modem/catcher_filter.bin
 include $(BUILD_PREBUILT)
 endif
 
+## Install ext catcher_filter.bin ##
+
+ifeq ($(MTK_DT_SUPPORT),yes)
+ifneq ($(EVDO_DT_SUPPORT),yes)
+include $(CLEAR_VARS)
+LOCAL_MODULE := catcher_filter_ext.bin
+LOCAL_MODULE_TAGS := user
+LOCAL_MODULE_CLASS := ETC 
+LOCAL_MODULE_PATH := $(TARGET_OUT_ETC)/firmware
+LOCAL_SRC_FILES := modem/ExtModem/catcher_filter.bin
+include $(BUILD_PREBUILT)
+endif
+endif
+
 #################################
 
 ##### INSTALL DSP FIRMWARE #####
@@ -101,4 +119,12 @@ ifeq ($(CUSTOM_KERNEL_OFN),ofn1090)
 PRODUCT_COPY_FILES += $(LOCAL_PATH)/mtofn.idc:system/usr/idc/mtofn.idc
 endif
 
+##################################
+
+##### INSTALL local.prop #########
+ifeq ($(strip $(MTK_BSP_PACKAGE)),yes)
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+PRODUCT_COPY_FILES += $(LOCAL_PATH)/local.prop:data/local.prop
+endif
+endif
 ##################################

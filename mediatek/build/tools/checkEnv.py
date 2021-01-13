@@ -33,7 +33,7 @@ optionsList = []
 if options.all == True:
     options.os = True
     options.make = True
-    options.memory = False
+    options.memory = True
     options.perl = True
     options.python = True
     options.eabi = True
@@ -329,10 +329,10 @@ class MakeCheck(object):
             number = self.versionNo.split(".")
             if int(number[0]) < 3 or (int(number[0]) == 3 and int(number[1]) < 81):
                 self.info = "your make version is lower than recommendation"
-            elif int(number[0]) == 3 and int(number[1]) == 81:
+            elif int(number[0]) == 3 and (int(number[1]) == 81 or int(number[1]) == 82):
                self.flag = "OK"
             else:
-               self.info = "make 3.82 and above version is not supported"
+               self.info = "Android can only be built by versions 3.81 and 3.82."
         else: self.versionNo = "unknown"
         makeBit = commands.getoutput("file -bL %s" % self.make)
         pattern = re.compile("ELF\s*(\d+)-bit\s*LSB\s*executable.*")
@@ -485,14 +485,10 @@ class EabiCheck(object):
             self.versionNo = match.group(1)
             number = self.versionNo.split(".")
             if int(number[0]) < 4 \
-               or (int(number[0]) == 4 and int(number[1]) < 4) \
-               or (int(number[0]) == 4 and int(number[1]) == 4 and int(number[2]) < 3):
-                self.info = "your arm-linux-androideabi-gcc version is lower than recommendation"
-            elif int(number[0]) == 4 and int(number[1]) == 4 and int(number[2]) == 3:
+               or (int(number[0]) == 4 and int(number[1]) != 6): 
+                self.info = "your arm-linux-androideabi-gcc version is not recommendation"
+            elif int(number[0]) == 4 and int(number[1]) == 6:
                self.flag = "OK"
-            else:
-               self.flag = "WARNING"
-               self.info = "your arm-linux-androideabi-gcc version is higher than recommendation"
         else:
             self.versionNo = "unknown version"
             self.info = "eabigcc: %s \n version info: %s \n" % (self.eabigcc,eabiVersion)
@@ -717,11 +713,11 @@ Build Environment Requirement
 * ********* Suggested OS and Tool Chain to install *********
 *
 *       OS                         : Linux distribution Ubuntu 10.04
-*       Memory Size                : 2G or above
-*       make                       : GNU Make 3.81 or above
+*       Memory Size                : 4G or above
+*       make                       : GNU Make 3.81 or 3.82
 *       perl                       : Version 5.10.X
 *       python                     : Version 2.6.X
-*       arm-linux-androideabi-gcc  : Version 4.4.X
+*       arm-linux-androideabi-gcc  : Version 4.6.X
 *       gcc                        : Version 4.4.3
 *       jdk                        : Version 1.6.X
 *       bison                      : Version 2.4.X

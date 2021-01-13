@@ -1,4 +1,52 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   YUSU
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jackie Su (MTK02380)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 06 04 2012 yan.xu
+ * [ALPS00294930] A5140's setting update by FAE's request
+ * .
+ *
+ * 04 20 2012 zhijie.yuan
+ * [ALPS00271165] modify sensor driver for MT6577
+ * .
+ *
+ * 02 19 2012 koli.lin
+ * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
+ * [Camera] 1. Modify the AE converge speed in the video mode.
+ *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
+ *
+ 
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -18,7 +66,8 @@
 #include "mt9p017mipi_Sensor.h"
 #include "mt9p017mipi_Camera_Sensor_para.h"
 #include "mt9p017mipi_CameraCustomized.h"
-
+#include <asm/system.h>
+static DEFINE_SPINLOCK(MT9P017MIPI_drv_lock);
 //#define CAPTURE_15FPS
 #define MT9P017MIPI_DEBUG
 #ifdef MT9P017MIPI_DEBUG
@@ -111,6 +160,22 @@ void MT9P017MIPI_write_cmos_sensor_8(kal_uint32 addr, kal_uint32 para)
 
 
 
+/*************************************************************************
+* FUNCTION
+*    read_MT9P017MIPI_gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 read_MT9P017MIPI_gain(void)
 {
 	volatile signed char i;
@@ -133,6 +198,9 @@ kal_uint16 read_MT9P017MIPI_gain(void)
 	return sensor_gain;   //mtk gain unit
 }  /* read_MT9P017MIPI_gain */
 
+/*******************************************************************************
+* 
+********************************************************************************/
 void write_MT9P017MIPI_gain(kal_uint16 gain)
 {
     kal_uint16 reg_gain;
@@ -151,12 +219,31 @@ void write_MT9P017MIPI_gain(kal_uint16 gain)
 
 }
 
+/*************************************************************************
+* FUNCTION
+* set_MT9P017MIPI_gain
+*
+* DESCRIPTION
+* This function is to set global gain to sensor.
+*
+* PARAMETERS
+* gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+* the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 MT9P07_Set_gain(kal_uint16 gain)
 {
       write_MT9P017MIPI_gain(gain);
 
 }
 
+/*******************************************************************************
+* 
+********************************************************************************/
 void MT9P017MIPI_camera_para_to_sensor(void)
 {
     kal_uint32    i;
@@ -175,20 +262,58 @@ void MT9P017MIPI_camera_para_to_sensor(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    MT9P017MIPI_sensor_to_camera_para
+*
+* DESCRIPTION
+*    // update camera_para from sensor register
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void MT9P017MIPI_sensor_to_camera_para(void)
 {
-    kal_uint32    i;
+    kal_uint32    i,temp_data;
     for(i=0; 0xFFFFFFFF!=MT9P017MIPISensorReg[i].Addr; i++)
     {
-        MT9P017MIPISensorReg[i].Para = MT9P017MIPI_read_cmos_sensor(MT9P017MIPISensorReg[i].Addr);
+    	temp_data =  MT9P017MIPI_read_cmos_sensor(MT9P017MIPISensorReg[i].Addr);
+		spin_lock(&MT9P017MIPI_drv_lock);
+        MT9P017MIPISensorReg[i].Para = temp_data;	    
+		spin_unlock(&MT9P017MIPI_drv_lock);
     }
     for(i=ENGINEER_START_ADDR; 0xFFFFFFFF!=MT9P017MIPISensorReg[i].Addr; i++)
     {
-        MT9P017MIPISensorReg[i].Para = MT9P017MIPI_read_cmos_sensor(MT9P017MIPISensorReg[i].Addr);
+    	temp_data = MT9P017MIPI_read_cmos_sensor(MT9P017MIPISensorReg[i].Addr);
+		spin_lock(&MT9P017MIPI_drv_lock);
+        MT9P017MIPISensorReg[i].Para = temp_data;	    
+		spin_unlock(&MT9P017MIPI_drv_lock);
     }
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    MT9P017MIPI_get_sensor_group_count
+*
+* DESCRIPTION
+*    //
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_int32  MT9P017MIPI_get_sensor_group_count(void)
 {
     return GROUP_TOTAL_NUMS;
@@ -398,11 +523,14 @@ kal_bool MT9P017MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_
           }          
           else
 			  ASSERT(0);
-
+		    spin_lock(&MT9P017MIPI_drv_lock);
             MT9P017MIPISensorCCT[temp_addr].Para = temp_para;
+			spin_unlock(&MT9P017MIPI_drv_lock);
+			
             MT9P017MIPI_write_cmos_sensor(MT9P017MIPISensorCCT[temp_addr].Addr,temp_para);
-
+			spin_lock(&MT9P017MIPI_drv_lock);
            MT9P017MIPI_sensor_gain_base=read_MT9P017MIPI_gain();
+		   spin_unlock(&MT9P017MIPI_drv_lock);
 
             break;
         case CMMCLK_CURRENT:
@@ -438,6 +566,9 @@ kal_bool MT9P017MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_
 }
 
 
+/*******************************************************************************
+*
+********************************************************************************/
 static void MT9P017MIPI_Init_setting(void)
 {
     kal_uint16 status = 0;
@@ -452,12 +583,12 @@ static void MT9P017MIPI_Init_setting(void)
 	//parallel_interface
 	#ifdef MIPI_INTERFACE
 		#ifdef RAW10
-		MT9P017MIPI_write_cmos_sensor(0x301A, 0x0018);	// enable mipi interface
+		MT9P017MIPI_write_cmos_sensor(0x301A, 0x0218);	// enable mipi interface
 		MT9P017MIPI_write_cmos_sensor(0x3064, 0xB800);	// SMIA_TEST
 		MT9P017MIPI_write_cmos_sensor(0x31AE, 0x0202);	// two lane
 		MT9P017MIPI_write_cmos_sensor(0x0112, 0x0A0A);	// 10bit raw output
 		#else
-		MT9P017MIPI_write_cmos_sensor(0x301A, 0x0018);	// enable mipi interface
+		MT9P017MIPI_write_cmos_sensor(0x301A, 0x0218);	// enable mipi interface
 		MT9P017MIPI_write_cmos_sensor(0x3064, 0x0805);	// SMIA_TEST
 		MT9P017MIPI_write_cmos_sensor(0x31AE, 0x0202);	// two lane
 		MT9P017MIPI_write_cmos_sensor(0x0112, 0x0808);	// 8bit raw output
@@ -465,18 +596,157 @@ static void MT9P017MIPI_Init_setting(void)
 	#else
 	    do
 	    {
-			MT9P017MIPI_write_cmos_sensor(0x301A, 0x10C8);	// RESET_REGISTER
+			MT9P017MIPI_write_cmos_sensor(0x301A, 0x12C8);	// RESET_REGISTER
 			mDELAY(2);	
 			status = MT9P017MIPI_read_cmos_sensor(0x301A);  //polling status change 
 			SENSORDB("MT9P017MIPI status = %x \n",status);
-		}while(status != 0x10C8)   ;
+		}while(status != 0x12C8)   ;
 		
 		MT9P017MIPI_write_cmos_sensor(0x3064, 0x5840);	// SMIA_TEST
 		MT9P017MIPI_write_cmos_sensor(0x31AE, 0x0101);	// SERIAL_FORMAT
 	#endif
 
 
-	
+	#if 1
+	//[REV4_recommended_settings]
+	MT9P017MIPI_write_cmos_sensor(0x316A, 0x8400); // RESERVED 
+	MT9P017MIPI_write_cmos_sensor(0x316C, 0x8400); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x316E, 0x8400); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EFA, 0x1A1F); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3ED2, 0xD965); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3ED8, 0x7F1B); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EDA, 0xAF11); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EE2, 0x0060); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EF2, 0xD965); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EF8, 0x797F); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EFC, 0xA8EF); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x30d4, 0x9200); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x30b2, 0xC000); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x30bc, 0x0400); // RESERVED 
+	MT9P017MIPI_write_cmos_sensor(0x306E, 0xB480); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x3EFE, 0x1F0F); // RESERVED
+	MT9P017MIPI_write_cmos_sensor(0x31E0, 0x1F01); // RESERVED
+	//[REV4_pixel_timing]
+	// @00 Jump Table
+	MT9P017MIPI_write_cmos_sensor(0x3E00, 0x042F);
+	MT9P017MIPI_write_cmos_sensor(0x3E02, 0xFFFF);
+	MT9P017MIPI_write_cmos_sensor(0x3E04, 0xFFFF);
+	MT9P017MIPI_write_cmos_sensor(0x3E06, 0xFFFF);
+	// @04 Read
+	MT9P017MIPI_write_cmos_sensor(0x3E08, 0x8071);
+	MT9P017MIPI_write_cmos_sensor(0x3E0A, 0x7281);
+	MT9P017MIPI_write_cmos_sensor(0x3E0C, 0x4011);
+	MT9P017MIPI_write_cmos_sensor(0x3E0E, 0x8010);
+	MT9P017MIPI_write_cmos_sensor(0x3E10, 0x60A5);
+	MT9P017MIPI_write_cmos_sensor(0x3E12, 0x4080);
+	MT9P017MIPI_write_cmos_sensor(0x3E14, 0x4180);
+	MT9P017MIPI_write_cmos_sensor(0x3E16, 0x0018);
+	MT9P017MIPI_write_cmos_sensor(0x3E18, 0x46B7);
+	MT9P017MIPI_write_cmos_sensor(0x3E1A, 0x4994);
+	MT9P017MIPI_write_cmos_sensor(0x3E1C, 0x4997);
+	MT9P017MIPI_write_cmos_sensor(0x3E1E, 0x4682);
+	MT9P017MIPI_write_cmos_sensor(0x3E20, 0x0018);
+	MT9P017MIPI_write_cmos_sensor(0x3E22, 0x4241);
+	MT9P017MIPI_write_cmos_sensor(0x3E24, 0x8000);
+	MT9P017MIPI_write_cmos_sensor(0x3E26, 0x1880);
+	MT9P017MIPI_write_cmos_sensor(0x3E28, 0x4785);
+	MT9P017MIPI_write_cmos_sensor(0x3E2A, 0x4992);
+	MT9P017MIPI_write_cmos_sensor(0x3E2C, 0x4997);
+	MT9P017MIPI_write_cmos_sensor(0x3E2E, 0x4780);
+	MT9P017MIPI_write_cmos_sensor(0x3E30, 0x4D80);
+	MT9P017MIPI_write_cmos_sensor(0x3E32, 0x100C);
+	MT9P017MIPI_write_cmos_sensor(0x3E34, 0x8000);
+	MT9P017MIPI_write_cmos_sensor(0x3E36, 0x184A);
+	MT9P017MIPI_write_cmos_sensor(0x3E38, 0x8042);
+	MT9P017MIPI_write_cmos_sensor(0x3E3A, 0x001A);
+	MT9P017MIPI_write_cmos_sensor(0x3E3C, 0x9610);
+	MT9P017MIPI_write_cmos_sensor(0x3E3E, 0x0C80);
+	MT9P017MIPI_write_cmos_sensor(0x3E40, 0x4DC6);
+	MT9P017MIPI_write_cmos_sensor(0x3E42, 0x4A80);
+	MT9P017MIPI_write_cmos_sensor(0x3E44, 0x0018);
+	MT9P017MIPI_write_cmos_sensor(0x3E46, 0x8042);
+	MT9P017MIPI_write_cmos_sensor(0x3E48, 0x8041);
+	MT9P017MIPI_write_cmos_sensor(0x3E4A, 0x0018);
+	MT9P017MIPI_write_cmos_sensor(0x3E4C, 0x804B);
+	MT9P017MIPI_write_cmos_sensor(0x3E4E, 0xB74B);
+	MT9P017MIPI_write_cmos_sensor(0x3E50, 0x8010);
+	MT9P017MIPI_write_cmos_sensor(0x3E52, 0x6056);
+	MT9P017MIPI_write_cmos_sensor(0x3E54, 0x001C);
+	MT9P017MIPI_write_cmos_sensor(0x3E56, 0x8211);
+	MT9P017MIPI_write_cmos_sensor(0x3E58, 0x8056);
+	MT9P017MIPI_write_cmos_sensor(0x3E5A, 0x827C);
+	MT9P017MIPI_write_cmos_sensor(0x3E5C, 0x0970);
+	MT9P017MIPI_write_cmos_sensor(0x3E5E, 0x8082);
+	MT9P017MIPI_write_cmos_sensor(0x3E60, 0x7281);
+	MT9P017MIPI_write_cmos_sensor(0x3E62, 0x4C40);
+	MT9P017MIPI_write_cmos_sensor(0x3E64, 0x8E4D);
+	MT9P017MIPI_write_cmos_sensor(0x3E66, 0x8110);
+	MT9P017MIPI_write_cmos_sensor(0x3E68, 0x0CAF);
+	MT9P017MIPI_write_cmos_sensor(0x3E6A, 0x4D80);
+	MT9P017MIPI_write_cmos_sensor(0x3E6C, 0x100C);
+	MT9P017MIPI_write_cmos_sensor(0x3E6E, 0x8440);
+	MT9P017MIPI_write_cmos_sensor(0x3E70, 0x4C81);
+	MT9P017MIPI_write_cmos_sensor(0x3E72, 0x7C5F);
+	MT9P017MIPI_write_cmos_sensor(0x3E74, 0x7000);
+	MT9P017MIPI_write_cmos_sensor(0x3E76, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E78, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E7A, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E7C, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E7E, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E80, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E82, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E84, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E86, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E88, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E8A, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E8C, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E8E, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E90, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E92, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E94, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E96, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E98, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E9A, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E9C, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3E9E, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EA0, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EA2, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EA4, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EA6, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EA8, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EAA, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EAC, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EAE, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EB0, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EB2, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EB4, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EB6, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EB8, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EBA, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EBC, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EBE, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EC0, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EC2, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EC4, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EC6, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3EC8, 0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3ECA, 0x0000);
+
+	MT9P017MIPI_write_cmos_sensor(0x3170,0x2150);
+	MT9P017MIPI_write_cmos_sensor(0x317A,0x0150);
+	MT9P017MIPI_write_cmos_sensor(0x3ECC,0x2200);
+	MT9P017MIPI_write_cmos_sensor(0x3174,0x0000);
+	MT9P017MIPI_write_cmos_sensor(0x3176,0X0000);
+
+	MT9P017MIPI_write_cmos_sensor(0x31B0, 0x00C4);
+	MT9P017MIPI_write_cmos_sensor(0x31B2, 0x0064);
+	MT9P017MIPI_write_cmos_sensor(0x31B4, 0x0E77);
+	MT9P017MIPI_write_cmos_sensor(0x31B6, 0x0D24);
+	MT9P017MIPI_write_cmos_sensor(0x31B8, 0x020E);
+	MT9P017MIPI_write_cmos_sensor(0x31BA, 0x0710);
+	MT9P017MIPI_write_cmos_sensor(0x31BC, 0x2A0D);
+	MT9P017MIPI_write_cmos_sensor(0x31BE, 0xC007);
+	#else
 	//REV4_recommended_settings
 	MT9P017MIPI_write_cmos_sensor(0x316A, 0x8400);	// DAC_FBIAS
 	MT9P017MIPI_write_cmos_sensor(0x316C, 0x8400);	// DAC_TXLO
@@ -603,7 +873,8 @@ static void MT9P017MIPI_Init_setting(void)
 	MT9P017MIPI_write_cmos_sensor(0x3EC6, 0x0000);	// DYNAMIC_SEQRAM_C6
 	MT9P017MIPI_write_cmos_sensor(0x3EC8, 0x0000);	// DYNAMIC_SEQRAM_C8
 	MT9P017MIPI_write_cmos_sensor(0x3ECA, 0x0000);	// DYNAMIC_SEQRAM_CA
-	
+
+	#endif
 	/*LSC_REV4_DEMO_board
 	MT9P017MIPI_write_cmos_sensor(0x3600, 0x00D0);	// P_GR_P0Q0
 	MT9P017MIPI_write_cmos_sensor(0x3602, 0x31EC);	// P_GR_P0Q1
@@ -747,7 +1018,10 @@ static void MT9P017MIPI_Init_setting(void)
 	//MT9P017MIPI_write_cmos_sensor(0x3014, 0x0908); 	// FINE_INTEGRATION_TIME_
 	
 	//MT9P017MIPI_write_cmos_sensor_8(0x0100, 0x01); 	// MODE_SELECT
+	
+    spin_lock(&MT9P017MIPI_drv_lock);
 	MT9P017MIPI_Auto_Flicker_mode = KAL_FALSE;
+	spin_unlock(&MT9P017MIPI_drv_lock);
 
 	
 	mDELAY(5);				// Allow PLL to lock
@@ -772,10 +1046,27 @@ kal_uint16 MT9P017MIPI_PowerOn(void)
 	}
 	return sensor_id;
 }
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPIOpen
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 MT9P017MIPIOpen(void)
 {
 	kal_uint16 sensor_id = 0;
+	kal_uint16 temp_data;
 	sensor_id = MT9P017MIPI_PowerOn() ;
 	
 	SENSORDB("MT9P017MIPIOpen sensor_id is %x \n", sensor_id);
@@ -783,13 +1074,30 @@ UINT32 MT9P017MIPIOpen(void)
         return ERROR_SENSOR_CONNECT_FAIL;
 
     MT9P017MIPI_Init_setting();
-
-    MT9P017MIPI_sensor_gain_base = read_MT9P017MIPI_gain();
-    
+	temp_data= read_MT9P017MIPI_gain();
+    spin_lock(&MT9P017MIPI_drv_lock);
+    MT9P017MIPI_sensor_gain_base = temp_data;
+    spin_unlock(&MT9P017MIPI_drv_lock);
     return ERROR_NONE;
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPIGetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P017MIPIGetSensorID(UINT32 *sensorID) 
 {
 		*sensorID  = MT9P017MIPI_PowerOn() ;
@@ -805,16 +1113,38 @@ UINT32 MT9P017MIPIGetSensorID(UINT32 *sensorID)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPI_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of MT9P017MIPI to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void MT9P017MIPI_SetShutter(kal_uint16 iShutter)
 {
     //SENSORDB("MT9P017MIPI_SetShutter =%d \n ",iShutter);
+	unsigned long flags;
+	
     if(MT9P017MIPI_exposure_lines == iShutter) {
         return;
     }
+	
+    spin_lock_irqsave(&MT9P017MIPI_drv_lock,flags);
 	MT9P017MIPI_exposure_lines=iShutter;
+    spin_unlock_irqrestore(&MT9P017MIPI_drv_lock,flags);
+	
 	MT9P017MIPI_write_cmos_sensor_8(0x0104, 0x01); 	// GROUPED_PARAMETER_HOLD
-	if(MT9P017MIPI_Auto_Flicker_mode == KAL_TRUE)
-	    MT9P017MIPI_write_cmos_sensor(0x0340, MT9P017_Frame_Length_preview +AUTO_FLICKER_NO);
+	//if(MT9P017MIPI_Auto_Flicker_mode == KAL_TRUE)
+	//    MT9P017MIPI_write_cmos_sensor(0x0340, MT9P017_Frame_Length_preview +AUTO_FLICKER_NO);
 	MT9P017MIPI_write_cmos_sensor(0x0202, iShutter); /* course_integration_time */
 	MT9P017MIPI_write_cmos_sensor_8(0x0104, 0x00); 	// GROUPED_PARAMETER_HOLD
 
@@ -822,6 +1152,22 @@ void MT9P017MIPI_SetShutter(kal_uint16 iShutter)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPI_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT16 MT9P017MIPI_read_shutter(void)
 {
     kal_uint16 ishutter;
@@ -829,6 +1175,22 @@ UINT16 MT9P017MIPI_read_shutter(void)
 	return ishutter;
 }
 
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPI_night_mode
+*
+* DESCRIPTION
+*   This function night mode of MT9P017MIPI.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void MT9P017MIPI_NightMode(kal_bool bEnable)
 {
     // frame rate will be control by AE table 
@@ -837,6 +1199,22 @@ void MT9P017MIPI_NightMode(kal_bool bEnable)
 
 
 
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPIClose
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P017MIPIClose(void)
 {
     kal_uint16 pos = 0;
@@ -946,11 +1324,14 @@ static void MT9P017MIPI_preview_setting(void)
 
 	//start_streaming
 	MT9P017MIPI_write_cmos_sensor_8(0x0100, 0x01); 	// MODE_SELECT
+    spin_lock(&MT9P017MIPI_drv_lock);
 #ifdef MIPI_INTERFACE
 	MT9P017MIPI_sensor.preview_vt_clk = 1040  ; //48M VT 
 #else
 	MT9P017MIPI_sensor.preview_vt_clk = 520  ; //48M VT 
 #endif
+    spin_unlock(&MT9P017MIPI_drv_lock);
+
 	mDELAY(50);
 
 	//start_streaming
@@ -1018,14 +1399,87 @@ static void MT9P017MIPI_capture_setting(void)
 	MT9P017MIPI_write_cmos_sensor_8(0x0104, 0x00); //Grouped Parameter Hold = 0x0
 	
 	MT9P017MIPI_write_cmos_sensor_8(0x0100, 0x01);		//mode_select (Open streaming)
+	
+    spin_lock(&MT9P017MIPI_drv_lock);
 #ifdef MIPI_INTERFACE
 	MT9P017MIPI_sensor.capture_vt_clk = 1040  ; // VT 
 #else
 	MT9P017MIPI_sensor.capture_vt_clk = 520  ; // VT 
 #endif
+    spin_unlock(&MT9P017MIPI_drv_lock);
+
 	mDELAY(10);
 }
 
+/*
+static void MT9P017MIPI_capture_setting_15fps(void)
+{
+	//[2592 X 1944]
+	// Timing Settings 13.728fps  
+	kal_uint16 temp;
+	MT9P017MIPI_write_cmos_sensor_8(0x0104, 0x01); //Grouped Parameter Hold = 0x1
+	
+	#ifdef MIPI_INTERFACE
+		MT9P017MIPI_write_cmos_sensor(0x301A, 0x0018);	// enable mipi interface
+		MT9P017MIPI_write_cmos_sensor(0x3064, 0x0805);	// SMIA_TEST
+		MT9P017MIPI_write_cmos_sensor(0x31AE, 0x0202);	// two lane
+		MT9P017MIPI_write_cmos_sensor(0x0112, 0x0808);	// 10bit raw output
+	#endif
+	//PLL MCLK=26MHZ, PCLK=78MHZ, VT=78MHZ
+	MT9P017MIPI_write_cmos_sensor(0x0300, 0x04);	//vt_pix_clk_div = 8
+	MT9P017MIPI_write_cmos_sensor(0x0302, 0x01);	//vt_sys_clk_div = 1
+	MT9P017MIPI_write_cmos_sensor(0x0304, 0x02);	//pre_pll_clk_div = 2
+	//MT9P017MIPI_write_cmos_sensor(0x0306, 0x30);	//pll_multiplier    =  40  78M 
+	MT9P017MIPI_write_cmos_sensor(0x0306, 0x38);	//pll_multiplier    =  56  91M
+	MT9P017MIPI_write_cmos_sensor(0x0308, 0x08);	//op_pix_clk_div =  8
+	MT9P017MIPI_write_cmos_sensor(0x030A, 0x01);	//op_sys_clk_div = 1
+
+	MT9P017MIPI_write_cmos_sensor(0x0382, 0x01); 	// x_odd_inc
+	MT9P017MIPI_write_cmos_sensor(0x0386, 0x01); 	// y_odd_inc
+	//MT9P017MIPI_write_cmos_sensor(0x0400, 0x00); 	// scaleing
+	
+	MT9P017MIPI_write_cmos_sensor(0x0344, 0x0008);	//X_ADDR_START   = 8
+	MT9P017MIPI_write_cmos_sensor(0x0346, 0x0008);	//Y_ADDR_START    = 8
+	MT9P017MIPI_write_cmos_sensor(0x0348, 0x0A27);	//X_ADDR_END =  2599
+	MT9P017MIPI_write_cmos_sensor(0x034A, 0x079F);	//Y_ADDR_END = 1951
+
+	temp = MT9P017MIPI_read_cmos_sensor(0x3040);
+	temp = temp & 0xF000 ;
+	temp = temp | 0x0041;
+	MT9P017MIPI_write_cmos_sensor(0x3040, temp);	//Read Mode = 0x41   1 000001 binning disable
+	MT9P017MIPI_write_cmos_sensor(0x034C, 0x0A20);	//X_OUTPUT_SIZE= 2592
+	MT9P017MIPI_write_cmos_sensor(0x034E, 0x0798);	//Y_OUTPUT_SIZE = 1944
+
+	
+	MT9P017MIPI_write_cmos_sensor(0x300C, 0x0AE8);	// FRAME_LENGTH_LINES
+	MT9P017MIPI_write_cmos_sensor(0x300A, 0x082E);	// LINE_LENGTH_PCK
+
+	MT9P017MIPI_write_cmos_sensor_8(0x0104, 0x00); //Grouped Parameter Hold = 0x0
+	
+	MT9P017MIPI_write_cmos_sensor_8(0x0100, 0x01);		//mode_select (Open streaming)
+	//MT9P017MIPI_sensor.capture_vt_clk = 780  ; //4// VT 
+	MT9P017MIPI_sensor.capture_vt_clk = 910  ; // PCLK = 91
+	
+	mDELAY(10);
+}
+*/
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPI_SetDummy
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   mode  ture : preview mode
+*             false : capture mode
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 static void MT9P017MIPI_SetDummy(kal_bool mode,const kal_uint16 iDummyPixels, const kal_uint16 iDummyLines)
 {
@@ -1038,7 +1492,9 @@ static void MT9P017MIPI_SetDummy(kal_bool mode,const kal_uint16 iDummyPixels, co
 		Line_length_pclk   = MT9P017MIPI_PV_PERIOD_PIXEL_NUMS + iDummyPixels;
 		Frame_length_lines = MT9P017MIPI_PV_PERIOD_LINE_NUMS  + iDummyLines;
 		
+		spin_lock(&MT9P017MIPI_drv_lock);
 		MT9P017_Frame_Length_preview = Frame_length_lines;
+		spin_unlock(&MT9P017MIPI_drv_lock);
 	}
 	else   //capture
 	{
@@ -1053,13 +1509,35 @@ static void MT9P017MIPI_SetDummy(kal_bool mode,const kal_uint16 iDummyPixels, co
 }   /*  MT9P017MIPI_SetDummy */
 
 
+/*************************************************************************
+* FUNCTION
+*   MT9P017MIPIPreview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9P017MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
     SENSORDB("Enter MT9P017MIPIPreview 222222 \n ");
+    spin_lock(&MT9P017MIPI_drv_lock);
     MT9P017MIPI_PV_dummy_pixels = 0;
 	MT9P017MIPI_PV_dummy_lines  = 0;  
+	
+    spin_unlock(&MT9P017MIPI_drv_lock);
 	sensor_config_data->SensorImageMirror = IMAGE_NORMAL;
+	
+    spin_lock(&MT9P017MIPI_drv_lock);
 	 if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		// MPEG4 Encode Mode
     {
         MT9P017MIPI_MPEG4_encode_mode = KAL_TRUE;
@@ -1068,6 +1546,7 @@ UINT32 MT9P017MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     {
         MT9P017MIPI_MPEG4_encode_mode = KAL_FALSE;
     }
+    spin_unlock(&MT9P017MIPI_drv_lock);
 	MT9P017MIPI_Set_Mirror_Flip(sensor_config_data->SensorImageMirror);
 
 	MT9P017MIPI_preview_setting();
@@ -1077,8 +1556,10 @@ UINT32 MT9P017MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     image_window->GrabStartY= MT9P017MIPI_PV_START_Y;
     image_window->ExposureWindowWidth= MT9P017MIPI_IMAGE_SENSOR_PV_WIDTH;
     image_window->ExposureWindowHeight= MT9P017MIPI_IMAGE_SENSOR_PV_HEIGHT;
+    spin_lock(&MT9P017MIPI_drv_lock);
 
     g_iMT9P017MIPI_Mode = MT9P017MIPI_MODE_PREVIEW;
+    spin_unlock(&MT9P017MIPI_drv_lock);
     //MT9P017MIPI_SetShutter(MT9P017MIPI_exposure_lines);
     MT9P017MIPI_write_cmos_sensor_8(0x0104, 0x01); 	// GROUPED_PARAMETER_HOLD
     MT9P017MIPI_write_cmos_sensor(0x0202, MT9P017MIPI_exposure_lines); /* course_integration_time */
@@ -1089,22 +1570,29 @@ UINT32 MT9P017MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
 
 
+/*******************************************************************************
+*
+********************************************************************************/
 UINT32 MT9P017MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
     kal_uint32 shutter=MT9P017MIPI_exposure_lines;
+    spin_lock(&MT9P017MIPI_drv_lock);
 
 	MT9P017MIPI_Auto_Flicker_mode = KAL_FALSE;
 	MT9P017MIPI_MPEG4_encode_mode = KAL_FALSE;
+    spin_unlock(&MT9P017MIPI_drv_lock);
 
 	if ((image_window->ImageTargetWidth<= MT9P017MIPI_IMAGE_SENSOR_PV_WIDTH) &&
 		  (image_window->ImageTargetHeight<= MT9P017MIPI_IMAGE_SENSOR_PV_HEIGHT))
 	{	
+		spin_lock(&MT9P017MIPI_drv_lock);
 		MT9P017MIPI_dummy_pixels = 0;
 		MT9P017MIPI_dummy_lines  = 0;
 		SENSORDB("Enter MT9P017MIPICapture small size  \n ");
 
 		MT9P017MIPI_sensor.capture_vt_clk = MT9P017MIPI_sensor.preview_vt_clk;
+		spin_unlock(&MT9P017MIPI_drv_lock);
 		MT9P017MIPI_SetDummy(KAL_TRUE,MT9P017MIPI_dummy_pixels,MT9P017MIPI_dummy_lines);
 		
 		shutter = shutter * (MT9P017MIPI_PV_PERIOD_PIXEL_NUMS + MT9P017MIPI_PV_dummy_pixels)/(MT9P017MIPI_PV_PERIOD_PIXEL_NUMS +MT9P017MIPI_dummy_pixels);
@@ -1120,11 +1608,13 @@ UINT32 MT9P017MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	       if(g_iMT9P017MIPI_Mode == MT9P017MIPI_MODE_CAPTURE) {
 	       	return;
 	       }
+		   spin_lock(&MT9P017MIPI_drv_lock);
 	       g_iMT9P017MIPI_Mode = MT9P017MIPI_MODE_CAPTURE;
 	      
 		MT9P017MIPI_dummy_pixels = 0;
 		MT9P017MIPI_dummy_lines  = 0;
 		
+		spin_unlock(&MT9P017MIPI_drv_lock);
 		SENSORDB("Enter MT9P017MIPICapture full size  \n ");
 		MT9P017MIPI_capture_setting();
 		
@@ -1330,7 +1820,10 @@ UINT32 MT9P017MIPISetVideoMode(UINT16 u2FrameRate)
 {
 	kal_uint16 MAX_Frame_length =0;
 	//SENSORDB("MT9P017MIPISetVideoMode u2FrameRate =%d",u2FrameRate);
+	
+	spin_lock(&MT9P017MIPI_drv_lock);
 	MT9P017MIPI_MPEG4_encode_mode = KAL_TRUE;
+	spin_unlock(&MT9P017MIPI_drv_lock);
 
 	if(u2FrameRate >30 || u2FrameRate <5)
 	    SENSORDB("Error frame rate seting");
@@ -1339,8 +1832,10 @@ UINT32 MT9P017MIPISetVideoMode(UINT16 u2FrameRate)
 	//if(MT9P017MIPI_PV_dummy_lines <(MAX_Frame_length - MT9P017MIPI_PV_PERIOD_LINE_NUMS))  //original dummy length < current needed dummy length 
 	if(MAX_Frame_length < MT9P017MIPI_PV_PERIOD_LINE_NUMS )
 		MAX_Frame_length = MT9P017MIPI_PV_PERIOD_LINE_NUMS;
+	spin_lock(&MT9P017MIPI_drv_lock);
 	    MT9P017MIPI_PV_dummy_lines = MAX_Frame_length - MT9P017MIPI_PV_PERIOD_LINE_NUMS ;  
 	
+	spin_unlock(&MT9P017MIPI_drv_lock);
 	MT9P017MIPI_SetDummy(KAL_TRUE,MT9P017MIPI_PV_dummy_pixels,MT9P017MIPI_PV_dummy_lines);
 	
     return KAL_TRUE;
@@ -1353,23 +1848,27 @@ UINT32 MT9P017MIPISetAutoFlickerMode(kal_bool bEnable, UINT16 u2FrameRate)
     SENSORDB("[MT9P017MIPISetAutoFlickerMode] frame rate(10base) = %d %d\n", bEnable, u2FrameRate);
     if(bEnable) 
 	{   // enable auto flicker   
+		spin_lock(&MT9P017MIPI_drv_lock);
         MT9P017MIPI_Auto_Flicker_mode = KAL_TRUE; 
-        if(MT9P017MIPI_MPEG4_encode_mode == KAL_TRUE) 
+		spin_unlock(&MT9P017MIPI_drv_lock);
+        //if(MT9P017MIPI_MPEG4_encode_mode == KAL_TRUE) 
 		{   
 			// in the video mode, reset the frame rate
-			MT9P017MIPI_write_cmos_sensor(0x0104, 1);        
+			MT9P017MIPI_write_cmos_sensor_8(0x0104, 1);        
 			MT9P017MIPI_write_cmos_sensor(0x0340, MT9P017_Frame_Length_preview +AUTO_FLICKER_NO);
-            MT9P017MIPI_write_cmos_sensor(0x0104, 0);        	
+            MT9P017MIPI_write_cmos_sensor_8(0x0104, 0);        	
         }
     } else 
     {
+		spin_lock(&MT9P017MIPI_drv_lock);
         MT9P017MIPI_Auto_Flicker_mode = KAL_FALSE; 
+		spin_unlock(&MT9P017MIPI_drv_lock);
         if(MT9P017MIPI_MPEG4_encode_mode == KAL_TRUE) 
 		{
 			// in the video mode, restore the frame rate
-			MT9P017MIPI_write_cmos_sensor(0x0104, 1);        
+			MT9P017MIPI_write_cmos_sensor_8(0x0104, 1);        
 			MT9P017MIPI_write_cmos_sensor(0x0340, MT9P017_Frame_Length_preview);
-            MT9P017MIPI_write_cmos_sensor(0x0104, 0);         	
+            MT9P017MIPI_write_cmos_sensor_8(0x0104, 0);         	
         }
         printk("Disable Auto flicker\n");    
     }
@@ -1455,8 +1954,10 @@ UINT32 MT9P017MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             SensorRegNumber=FACTORY_END_ADDR;
             for (i=0;i<SensorRegNumber;i++)
             {
+				spin_lock(&MT9P017MIPI_drv_lock);
                 MT9P017MIPISensorCCT[i].Addr=*pFeatureData32++;
                 MT9P017MIPISensorCCT[i].Para=*pFeatureData32++;
+				spin_unlock(&MT9P017MIPI_drv_lock);
             }
             break;
         case SENSOR_FEATURE_GET_CCT_REGISTER:
@@ -1474,8 +1975,10 @@ UINT32 MT9P017MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             SensorRegNumber=ENGINEER_END;
             for (i=0;i<SensorRegNumber;i++)
             {
+				spin_lock(&MT9P017MIPI_drv_lock);
                 MT9P017MIPISensorReg[i].Addr=*pFeatureData32++;
                 MT9P017MIPISensorReg[i].Para=*pFeatureData32++;
+				spin_unlock(&MT9P017MIPI_drv_lock);
             }
             break;
         case SENSOR_FEATURE_GET_ENG_REGISTER:

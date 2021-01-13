@@ -1,4 +1,17 @@
-
+/* ADXL345 motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -21,27 +34,10 @@
 #include "adxl345.h"
 #include <linux/hwmsen_helper.h>
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
-
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#endif
-
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
 
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
@@ -56,6 +52,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_ADXL345 345
@@ -1426,6 +1425,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int adxl345_open(struct inode *inode, struct file *file)
 {
 	file->private_data = adxl345_i2c_client;
@@ -1719,6 +1721,13 @@ static void adxl345_late_resume(struct early_suspend *h)
 //#endif /*CONFIG_HAS_EARLYSUSPEND*/
 /*----------------------------------------------------------------------------*/
 
+/*
+static int adxl345_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+{    
+	strcpy(info->type, ADXL345_DEV_NAME);
+	return 0;
+}
+*/
 
 /*----------------------------------------------------------------------------*/
 static int adxl345_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
@@ -1801,7 +1810,7 @@ static int adxl345_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	}
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
-	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	obj->early_drv.suspend  = adxl345_early_suspend,
 	obj->early_drv.resume   = adxl345_late_resume,    
 	register_early_suspend(&obj->early_drv);

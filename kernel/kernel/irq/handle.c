@@ -20,13 +20,8 @@
 #include <trace/events/irq.h>
 
 #include "internals.h"
-
-#include <linux/aee.h>
-
-#include <mach/mt6575_irq.h>
 #define TIME_6MS 6000000
 #define TIME_3MS 3000000
-
 #ifdef CONFIG_MTPROF_CPUTIME
 /*  cputime monitor en/disable value */
 extern int mtsched_enabled;
@@ -63,44 +58,21 @@ static void warn_no_thread(unsigned int irq, struct irqaction *action)
 	       "but no thread function available.", irq, action->name);
 }
 
-#ifdef CONFIG_ISR_MONITOR
-#define IRQ_EINT 128
-#define IRQ_USB 40 
-#define IRQ_CRZ 47
-/**
- * in_white_list
- * Skip AEE warning for specific IRQ numbers
- */
-static int in_white_list(unsigned int irq)
-{
-    if( irq == IRQ_USB || irq == IRQ_EINT 
-            || irq == IRQ_CRZ
-            || irq == MT6575_SMI_LARB0_VAMAU_IRQ_ID
-            || irq == MT6575_SMI_LARB2_VAMAU_IRQ_ID
-            || irq == MT6575_LARB3_VAMAU_IRQ_ID
-            || irq == MT6575_SMI_LARB0_MMU_IRQ_ID
-            || irq == MT6575_SMI_LARB1_MMU_IRQ_ID
-            || irq == MT6575_SMI_LARB2_MMU_IRQ_ID
-            || irq == MT6575_LARB3_MMU_IRQ_ID
-            || irq == MT6575_GPT_IRQ_ID
-    ){
-	    return 1;
-    }
-    else
-	    return 0;
-}
-#endif
 static void irq_wake_thread(struct irq_desc *desc, struct irqaction *action)
 {
 	/*
-	 * Wake up the handler thread for this action. In case the
-	 * thread crashed and was killed we just pretend that we
-	 * handled the interrupt. The hardirq handler has disabled the
-	 * device interrupt, so no irq storm is lurking. If the
+	 * In case the thread crashed and was killed we just pretend that
+	 * we handled the interrupt. The hardirq handler has disabled the
+	 * device interrupt, so no irq storm is lurking.
+	 */
+	if (action->thread->flags & PF_EXITING)
+		return;
+
+	/*
+	 * Wake up the handler thread for this action. If the
 	 * RUNTHREAD bit is already set, nothing to do.
 	 */
-	if (test_bit(IRQTF_DIED, &action->thread_flags) ||
-	    test_and_set_bit(IRQTF_RUNTHREAD, &action->thread_flags))
+	if (test_and_set_bit(IRQTF_RUNTHREAD, &action->thread_flags))
 		return;
 
 	/*
@@ -149,6 +121,18 @@ static void irq_wake_thread(struct irq_desc *desc, struct irqaction *action)
 	 * threads_oneshot untouched and runs the thread another time.
 	 */
 	desc->threads_oneshot |= action->thread_mask;
+
+	/*
+	 * We increment the threads_active counter in case we wake up
+	 * the irq thread. The irq thread decrements the counter when
+	 * it returns from the handler or in the exit path and wakes
+	 * up waiters which are stuck in synchronize_irq() when the
+	 * active count becomes zero. synchronize_irq() is serialized
+	 * against this code (hard irq handler) via IRQS_INPROGRESS
+	 * like the finalize_oneshot() code. See comment above.
+	 */
+	atomic_inc(&desc->threads_active);
+
 	wake_up_process(action->thread);
 }
 
@@ -160,9 +144,6 @@ handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action)
 
 #ifdef CONFIG_MTPROF_IRQ_DURATION
 	unsigned long long t1, t2, dur;
-#ifdef CONFIG_ISR_MONITOR
-	char aee_str[40];
-#endif
 #endif
 	do {
 		irqreturn_t res;
@@ -236,22 +217,6 @@ handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action)
 			}
 		}
 #endif		
-#ifdef CONFIG_ISR_MONITOR 
-		if(unlikely(dur>TIME_3MS)){
-		    if(in_white_list(irq)){
-			printk("[ISR Monitor] Warning! ISR%d:%s too long, %llu ns > 3 ms, t1:%llu, t2:%llu\n", irq, action->name, dur, t1, t2);
-		    }else if(dur>TIME_6MS){
-			sprintf( aee_str, "ISR#%d:%s too long>6ms\n", irq, action->name);
-			aee_kernel_exception( aee_str,"isr_monitor\n");
-			printk("[ISR Monitor] Warning! ISR%d:%s too long, %llu ns > 10 ms, t1:%llu, t2:%llu\n", irq, action->name, dur, t1, t2);
-		    }else{
-			sprintf( aee_str, "ISR#%d:%s too long>3ms\n", irq, action->name);
-			aee_kernel_warning( aee_str,"isr_monitor\n");
-			printk("[ISR Monitor] Warning! ISR%d:%s too long, %llu ns > 3 ms, t1:%llu, t2:%llu\n", irq, action->name, dur, t1, t2);
-		    }
-		}
-#endif
-
 #else
 		res = action->handler(irq, action->dev_id);
 #endif

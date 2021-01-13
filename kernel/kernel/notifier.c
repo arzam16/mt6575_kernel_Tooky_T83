@@ -1,6 +1,6 @@
 #include <linux/kdebug.h>
 #include <linux/kprobes.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/notifier.h>
 #include <linux/rcupdate.h>
 #include <linux/vmalloc.h>
@@ -77,6 +77,10 @@ static int __kprobes notifier_call_chain(struct notifier_block **nl,
 {
 	int ret = NOTIFY_DONE;
 	struct notifier_block *nb, *next_nb;
+#if defined(CONFIG_SMP) && defined(MTK_CPU_HOTPLUG_DEBUG)
+	int index = 0;
+	extern struct raw_notifier_head cpu_chain;
+#endif //#if defined(CONFIG_SMP) && defined(MTK_CPU_HOTPLUG_DEBUG)
 
 	nb = rcu_dereference_raw(*nl);
 
@@ -90,6 +94,14 @@ static int __kprobes notifier_call_chain(struct notifier_block **nl,
 			continue;
 		}
 #endif
+
+#if defined(CONFIG_SMP) && defined(MTK_CPU_HOTPLUG_DEBUG)
+		if (nl == &cpu_chain.head)
+		{
+			printk(KERN_DEBUG "[cpu_ntf] %02lx_%02d, %p\n", val, index++, nb->notifier_call);
+		}
+#endif //#if defined(CONFIG_SMP) && defined(MTK_CPU_HOTPLUG_DEBUG)
+
 		ret = nb->notifier_call(nb, val, v);
 
 		if (nr_calls)
@@ -524,37 +536,6 @@ void srcu_init_notifier_head(struct srcu_notifier_head *nh)
 	nh->head = NULL;
 }
 EXPORT_SYMBOL_GPL(srcu_init_notifier_head);
-
-/**
- *	register_reboot_notifier - Register function to be called at reboot time
- *	@nb: Info about notifier function to be called
- *
- *	Registers a function with the list of functions
- *	to be called at reboot time.
- *
- *	Currently always returns zero, as blocking_notifier_chain_register()
- *	always returns zero.
- */
-int register_reboot_notifier(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_register(&reboot_notifier_list, nb);
-}
-EXPORT_SYMBOL(register_reboot_notifier);
-
-/**
- *	unregister_reboot_notifier - Unregister previously registered reboot notifier
- *	@nb: Hook to be unregistered
- *
- *	Unregisters a previously registered reboot
- *	notifier function.
- *
- *	Returns zero on success, or %-ENOENT on failure.
- */
-int unregister_reboot_notifier(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_unregister(&reboot_notifier_list, nb);
-}
-EXPORT_SYMBOL(unregister_reboot_notifier);
 
 static ATOMIC_NOTIFIER_HEAD(die_chain);
 

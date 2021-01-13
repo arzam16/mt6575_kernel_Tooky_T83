@@ -1,5 +1,21 @@
-
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   Sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Image sensor driver function
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
  //s_porting add
 //s_porting add
 //s_porting add
@@ -208,6 +224,22 @@ static void OV3640_Set_Dummy(const kal_uint16 iPixels, const kal_uint16 iLines)
     OV3640_write_cmos_sensor(0x302B, iTotalLines & 0x00FF);
 }   /*  OV3640_Set_Dummy    */
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_SetShutter
+*
+* DESCRIPTION
+*	This function set e-shutter of OV3640 to change exposure time.
+*
+* PARAMETERS
+*   iShutter : exposured lines
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void set_OV3640_shutter(kal_uint16 iShutter)
 {
     OV3640_g_iExpLines = iShutter;
@@ -259,6 +291,22 @@ static kal_uint16 OV3640Reg2Gain(const kal_uint8 iReg)
     return iReg;
 }
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_SetGain
+*
+* DESCRIPTION
+*	This function is to set global gain to sensor.
+*
+* PARAMETERS
+*   iGain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*	the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 OV3640_SetGain(kal_uint16 iGain)
 
 {
@@ -278,6 +326,22 @@ kal_uint16 OV3640_SetGain(kal_uint16 iGain)
    return 0;
 }
 
+/*************************************************************************
+* FUNCTION
+*	OV3640_NightMode
+*
+* DESCRIPTION
+*	This function night mode of OV3640.
+*
+* PARAMETERS
+*	bEnable: KAL_TRUE -> enable night mode, otherwise, disable night mode
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void OV3640_night_mode(kal_bool bEnable)
 {
 	  kal_uint16 iTotalLines = 0;
@@ -355,6 +419,12 @@ void OV3640_sensor_to_camera_para(void)
        OV3640SensorReg[iI].Para = OV3640_read_cmos_sensor(OV3640SensorReg[iI].Addr);
     }
 
+/*
+    // CCT record should be not overwritten except by engineering mode
+    for (iI = 0; iI < CCT_END_ADDR; iI++) {
+        camera_para.SENSOR.cct[iI].para = read_OV3640_reg(camera_para.SENSOR.cct[iI].addr);
+    }
+*/
 }
 //------------------------Engineer mode---------------------------------
 kal_int32  OV3640_get_sensor_group_count(void)
@@ -857,6 +927,22 @@ static void OV3640_Sensor_Init(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*	OV3640Open
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 OV3640Open(void)
 {
@@ -909,6 +995,22 @@ UINT32 OV3640GetSensorID(UINT32 *sensorID)
 
     return ERROR_NONE;
 }
+/*************************************************************************
+* FUNCTION
+*	OV3640Close
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640Close(void)
 {
   //CISModulePowerOn(FALSE);
@@ -916,6 +1018,23 @@ UINT32 OV3640Close(void)
 	return ERROR_NONE;
 }   /* OV3640Close */
 
+/*************************************************************************
+* FUNCTION
+* OV3640Preview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -1047,6 +1166,21 @@ UINT32 OV3640Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
 }   /*  OV3640Preview   */
 
+/*************************************************************************
+* FUNCTION
+*	OV3640Capture
+*
+* DESCRIPTION
+*	This function setup the CMOS sensor in capture MY_OUTPUT mode
+*
+* PARAMETERS
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV3640Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 						  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {

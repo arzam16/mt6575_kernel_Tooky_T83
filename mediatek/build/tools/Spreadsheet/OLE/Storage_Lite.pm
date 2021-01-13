@@ -1,3 +1,21 @@
+# COPYRIGHT
+# The OLE::Storage_Lite module is Copyright (c) 2000,2001 Kawai Takanori. Japan. All rights reserved.
+# You may distribute under the terms of the Artistic License
+# (full text of the Artistic License http://dev.perl.org/licenses/artistic.html).
+
+# AUTHOR
+# Kawai Takanori kwitknr@cpan.org
+# This module is currently maintained by John McNamara jmcnamara@cpan.org
+
+# OLE::Storage_Lite
+#  by Kawai, Takanori (Hippo2000) 2000.11.4, 8, 14
+# This Program is Still ALPHA version.
+#//////////////////////////////////////////////////////////////////////////////
+# OLE::Storage_Lite::PPS Object
+#//////////////////////////////////////////////////////////////////////////////
+#==============================================================================
+# OLE::Storage_Lite::PPS
+#==============================================================================
 package OLE::Storage_Lite::PPS;
 require Exporter;
 use strict;

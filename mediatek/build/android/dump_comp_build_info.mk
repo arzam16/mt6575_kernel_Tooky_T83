@@ -50,7 +50,10 @@ else
 endif
 
 # md_file_ is the makefile that build this module, refer the function $(call my-dir)
-COMP_BUILD_INFO += $(strip LOCAL_MAKEFILE=$(md_file_))
+COMP_BUILD_INFO += $(strip LOCAL_MAKEFILE=$(LOCAL_MODULE_MAKEFILE))
+
+# add LOCAL_MODULE_TAGS
+COMP_BUILD_INFO += $(strip LOCAL_MODULE_TAGS=$(LOCAL_MODULE_TAGS))
 
 ifneq (,$(LOCAL_MODULE))
   COMP_BUILD_INFO += $(strip LOCAL_MODULE=$(LOCAL_MODULE))

@@ -1,4 +1,223 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 04 27 2012 hao.wang
+ * [ALPS00271165] [FPB&ICS Done]modify sensor driver for MT6577
+ * .
+ *
+ * 03 02 2012 chengxue.shen
+ * [ALPS00246092] MT9T113 MIPI sensor driver check in
+ * MT9T113 MIPI Sensor Driver Check in Only.
+ *
+ * 10 27 2010 sean.cheng
+ * [ALPS00130222] [MPEG4 recording] Frame rate is 30fps by nigh mode
+ * .check in for YUV night mode fps = 15
+ *
+ * 10 13 2010 sean.cheng
+ * [ALPS00021684] [Need Patch] [Volunteer Patch] CCT new feature
+ * .
+ *
+ * 09 10 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .10y dual sensor
+ *
+ * 09 02 2010 jackie.su
+ * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for
+ * .roll back dual sensor
+ *
+ * 07 27 2010 sean.cheng
+ * [ALPS00003112] [Need Patch] [Volunteer Patch] ISP/Sensor driver modification for Customer support
+ * .1. add master clock switcher 
+ *  2. add master enable/disable 
+ *  3. add dummy line/pixel for sensor 
+ *  4. add sensor driving current setting
+ *
+ * 07 19 2010 sean.cheng
+ * [ALPS00002994][Need Patch] [Volunteer Patch] E1K YUV sensor update customer parameters 
+ * .Optimize the sensor paramter & flicker caputre shutter setting
+ *
+ * 07 06 2010 sean.cheng
+ * [ALPS00121501][Need Resolved][E1K][camera]The preview display abnormal when switch scen mode between auto  and night 
+ * .Remove the gamma setting in night mode
+ *
+ * 07 06 2010 sean.cheng
+ * [ALPS00121385][Camera] set EV as one non-zero value, after capturing one iamge , the value seems to be set to zero 
+ * .change effect_off setting to reserve the EV setting
+ *
+ * 07 02 2010 sean.cheng
+ * [ALPS00121364][Camera] when set AE value, the effect is disabled 
+ * .Modify exposure setting to let effect remain
+ *
+ * 07 01 2010 sean.cheng
+ * [ALPS00121215][Camera] Change color when switch low and high 
+ * .Add video delay frame.
+ *
+ * 06 18 2010 sean.cheng
+ * [ALPS00008131][E1K][Camera]Screen will flash some times in this case 
+ * .Add 2 frame delay for capture back to preview
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .Modify e1k sensor setting
+ *
+ * 06 13 2010 sean.cheng
+ * [ALPS00002514][Need Patch] [Volunteer Patch] ALPS.10X.W10.11 Volunteer patch for E1k Camera 
+ * .
+ * 1. Add set zoom factor and capdelay frame for YUV sensor 
+ * 2. Modify e1k sensor setting
+ *
+ * 06 09 2010 sean.cheng
+ * [ALPS00007960][E1K][Camera]There will be a yellow block show on screen left side when preview 
+ * .Change the VGA setting
+ *
+ * 05 27 2010 sean.cheng
+ * [ALPS00002309][Need Patch] [Volunteer Patch] ALPS.10X.W10.24 Volunteer patch for E1k YUV Sensor support 
+ * .
+ * Update MT9T113MIPI yuv sensor init setting
+ *
+ * 05 26 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Update MT9T113MIPI yuv sensor init setting
+ *
+ * 05 25 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Add MT9T113MIPI YUV sensor driver support
+ *
+ * 05 03 2010 sean.cheng
+ * [ALPS00001357][Meta]CameraTool 
+ * .
+ * Fix MT9T113MIPI YUV sensor frame rate to 30fps in vidoe mode
+ *
+ * Mar 4 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ * 
+ *
+ * Mar 4 2010 mtk70508
+ * [DUMA00154792] Sensor driver
+ * 
+ *
+ * Mar 1 2010 mtk01118
+ * [DUMA00025869] [Camera][YUV I/F & Query feature] check in camera code
+ * 
+ *
+ * Feb 24 2010 mtk01118
+ * [DUMA00025869] [Camera][YUV I/F & Query feature] check in camera code
+ * 
+ *
+ * Nov 24 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Oct 29 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Oct 27 2009 mtk02204
+ * [DUMA00015869] [Camera Driver] Modifiy camera related drivers for dual/backup sensor/lens drivers.
+ * 
+ *
+ * Aug 13 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Aug 5 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Jul 17 2009 mtk01051
+ * [DUMA00009217] [Camera Driver] CCAP First Check In
+ * 
+ *
+ * Jul 7 2009 mtk01051
+ * [DUMA00008051] [Camera Driver] Add drivers for camera high ISO binning mode.
+ * Add ISO query info for Sensor
+ *
+ * May 18 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * May 16 2009 mtk01051
+ * [DUMA00005921] [Camera] LED Flashlight first check in
+ * 
+ *
+ * Apr 7 2009 mtk02204
+ * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came
+ * 
+ *
+ * Mar 27 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 25 2009 mtk02204
+ * [DUMA00111570] [Camera] The system crash after some operations
+ *
+ *
+ * Mar 20 2009 mtk02204
+ * [DUMA00002977] [CCT] First check in of MT6516 CCT drivers
+ *
+ *
+ * Mar 2 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Feb 24 2009 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Dec 27 2008 MTK01813
+ * DUMA_MBJ CheckIn Files
+ * created by clearfsimport
+ *
+ * Dec 10 2008 mtk02204
+ * [DUMA00001084] First Check in of MT6516 multimedia drivers
+ *
+ *
+ * Oct 27 2008 mtk01051
+ * [DUMA00000851] Camera related drivers check in
+ * Modify Copyright Header
+ *
+ * Oct 24 2008 mtk02204
+ * [DUMA00000851] Camera related drivers check in
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 //#include <windows.h>
 //#include <memory.h>
 //#include <nkintr.h>
@@ -24,6 +243,7 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <asm/system.h>
 //#include <mach/mt6516_pll.h>
 
 #include "kd_camera_hw.h"
@@ -51,6 +271,9 @@ static kal_uint32 zoom_factor = 0;
 static MT9T113_SENSOR_INFO_ST MT9T113MIPI_sensor;
 static MT9T113_OPERATION_STATE_ST MT9T113MIPI_op_state;
 
+static DEFINE_SPINLOCK(mt9t113mipi_drv_lock);
+
+
 inline MT9T113MIPI_read_cmos_sensor(kal_uint32 addr)
 {
 	kal_uint16 get_byte=0;
@@ -67,6 +290,9 @@ inline int MT9T113MIPI_write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
 }
 
 
+/*******************************************************************************
+* // Adapter for Winmo typedef 
+********************************************************************************/
 #define WINMO_USE 0
 
 #define Sleep(ms) mdelay(ms)
@@ -74,6 +300,9 @@ inline int MT9T113MIPI_write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
 #define TEXT
 
 
+/*******************************************************************************
+* // End Adapter for Winmo typedef 
+********************************************************************************/
 
 
 #define	MT9T113MIPI_LIMIT_EXPOSURE_LINES				(1253)
@@ -237,7 +466,9 @@ kal_uint32 MT9T113MIPI_read_shutter(void)
 return 0;	
 	temp_reg1 = MT9T113MIPI_read_cmos_sensor(0x3012);    // AEC[b15~b8]
 	/* Backup the preview mode last shutter & sensor gain. */
+	spin_lock(&mt9t113mipi_drv_lock);
 	MT9T113MIPI_sensor.pv_shutter = temp_reg1;
+	spin_unlock(&mt9t113mipi_drv_lock);
 	
 return MT9T113MIPI_sensor.pv_shutter;
 }    /* MT9T113MIPI_read_shutter */
@@ -286,12 +517,30 @@ static void MT9T113MIPI_write_shutter(kal_uint16 shutter)
 }    /* MT9T113MIPI_write_shutter */
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_NightMode
+*
+* DESCRIPTION
+*	This function night mode of MT9T113MIPI.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void MT9T113MIPI_night_mode(kal_bool enable)
 {
 	//kal_uint16 night = 0;
 	//kal_uint16 temp=MT9T113MIPI_read_cmos_sensor(0x3302);
+	spin_lock(&mt9t113mipi_drv_lock);
 	MT9T113MIPI_Night_mode = enable;
-		printk("[MT9T113MIPIYUV] enable=%d \n",enable);
+	spin_unlock(&mt9t113mipi_drv_lock);
+	
 	if (MT9T113MIPI_sensor_cap_state == KAL_TRUE) {
 		return ;	//If capture mode, return directely.
 	}
@@ -1429,15 +1678,1036 @@ static void MT9T113MIPI_YUV_sensor_initial_setting(void)
 	//REG = 0x301A , 0x50FC
 	//load=entry_stadby
 
+	spin_lock(&mt9t113mipi_drv_lock);
 	MT9T113MIPI_sensor.preview_pclk = 480;
+	spin_unlock(&mt9t113mipi_drv_lock);
 
 } /* MT9T113MIPIMIPI_YUV_sensor_initial_setting */
 
+/*
+static void MT9T113MIPI_YUV_sensor_initial_setting(void)
+{
+	kal_uint16 tmp=0;
+
+	//PLL_Timing
+	test_pclk_52M();
+
+	//mdelay(10);//DELAY=100
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x6CA6);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x082D);
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xECA5);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000);
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x6C94);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0C34);
+	
+	MT9T113MIPI_write_cmos_sensor(0x3172, 0x0033);	// ANALOG_CONTROL2
+	
+	//TX
+	MT9T113MIPI_write_cmos_sensor(0x3C86, 0x00E1);	// OB_PCLK1_CONFIG
+	MT9T113MIPI_write_cmos_sensor(0x3C20, 0x0000);	// TX_SS_CONTROL
+	
+	//[CCM and AWB]
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4873);	// MCU_ADDRESS [CAM1_AWB_CCM_L_0]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0206);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4875);	// MCU_ADDRESS [CAM1_AWB_CCM_L_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFEDA);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4877);	// MCU_ADDRESS [CAM1_AWB_CCM_L_2]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x001F);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4879);	// MCU_ADDRESS [CAM1_AWB_CCM_L_3]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFC7);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x487B);	// MCU_ADDRESS [CAM1_AWB_CCM_L_4]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x014E);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x487D);	// MCU_ADDRESS [CAM1_AWB_CCM_L_5]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFE9);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x487F);	// MCU_ADDRESS [CAM1_AWB_CCM_L_6]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFAD);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4881);	// MCU_ADDRESS [CAM1_AWB_CCM_L_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFF12);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4883);	// MCU_ADDRESS [CAM1_AWB_CCM_L_8]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x023F);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4885);	// MCU_ADDRESS [CAM1_AWB_CCM_L_9]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x001D);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4887);	// MCU_ADDRESS [CAM1_AWB_CCM_L_10]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x005E);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4889);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_0]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFA2);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x488B);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00A5);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x488D);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_2]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFB6);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x488F);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_3]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0002);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4891);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_4]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFE5);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4893);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_5]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0017);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4895);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_6]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x004C);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4897);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x007F);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4899);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_8]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFF34);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x489B);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_9]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0014);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x489D);	// MCU_ADDRESS [CAM1_AWB_CCM_RL_10]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFCF);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48B8);	// MCU_ADDRESS [CAM1_AWB_X_SHIFT]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0021);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48BA);	// MCU_ADDRESS [CAM1_AWB_Y_SHIFT]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0015);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48BC);	// MCU_ADDRESS [CAM1_AWB_RECIP_XSCALE]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0080);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48BE);	// MCU_ADDRESS [CAM1_AWB_RECIP_YSCALE]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00AB);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48C0);	// MCU_ADDRESS [CAM1_AWB_ROT_CENTER_X]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x03FC);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48C2);	// MCU_ADDRESS [CAM1_AWB_ROT_CENTER_Y]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x03E1);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC8C4);	// MCU_ADDRESS [CAM1_AWB_ROT_SIN]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0036);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC8C5);	// MCU_ADDRESS [CAM1_AWB_ROT_COS]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0023);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48C6);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_0]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48C8);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0011);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48CA);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_2]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1110);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48CC);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_3]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48CE);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_4]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48D0);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_5]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0011);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48D2);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_6]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1111);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48D4);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1000);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48D6);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_8]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48D8);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_9]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1111);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48DA);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_10]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2222);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48DC);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_11]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48DE);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_12]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0011);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48E0);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_13]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2222);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48E2);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_14]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2222);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48E4);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_15]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48E6);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_16]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0113);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48E8);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_17]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x4543);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48EA);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_18]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2112);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48EC);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_19]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2110);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48EE);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_20]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0123);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48F0);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_21]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x5543);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48F2);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_22]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2212);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48F4);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_23]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2210);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48F6);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_24]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0112);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48F8);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_25]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x3333);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48FA);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_26]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2111);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48FC);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_27]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2211);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48FE);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_28]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0011);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4900);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_29]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1111);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4902);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_30]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1111);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4904);	// MCU_ADDRESS [CAM1_AWB_WEIGHT_TABLE_31]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x1110);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC3B);	// MCU_ADDRESS [AWB_R_RATIO_PRE_AWB]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0055);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC3C);	// MCU_ADDRESS [AWB_B_RATIO_PRE_AWB]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0025);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC37);	// MCU_ADDRESS [AWB_R_SCENE_RATIO_LOWER]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0036);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC38);	// MCU_ADDRESS [AWB_R_SCENE_RATIO_UPPER]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x005E);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC39);	// MCU_ADDRESS [AWB_B_SCENE_RATIO_LOWER]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0026);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC3A);	// MCU_ADDRESS [AWB_B_SCENE_RATIO_UPPER]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x004B);	// MCU_DATA_0
+
+
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4887);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0051);
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x489D);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFFE2);
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48B8);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0027);
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x48BA);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x001D);
+	//turn off low ccm
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xAC02);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0004);
+	//reduce blue
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xE856);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0070);
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xE853);
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0070);
+	
+	//Char_settings
+	MT9T113MIPI_write_cmos_sensor(0x3ED6, 0x0F00);	// DAC_LD_10_11
+	MT9T113MIPI_write_cmos_sensor(0x3EF2, 0xD965);	// DAC_LP_6_7
+	MT9T113MIPI_write_cmos_sensor(0x3FD2, 0xD965);
+	MT9T113MIPI_write_cmos_sensor(0x3EF8, 0x7F7F);	// DAC_LD_TXHI
+	MT9T113MIPI_write_cmos_sensor(0x3ED8, 0x7F1D);	// DAC_LD_12_13
+	MT9T113MIPI_write_cmos_sensor(0x3172, 0x0033);	// ANALOG_CONTROL2
+	MT9T113MIPI_write_cmos_sensor(0x3EEA, 0x0200);	// DAC_LD_30_31
+	MT9T113MIPI_write_cmos_sensor(0x3EE2, 0x0050);	// DAC_LD_22_23
+	MT9T113MIPI_write_cmos_sensor(0x316A, 0x8200);	// DAC_FBIAS
+	MT9T113MIPI_write_cmos_sensor(0x316C, 0x8200);	// DAC_TXLO
+	MT9T113MIPI_write_cmos_sensor(0x3EFC, 0xA8E8);	// DAC_LD_FBIAS
+	MT9T113MIPI_write_cmos_sensor(0x3EFE, 0x130D);	// DAC_LD_TXLO
+
+	
+	// Additional Optimized Settings
+	MT9T113MIPI_write_cmos_sensor(0x3180, 0xB3FF);	// 
+	MT9T113MIPI_write_cmos_sensor(0x30B2, 0xC000);	// 
+	
+	MT9T113MIPI_write_cmos_sensor(0x30BC, 0x0384);	// CALIB_GLOBAL
+	MT9T113MIPI_write_cmos_sensor(0x30C0, 0x1220);	// CALIB_CONTROL
+	
+		// Low_Power_Mode
+	MT9T113MIPI_write_cmos_sensor(0x3170, 0x000A);     //Dynamic pwr setting
+	MT9T113MIPI_write_cmos_sensor(0x3174, 0x8060);     //Dynamic pwr setting
+	MT9T113MIPI_write_cmos_sensor(0x3ECC, 0x22B0);     //Dynamic pwr setting
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x482B);     //LP Mode (A)
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x22B0);     //
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4858);     //LP Mode (B)
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x22B0);     //
+	MT9T113MIPI_write_cmos_sensor(0x317A, 0x000A); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4822); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000A); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4824); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000A); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x484F); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000A); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4851); 	// 
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000A); 	//
+
+	
+	//LSC
+	//85%
+	MT9T113MIPI_write_cmos_sensor(0x3210, 0x01B0);
+	#if 1
+	MT9T113MIPI_write_cmos_sensor(0x3640, 0x0490);
+	MT9T113MIPI_write_cmos_sensor(0x3642, 0x216E);
+	MT9T113MIPI_write_cmos_sensor(0x3644, 0x1371);
+	MT9T113MIPI_write_cmos_sensor(0x3646, 0xFD8E);
+	MT9T113MIPI_write_cmos_sensor(0x3648, 0x8210);
+	MT9T113MIPI_write_cmos_sensor(0x364A, 0x01D0);
+	MT9T113MIPI_write_cmos_sensor(0x364C, 0xEB6D);
+	MT9T113MIPI_write_cmos_sensor(0x364E, 0x6C10);
+	MT9T113MIPI_write_cmos_sensor(0x3650, 0x616E);
+	MT9T113MIPI_write_cmos_sensor(0x3652, 0xA38E);
+	MT9T113MIPI_write_cmos_sensor(0x3654, 0x01B0);
+	MT9T113MIPI_write_cmos_sensor(0x3656, 0x4CCE);
+	MT9T113MIPI_write_cmos_sensor(0x3658, 0x1DF0);
+	MT9T113MIPI_write_cmos_sensor(0x365A, 0xCEEF);
+	MT9T113MIPI_write_cmos_sensor(0x365C, 0x6BCF);
+	MT9T113MIPI_write_cmos_sensor(0x365E, 0x0110);
+	MT9T113MIPI_write_cmos_sensor(0x3660, 0xF9CD);
+	MT9T113MIPI_write_cmos_sensor(0x3662, 0x1911);
+	MT9T113MIPI_write_cmos_sensor(0x3664, 0xB1CC);
+	MT9T113MIPI_write_cmos_sensor(0x3666, 0xF7CF);
+	MT9T113MIPI_write_cmos_sensor(0x3680, 0x92AD);
+	MT9T113MIPI_write_cmos_sensor(0x3682, 0xE4EE);
+	MT9T113MIPI_write_cmos_sensor(0x3684, 0x8FF0);
+	MT9T113MIPI_write_cmos_sensor(0x3686, 0x0770);
+	MT9T113MIPI_write_cmos_sensor(0x3688, 0x2C92);
+	MT9T113MIPI_write_cmos_sensor(0x368A, 0xE08D);
+	MT9T113MIPI_write_cmos_sensor(0x368C, 0x0DEE);
+	MT9T113MIPI_write_cmos_sensor(0x368E, 0x9FEF);
+	MT9T113MIPI_write_cmos_sensor(0x3690, 0xA62E);
+	MT9T113MIPI_write_cmos_sensor(0x3692, 0x0252);
+	MT9T113MIPI_write_cmos_sensor(0x3694, 0x6F0D);
+	MT9T113MIPI_write_cmos_sensor(0x3696, 0x0B8F);
+	MT9T113MIPI_write_cmos_sensor(0x3698, 0x946E);
+	MT9T113MIPI_write_cmos_sensor(0x369A, 0xEA0F);
+	MT9T113MIPI_write_cmos_sensor(0x369C, 0x3071);
+	MT9T113MIPI_write_cmos_sensor(0x369E, 0x76EC);
+	MT9T113MIPI_write_cmos_sensor(0x36A0, 0xD32E);
+	MT9T113MIPI_write_cmos_sensor(0x36A2, 0x282F);
+	MT9T113MIPI_write_cmos_sensor(0x36A4, 0x1C8F);
+	MT9T113MIPI_write_cmos_sensor(0x36A6, 0x098F);
+	MT9T113MIPI_write_cmos_sensor(0x36C0, 0x3451);
+	MT9T113MIPI_write_cmos_sensor(0x36C2, 0x53AF);
+	MT9T113MIPI_write_cmos_sensor(0x36C4, 0x21D2);
+	MT9T113MIPI_write_cmos_sensor(0x36C6, 0xA151);
+	MT9T113MIPI_write_cmos_sensor(0x36C8, 0xDE14);
+	MT9T113MIPI_write_cmos_sensor(0x36CA, 0x42B1);
+	MT9T113MIPI_write_cmos_sensor(0x36CC, 0x832F);
+	MT9T113MIPI_write_cmos_sensor(0x36CE, 0x5892);
+	MT9T113MIPI_write_cmos_sensor(0x36D0, 0x288D);
+	MT9T113MIPI_write_cmos_sensor(0x36D2, 0xF254);
+	MT9T113MIPI_write_cmos_sensor(0x36D4, 0x12F1);
+	MT9T113MIPI_write_cmos_sensor(0x36D6, 0x1D10);
+	MT9T113MIPI_write_cmos_sensor(0x36D8, 0x10F3);
+	MT9T113MIPI_write_cmos_sensor(0x36DA, 0x9451);
+	MT9T113MIPI_write_cmos_sensor(0x36DC, 0x84D5);
+	MT9T113MIPI_write_cmos_sensor(0x36DE, 0x2B11);
+	MT9T113MIPI_write_cmos_sensor(0x36E0, 0xC1CF);
+	MT9T113MIPI_write_cmos_sensor(0x36E2, 0x4B32);
+	MT9T113MIPI_write_cmos_sensor(0x36E4, 0xC20F);
+	MT9T113MIPI_write_cmos_sensor(0x36E6, 0xCF94);
+	MT9T113MIPI_write_cmos_sensor(0x3700, 0x2770);
+	MT9T113MIPI_write_cmos_sensor(0x3702, 0x2371);
+	MT9T113MIPI_write_cmos_sensor(0x3704, 0x3AD3);
+	MT9T113MIPI_write_cmos_sensor(0x3706, 0xC152);
+	MT9T113MIPI_write_cmos_sensor(0x3708, 0xF7F4);
+	MT9T113MIPI_write_cmos_sensor(0x370A, 0x0BF1);
+	MT9T113MIPI_write_cmos_sensor(0x370C, 0x5D2E);
+	MT9T113MIPI_write_cmos_sensor(0x370E, 0x6D32);
+	MT9T113MIPI_write_cmos_sensor(0x3710, 0x174F);
+	MT9T113MIPI_write_cmos_sensor(0x3712, 0xF4D4);
+	MT9T113MIPI_write_cmos_sensor(0x3714, 0x1690);
+	MT9T113MIPI_write_cmos_sensor(0x3716, 0x566C);
+	MT9T113MIPI_write_cmos_sensor(0x3718, 0x4B13);
+	MT9T113MIPI_write_cmos_sensor(0x371A, 0x9AD0);
+	MT9T113MIPI_write_cmos_sensor(0x371C, 0xAED5);
+	MT9T113MIPI_write_cmos_sensor(0x371E, 0x3290);
+	MT9T113MIPI_write_cmos_sensor(0x3720, 0x470F);
+	MT9T113MIPI_write_cmos_sensor(0x3722, 0x55D2);
+	MT9T113MIPI_write_cmos_sensor(0x3724, 0xEE11);
+	MT9T113MIPI_write_cmos_sensor(0x3726, 0xEE93);
+	MT9T113MIPI_write_cmos_sensor(0x3740, 0x89D2);
+	MT9T113MIPI_write_cmos_sensor(0x3742, 0xF7F2);
+	MT9T113MIPI_write_cmos_sensor(0x3744, 0xBA55);
+	MT9T113MIPI_write_cmos_sensor(0x3746, 0x5094);
+	MT9T113MIPI_write_cmos_sensor(0x3748, 0x2297);
+	MT9T113MIPI_write_cmos_sensor(0x374A, 0xA392);
+	MT9T113MIPI_write_cmos_sensor(0x374C, 0xEDB0);
+	MT9T113MIPI_write_cmos_sensor(0x374E, 0xB995);
+	MT9T113MIPI_write_cmos_sensor(0x3750, 0x8691);
+	MT9T113MIPI_write_cmos_sensor(0x3752, 0x4017);
+	MT9T113MIPI_write_cmos_sensor(0x3754, 0xC5B1);
+	MT9T113MIPI_write_cmos_sensor(0x3756, 0x98D3);
+	MT9T113MIPI_write_cmos_sensor(0x3758, 0xDA35);
+	MT9T113MIPI_write_cmos_sensor(0x375A, 0x57F4);
+	MT9T113MIPI_write_cmos_sensor(0x375C, 0x2437);
+	MT9T113MIPI_write_cmos_sensor(0x375E, 0xD6B1);
+	MT9T113MIPI_write_cmos_sensor(0x3760, 0xE86F);
+	MT9T113MIPI_write_cmos_sensor(0x3762, 0xB6D5);
+	MT9T113MIPI_write_cmos_sensor(0x3764, 0x4CF3);
+	MT9T113MIPI_write_cmos_sensor(0x3766, 0x0C17);
+	MT9T113MIPI_write_cmos_sensor(0x3782, 0x02A0);
+	MT9T113MIPI_write_cmos_sensor(0x3784, 0x03C0);
+	#else
+	MT9T113MIPI_write_cmos_sensor(0x3640, 0x0150);
+	MT9T113MIPI_write_cmos_sensor(0x3642, 0x2FAE);
+	MT9T113MIPI_write_cmos_sensor(0x3644, 0x54D1);
+	MT9T113MIPI_write_cmos_sensor(0x3646, 0x4F4D);
+	MT9T113MIPI_write_cmos_sensor(0x3648, 0xA391);
+	MT9T113MIPI_write_cmos_sensor(0x364A, 0x0310);
+	MT9T113MIPI_write_cmos_sensor(0x364C, 0xC6CD);
+	MT9T113MIPI_write_cmos_sensor(0x364E, 0x1ED1);
+	MT9T113MIPI_write_cmos_sensor(0x3650, 0x7BAF);
+	MT9T113MIPI_write_cmos_sensor(0x3652, 0xC0F0);
+	MT9T113MIPI_write_cmos_sensor(0x3654, 0x02D0);
+	MT9T113MIPI_write_cmos_sensor(0x3656, 0x5AEE);
+	MT9T113MIPI_write_cmos_sensor(0x3658, 0x6CF0);
+	MT9T113MIPI_write_cmos_sensor(0x365A, 0xAEEE);
+	MT9T113MIPI_write_cmos_sensor(0x365C, 0x87EE);
+	MT9T113MIPI_write_cmos_sensor(0x365E, 0x0350);
+	MT9T113MIPI_write_cmos_sensor(0x3660, 0xFBCD);
+	MT9T113MIPI_write_cmos_sensor(0x3662, 0x5E31);
+	MT9T113MIPI_write_cmos_sensor(0x3664, 0x7ACE);
+	MT9T113MIPI_write_cmos_sensor(0x3666, 0xB8F1);
+	MT9T113MIPI_write_cmos_sensor(0x3680, 0xF00D);
+	MT9T113MIPI_write_cmos_sensor(0x3682, 0xC26E);
+	MT9T113MIPI_write_cmos_sensor(0x3684, 0xD1AF);
+	MT9T113MIPI_write_cmos_sensor(0x3686, 0x44CF);
+	MT9T113MIPI_write_cmos_sensor(0x3688, 0x18D1);
+	MT9T113MIPI_write_cmos_sensor(0x368A, 0x8A6E);
+	MT9T113MIPI_write_cmos_sensor(0x368C, 0x1AEE);
+	MT9T113MIPI_write_cmos_sensor(0x368E, 0x5A0C);
+	MT9T113MIPI_write_cmos_sensor(0x3690, 0xE5CE);
+	MT9T113MIPI_write_cmos_sensor(0x3692, 0x11EF);
+	MT9T113MIPI_write_cmos_sensor(0x3694, 0x242B);
+	MT9T113MIPI_write_cmos_sensor(0x3696, 0x4BEE);
+	MT9T113MIPI_write_cmos_sensor(0x3698, 0x0A70);
+	MT9T113MIPI_write_cmos_sensor(0x369A, 0x918F);
+	MT9T113MIPI_write_cmos_sensor(0x369C, 0x8DB1);
+	MT9T113MIPI_write_cmos_sensor(0x369E, 0x2FEB);
+	MT9T113MIPI_write_cmos_sensor(0x36A0, 0xBF8E);
+	MT9T113MIPI_write_cmos_sensor(0x36A2, 0x1310);
+	MT9T113MIPI_write_cmos_sensor(0x36A4, 0x624F);
+	MT9T113MIPI_write_cmos_sensor(0x36A6, 0xBA31);
+	MT9T113MIPI_write_cmos_sensor(0x36C0, 0x6411);
+	MT9T113MIPI_write_cmos_sensor(0x36C2, 0x2410);
+	MT9T113MIPI_write_cmos_sensor(0x36C4, 0x6130);
+	MT9T113MIPI_write_cmos_sensor(0x36C6, 0x91D0);
+	MT9T113MIPI_write_cmos_sensor(0x36C8, 0xA114);
+	MT9T113MIPI_write_cmos_sensor(0x36CA, 0x7451);
+	MT9T113MIPI_write_cmos_sensor(0x36CC, 0xCDCF);
+	MT9T113MIPI_write_cmos_sensor(0x36CE, 0x2D51);
+	MT9T113MIPI_write_cmos_sensor(0x36D0, 0x6890);
+	MT9T113MIPI_write_cmos_sensor(0x36D2, 0xB474);
+	MT9T113MIPI_write_cmos_sensor(0x36D4, 0x2911);
+	MT9T113MIPI_write_cmos_sensor(0x36D6, 0x582F);
+	MT9T113MIPI_write_cmos_sensor(0x36D8, 0x0E92);
+	MT9T113MIPI_write_cmos_sensor(0x36DA, 0x4A6E);
+	MT9T113MIPI_write_cmos_sensor(0x36DC, 0xB114);
+	MT9T113MIPI_write_cmos_sensor(0x36DE, 0x5F31);
+	MT9T113MIPI_write_cmos_sensor(0x36E0, 0xB5CF);
+	MT9T113MIPI_write_cmos_sensor(0x36E2, 0x2C10);
+	MT9T113MIPI_write_cmos_sensor(0x36E4, 0x4831);
+	MT9T113MIPI_write_cmos_sensor(0x36E6, 0x8AB4);
+	MT9T113MIPI_write_cmos_sensor(0x3700, 0xB66D);
+	MT9T113MIPI_write_cmos_sensor(0x3702, 0x528F);
+	MT9T113MIPI_write_cmos_sensor(0x3704, 0x37CE);
+	MT9T113MIPI_write_cmos_sensor(0x3706, 0xEB51);
+	MT9T113MIPI_write_cmos_sensor(0x3708, 0x2EF0);
+	MT9T113MIPI_write_cmos_sensor(0x370A, 0x1A0F);
+	MT9T113MIPI_write_cmos_sensor(0x370C, 0x3FEF);
+	MT9T113MIPI_write_cmos_sensor(0x370E, 0x8312);
+	MT9T113MIPI_write_cmos_sensor(0x3710, 0x96F1);
+	MT9T113MIPI_write_cmos_sensor(0x3712, 0x2A13);
+	MT9T113MIPI_write_cmos_sensor(0x3714, 0x4847);
+	MT9T113MIPI_write_cmos_sensor(0x3716, 0x96CF);
+	MT9T113MIPI_write_cmos_sensor(0x3718, 0xEE51);
+	MT9T113MIPI_write_cmos_sensor(0x371A, 0x7F10);
+	MT9T113MIPI_write_cmos_sensor(0x371C, 0x1E53);
+	MT9T113MIPI_write_cmos_sensor(0x371E, 0x05ED);
+	MT9T113MIPI_write_cmos_sensor(0x3720, 0x3FCF);
+	MT9T113MIPI_write_cmos_sensor(0x3722, 0xD4F1);
+	MT9T113MIPI_write_cmos_sensor(0x3724, 0x9B6F);
+	MT9T113MIPI_write_cmos_sensor(0x3726, 0x3492);
+	MT9T113MIPI_write_cmos_sensor(0x3740, 0x9992);
+	MT9T113MIPI_write_cmos_sensor(0x3742, 0x8F52);
+	MT9T113MIPI_write_cmos_sensor(0x3744, 0x9C94);
+	MT9T113MIPI_write_cmos_sensor(0x3746, 0x5AB3);
+	MT9T113MIPI_write_cmos_sensor(0x3748, 0x79B5);
+	MT9T113MIPI_write_cmos_sensor(0x374A, 0xACD2);
+	MT9T113MIPI_write_cmos_sensor(0x374C, 0x05F1);
+	MT9T113MIPI_write_cmos_sensor(0x374E, 0xFE33);
+	MT9T113MIPI_write_cmos_sensor(0x3750, 0x9A11);
+	MT9T113MIPI_write_cmos_sensor(0x3752, 0x3036);
+	MT9T113MIPI_write_cmos_sensor(0x3754, 0xB311);
+	MT9T113MIPI_write_cmos_sensor(0x3756, 0x9652);
+	MT9T113MIPI_write_cmos_sensor(0x3758, 0xAE94);
+	MT9T113MIPI_write_cmos_sensor(0x375A, 0x1654);
+	MT9T113MIPI_write_cmos_sensor(0x375C, 0x1DF6);
+	MT9T113MIPI_write_cmos_sensor(0x375E, 0x8872);
+	MT9T113MIPI_write_cmos_sensor(0x3760, 0x3051);
+	MT9T113MIPI_write_cmos_sensor(0x3762, 0xB734);
+	MT9T113MIPI_write_cmos_sensor(0x3764, 0xA9F3);
+	MT9T113MIPI_write_cmos_sensor(0x3766, 0x1796);
+	MT9T113MIPI_write_cmos_sensor(0x3782, 0x02E0);
+	MT9T113MIPI_write_cmos_sensor(0x3784, 0x03C0);
+
+	#endif
+	MT9T113MIPI_write_cmos_sensor(0x3210, 0x01B8);
+	
+	//AE
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x6820); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_TARGET_FDZONE]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0007); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x6822); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_TARGET_AGAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0064); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x6824); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_TARGET_DGAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0080); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0xE826); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_BASE_TARGET]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x003b); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x6829); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_AE_MIN_VIRT_DGAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0080); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x682B); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_AE_MAX_VIRT_DGAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0080); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x682D); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_AE_MIN_VIRT_AGAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0038); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x486F); 	// MCU_ADDRESS [CAM1_CTL_MAX_ANALOG_GAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0120); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x4871); 	// MCU_ADDRESS [CAM1_CTL_MIN_ANALOG_GAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x0038); 	// MCU_DATA_0
+	  MT9T113MIPI_write_cmos_sensor(0x098E, 0x682F); 	// MCU_ADDRESS [PRI_A_CONFIG_AE_TRACK_AE_MAX_VIRT_AGAIN]
+	  MT9T113MIPI_write_cmos_sensor(0x0990, 0x00F0);	// MCU_DATA_0 reduce gain
+	
+	
+
+
+
+
+
+	
+	//Step6-CPIPE_Calibration
+	
+	//low_light
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4918); 	// MCU_ADDRESS [CAM1_LL_START_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0039); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x491A); 	// MCU_ADDRESS [CAM1_LL_STOP_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x6872); 	// MCU_ADDRESS [PRI_A_CONFIG_LL_START_BRIGHTNESS]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0005); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x6874); 	// MCU_ADDRESS [PRI_A_CONFIG_LL_STOP_BRIGHTNESS]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x008C); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4956); 	// MCU_ADDRESS [CAM1_LL_DC_START_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0040); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4958); 	// MCU_ADDRESS [CAM1_LL_DC_STOP_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x495A); 	// MCU_ADDRESS [CAM1_LL_DC_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x495C); 	// MCU_ADDRESS [CAM1_LL_DC_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x495E); 	// MCU_ADDRESS [CAM1_LL_CDC_AGG_START_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0040); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4960); 	// MCU_ADDRESS [CAM1_LL_CDC_AGG_STOP_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC962); 	// MCU_ADDRESS [CAM1_LL_CDC_AGG_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC963); 	// MCU_ADDRESS [CAM1_LL_CDC_AGG_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0003); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4964); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_START_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0040); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4966); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_STOP_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4968); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_T3START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x496A); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_T3STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x496C); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_T4START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0014); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x496E); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_T4STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000C); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC970); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_TO_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0004); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC971); 	// MCU_ADDRESS [CAM1_LL_CDC_BRIGHT_TO_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000F); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4972); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_START_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0040); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4974); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_STOP_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4976); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_T3START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4978); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_T3STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x497A); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_T4START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00C8); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x497C); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_T4STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x003C); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC97E); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_TO_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0004); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC97F); 	// MCU_ADDRESS [CAM1_LL_CDC_DARK_TO_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000F); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x491C); 	// MCU_ADDRESS [CAM1_LL_GRB_START_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0040); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x491E); 	// MCU_ADDRESS [CAM1_LL_GRB_STOP_GAIN_METRIC]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0100);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC920); 	// MCU_ADDRESS [CAM1_LL_GRB_SLOPE_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000B); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC921); 	// MCU_ADDRESS [CAM1_LL_GRB_SLOPE_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x002C); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC922); 	// MCU_ADDRESS [CAM1_LL_GRB_OFFSET_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0007); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC923); 	// MCU_ADDRESS [CAM1_LL_GRB_OFFSET_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x001D); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4926); 	// MCU_ADDRESS [CAM1_LL_SFFB_START_ANALOG_GAIN]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0039); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4928); 	// MCU_ADDRESS [CAM1_LL_SFFB_END_ANALOG_GAIN]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00A0); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x492A); 	// MCU_ADDRESS [CAM1_LL_SFFB_RAMP_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0082); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x492C); 	// MCU_ADDRESS [CAM1_LL_SFFB_RAMP_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0040); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x492E); 	// MCU_ADDRESS [CAM1_LL_SFFB_SLOPE_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0015); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4930); 	// MCU_ADDRESS [CAM1_LL_SFFB_SLOPE_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0015); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4932); 	// MCU_ADDRESS [CAM1_LL_SFFB_LOW_THRESH1START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0002); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4934); 	// MCU_ADDRESS [CAM1_LL_SFFB_LOW_THRESH1STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0004); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4936); 	// MCU_ADDRESS [CAM1_LL_SFFB_LOW_THRESH2START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0008); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4938); 	// MCU_ADDRESS [CAM1_LL_SFFB_LOW_THRESH2STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0009); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x493A); 	// MCU_ADDRESS [CAM1_LL_SFFB_LOW_THRESH3START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000C); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x493C); 	// MCU_ADDRESS [CAM1_LL_SFFB_LOW_THRESH3STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x000D); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x493E); 	// MCU_ADDRESS [CAM1_LL_SFFB_MAX_THRESH_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0015); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4940); 	// MCU_ADDRESS [CAM1_LL_SFFB_MAX_THRESH_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0013); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC944); 	// MCU_ADDRESS [CAM1_LL_SFFB_FLATNESS_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0023); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC945); 	// MCU_ADDRESS [CAM1_LL_SFFB_FLATNESS_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x007F); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC946); 	// MCU_ADDRESS [CAM1_LL_SFFB_TRANSITION_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0007); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC947); 	// MCU_ADDRESS [CAM1_LL_SFFB_TRANSITION_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC948); 	// MCU_ADDRESS [CAM1_LL_SFFB_SOBEL_FLAT_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0002); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC949); 	// MCU_ADDRESS [CAM1_LL_SFFB_SOBEL_FLAT_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0002);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC94A); 	// MCU_ADDRESS [CAM1_LL_SFFB_SOBEL_SHARP_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FF); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC94B); 	// MCU_ADDRESS [CAM1_LL_SFFB_SOBEL_SHARP_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FF); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC906); 	// MCU_ADDRESS [CAM1_LL_DM_EDGE_TH_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0006); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC907); 	// MCU_ADDRESS [CAM1_LL_DM_EDGE_TH_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0028); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC02); 	// MCU_ADDRESS [LL_MODE]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0005); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC908); 	// MCU_ADDRESS [CAM1_LL_AP_KNEE_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0006); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC909); 	// MCU_ADDRESS [CAM1_LL_AP_KNEE_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0028); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC90A); 	// MCU_ADDRESS [CAM1_LL_AP_MANTISSA_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0007); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x326C, 0x0F0A); 	// APERTURE_PARAMETERS_2D
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC94C); 	// MCU_ADDRESS [CAM1_LL_DELTA_GAIN]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0003); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC94E); 	// MCU_ADDRESS [CAM1_LL_DELTA_THRESHOLD_START]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x003C); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xC94F); 	// MCU_ADDRESS [CAM1_LL_DELTA_THRESHOLD_STOP]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0064); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xE876); 	// MCU_ADDRESS [PRI_A_CONFIG_LL_END_SATURATION]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0080); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xE877); 	// MCU_ADDRESS [PRI_A_CONFIG_LL_END_SATURATION]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0070); 	// MCU_DATA_0
+	//gamma
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x3C42); 	// MCU_ADDRESS [LL_START_GAMMA_FTB]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x3C44); 	// MCU_ADDRESS [LL_STOP_GAMMA_FTB]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4912); 	// MCU_ADDRESS [CAM1_LL_START_GAMMA_BM]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4914); 	// MCU_ADDRESS [CAM1_LL_MID_GAMMA_BM]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x4916); 	// MCU_ADDRESS [CAM1_LL_STOP_GAMMA_BM]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0037); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC09); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_0]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC0A); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0011); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC0B); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_2]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0023); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC0C); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_3]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x003F); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC0D); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_4]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0067); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC0E); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_5]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0085); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC0F); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_6]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x009B); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC10); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00AD); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC11); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_8]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00BB); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC12); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_9]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00C7); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC13); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_10]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00D1); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC14); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_11]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00DA); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC15); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_12]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00E1); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC16); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_13]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00E8); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC17); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_14]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00EE); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC18); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_15]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00F3); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC19); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_16]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00F7); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC1A); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_17]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FB); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC1B); 	// MCU_ADDRESS [LL_GAMMA_CONTRAST_CURVE_18]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FF); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC1C); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_0]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC1D); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0011); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC1E); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_2]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0023); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC1F); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_3]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x003F); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC20); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_4]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0067); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC21); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_5]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0085); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC22); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_6]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x009B); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC23); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00AD); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC24); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_8]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00BB); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC25); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_9]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00C7); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC26); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_10]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00D1); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC27); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_11]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00DA); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC28); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_12]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00E1); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC29); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_13]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00E8); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC2A); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_14]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00EE); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC2B); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_15]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00F3); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC2C); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_16]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00F7); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC2D); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_17]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FB); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC2E); 	// MCU_ADDRESS [LL_GAMMA_NEUTRAL_CURVE_18]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FF); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC2F); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_0]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC30); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0017); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC31); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_2]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0020); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC32); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_3]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0032); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC33); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_4]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x005A); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC34); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_5]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0078); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC35); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_6]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0089); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC36); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0098); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC37); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_8]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00A6); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC38); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_9]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00B4); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC39); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_10]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00C3); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC3A); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_11]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00CB); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC3B); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_12]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00D0); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC3C); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_13]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00D4); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC3D); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_14]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00DC); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC3E); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_15]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00E4); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC3F); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_16]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00EA); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC40); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_17]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00F5); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xBC41); 	// MCU_ADDRESS [LL_GAMMA_NRCURVE_18]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00FF); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x3C42); 	// MCU_ADDRESS [LL_START_GAMMA_FTB]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0032); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x3C44); 	// MCU_ADDRESS [LL_STOP_GAMMA_FTB]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000); 	// MCU_DATA_0
+	
+	//Step8-Features
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x8002);	// MCU_ADDRESS [MON_MODE]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0000);	// MCU_DATA_0
+	
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x488B); 	// MCU_ADDRESS [CAM1_AWB_CCM_RL_1]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x003F); 	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor( 0x098E, 0x4897); 	// MCU_ADDRESS [CAM1_AWB_CCM_RL_7]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0032); 	// MCU_DATA_0
+
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xE854); 	// MCU_ADDRESS [PRI_A_CONFIG_AWB_K_R_R]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0077); 	// MCU_DATA_0	//Optimized
+	//gamma
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xA807); 	
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0013); 	
+
+	//50Hz
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x2003);	// MCU_ADDRESS [FD_ALGO]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0002);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0xA005);	// MCU_ADDRESS [FD_FDPERIOD_SELECT]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0001);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x98E, 0x8400);	//Refresh Sequencer Mode
+	MT9T113MIPI_write_cmos_sensor(0x990, 0x06); //		= 6
+	tmp =0;
+	while(tmp<50)
+	{
+		mdelay(10);//DELAY=100
+		MT9T113MIPI_write_cmos_sensor(0x98E, 0x8400);	//Refresh Sequencer Mode
+		if(0x00==MT9T113MIPI_read_cmos_sensor(0x990))
+		{
+			 break;
+		}
+		tmp+=1;
+	}
+	//STATE= Detect Master Clock, 1
+	// K46A_REV03_PATCH01_REV1
+	MT9T113MIPI_write_cmos_sensor(0x0982, 0x0000);	// ACCESS_CTL_STAT
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0A80);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x3C3C);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xCE05);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x1F1F);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x0204);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x0CCC);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x33D4);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x00FC);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0A90);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0590);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xBDA8);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x93CE);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x051F);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x1F02);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0110);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xCC33);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xD830);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0AA0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xED02);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xCC05);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xB8ED);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x00C6);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x06BD);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xA8B1);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xCE05);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x1F1F);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0AB0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0208);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x0CCC);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x33D6);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x00FC);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0592);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xBDA8);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x93CC);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0AC0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x33F4);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x02CC);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xFFE9);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xFC05);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x94C4);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x164F);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0AD0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xBDA9);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x0ACE);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x051F);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x1F02);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x020A);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xCC32);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x1030);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0AE0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x4FBD);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xA8E4);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x3838);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x393C);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x3CFC);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0322);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xB303);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x2030);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0AF0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xED02);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xCE03);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x141F);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x0408);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x3ECE);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0314);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x1F0B);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x0134);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B00);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x30EC);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x0227);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x2F83);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x0000);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x2C18);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xF603);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x244F);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B10);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xFC03);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x20A3);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x00B3);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x0322);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x241A);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xFC03);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x22FD);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x0320);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B20);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x2012);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xF603);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x244F);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xF303);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x20B3);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0322);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x2306);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xFC03);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B30);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x22FD);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x0320);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xBD7D);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x9038);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x3839);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x3C3C);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xFC07);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x4327);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B40);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x5FDE);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x431F);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xB410);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x563C);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xFC07);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x4130);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x3CCC);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B50);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0008);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x00FC);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x0743);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xBDAA);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x7C38);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x38BD);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xE9E4);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B60);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x02CC);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x0064);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xCC01);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x00BD);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xAA7C);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xFD03);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B70);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x103C);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xFC07);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x4530);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x3CCC);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0008);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x00FC);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B80);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0743);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xBDAA);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x7C38);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x38BD);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xE9E4);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x30ED);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x02CC);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x0064);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0B90);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xED00);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xCC01);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x00BD);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xAA7C);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xFD03);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x1220);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x03BD);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x7993);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0BA0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x3838);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x390F);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xF601);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x05C1);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x0326);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x14F6);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x0106);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xC106);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0BB0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x260D);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xF630);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x4DC4);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xF0CA);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x08F7);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x304D);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xBD0B);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xC10E);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0BC0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x39F6);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x304D);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xC4F0);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xCA09);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xF730);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x4DDE);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xF218);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xCE0A);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0BD0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x00CC);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x001D);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xBDB5);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x31DE);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xA818);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xCE0A);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x1ECC);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x001D);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0BE0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xBDB5);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x31DE);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xA618);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xCE0A);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x3CCC);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x0013);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0xBDB5);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0x31CC);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0BF0);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0A80);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xFD0A);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x0ECC);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x0AE7);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0xFD0A);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0x30CC);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x0B3A);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xFD0A);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0C00);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x4CCC);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0x0A00);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0xDDF2);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0xCC0A);
+	MT9T113MIPI_write_cmos_sensor(0x0998, 0x1EDD);
+	MT9T113MIPI_write_cmos_sensor(0x099A, 0xA8CC);
+	MT9T113MIPI_write_cmos_sensor(0x099C, 0x0A3C);
+	MT9T113MIPI_write_cmos_sensor(0x099E, 0xDDA6);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x0C10);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0xC601);
+	MT9T113MIPI_write_cmos_sensor(0x0992, 0xF701);
+	MT9T113MIPI_write_cmos_sensor(0x0994, 0x0CF7);
+	MT9T113MIPI_write_cmos_sensor(0x0996, 0x010D);
+	MT9T113MIPI_write_cmos_sensor(0x098A, 0x8C18);	// PHYSICAL_ADDR_ACCESS
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0039);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x0012);	// MCU_ADDRESS [MON_ADDR]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0BA3);	// MCU_DATA_0
+	MT9T113MIPI_write_cmos_sensor(0x098E, 0x0003);	// MCU_ADDRESS [MON_ALGO]
+	MT9T113MIPI_write_cmos_sensor(0x0990, 0x0004);	// MCU_DATA_0
+	//POLL_FIELD=MON_RAM_PATCH_ID,==0,DELAY=10,TIMEOUT=100		   // wait for the patch to complete initialization 
+	mdelay(50);//DELAY=100
+    tmp = 50; 
+    do {
+        mdelay(2);//DELAY=100
+        MT9T113MIPI_write_cmos_sensor(0x0018, 0x002A);	// STANDBY_CONTROL_AND_STATUS
+        if(0x2a == MT9T113MIPI_read_cmos_sensor(0x0018)) {
+            printk("[MT9T113MIPI]Exit stable done \n"); 
+            break;
+        }
+    }while (tmp-- > 0); 
+    
+    //mdelay(50);//DELAY=100
+
+	MT9T113MIPI_sensor.preview_pclk = 520;
+*/
 //} /* MT9T113MIPI_YUV_sensor_initial_setting */
 static void MT9T113MIPI_CAP_setting(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window, MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
+	spin_lock(&mt9t113mipi_drv_lock);
 	MT9T113MIPI_sensor.capture_pclk = 520;
 	MT9T113MIPI_op_state.is_PV_mode = KAL_FALSE;
+	spin_unlock(&mt9t113mipi_drv_lock);
 
 	return;	
 
@@ -1511,6 +2781,21 @@ static u32 mt9t113_calc_mipiclk(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_Set_Video_Frame_Rate
+*
+* DESCRIPTION
+*	This function set the sensor output frmae to target frame and fix the frame rate for 
+*	video encode.
+*
+* PARAMETERS
+*	1. kal_uint32 : Target frame rate to fixed.
+*
+* RETURNS
+*	None
+*
+*************************************************************************/
 static void MT9T113MIPI_Set_Video_Frame_Rate(kal_uint32 frame_rate)
 {
 	kal_uint32 line_length;
@@ -1573,7 +2858,9 @@ static void MT9T113MIPI_Set_Video_Frame_Rate(kal_uint32 frame_rate)
 	}
 #endif	
 
+	spin_lock(&mt9t113mipi_drv_lock);
 	MT9T113MIPI_sensor.video_frame_rate = frame_rate;
+	spin_unlock(&mt9t113mipi_drv_lock);
 
 	return;
 
@@ -1583,6 +2870,22 @@ static void MT9T113MIPI_Set_Video_Frame_Rate(kal_uint32 frame_rate)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPIOpen
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9T113MIPIOpen(void)
 {
 	volatile signed char i;
@@ -1593,8 +2896,10 @@ UINT32 MT9T113MIPIOpen(void)
 	{
 		/* 0xFF is not a valid sensor write ID. */
 		
+		spin_lock(&mt9t113mipi_drv_lock);
 		MT9T113MIPI_sensor.sccb_write_id	= MT9T113_sccb_addr[i];
 		MT9T113MIPI_sensor.sccb_read_id		= (MT9T113MIPI_sensor.sccb_write_id | 1);
+		spin_unlock(&mt9t113mipi_drv_lock);
 
 		//4 <9>software reset sensor and wait (to sensor)
 		//Reset
@@ -1623,17 +2928,35 @@ UINT32 MT9T113MIPIOpen(void)
 	    printk("[MT9T113MIPIYUV]:Read Sensor ID fail:0x%x\n", sensor_id);  
 		return ERROR_SENSOR_CONNECT_FAIL;
 	}
-	MT9T113MIPI_sensor.pv_shutter = 0x0265;
-	MT9T113MIPI_sensor.pv_extra_shutter = 0;
 
     /*9. Apply sensor initail setting*/
 	MT9T113MIPI_YUV_sensor_initial_setting();
+	spin_lock(&mt9t113mipi_drv_lock);
 	MT9T113MIPI_sensor.preview_pclk = 520;
 	first_enter_preview = KAL_TRUE;
+	MT9T113MIPI_sensor.pv_shutter = 0x0265;
+	MT9T113MIPI_sensor.pv_extra_shutter = 0;
+	spin_unlock(&mt9t113mipi_drv_lock);
      
 	return ERROR_NONE;
 }	/* MT9T113MIPIOpen() */
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_GetSensorID
+*
+* DESCRIPTION
+*	This function get the sensor ID
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static kal_uint32 MT9T113MIPI_GetSensorID(kal_uint32 *sensorID)
 
 {
@@ -1661,6 +2984,22 @@ static kal_uint32 MT9T113MIPI_GetSensorID(kal_uint32 *sensorID)
     return ERROR_NONE;    
 }   /* MT9T113MIPIOpen  */
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPIClose
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9T113MIPIClose(void)
 {
 //	CISModulePowerOn(FALSE);
@@ -1753,6 +3092,20 @@ static void MT9T113MIPI_set_mirror_flip(kal_uint8 image_mirror)
     }
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_awb_enable
+*
+* DESCRIPTION
+*	This function enable or disable the awb (Auto White Balance).
+*
+* PARAMETERS
+*	1. kal_bool : KAL_TRUE - enable awb, KAL_FALSE - disable awb.
+*
+* RETURNS
+*	kal_bool : It means set awb right or not.
+*
+*************************************************************************/
 static kal_bool MT9T113MIPI_awb_enable(kal_bool enalbe)
 {	 
 	kal_uint16 temp_AWB_reg = 0;
@@ -1760,6 +3113,20 @@ static kal_bool MT9T113MIPI_awb_enable(kal_bool enalbe)
 	return KAL_TRUE;
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_ae_enable
+*
+* DESCRIPTION
+*	This function enable or disable the ae (Auto Exposure).
+*
+* PARAMETERS
+*	1. kal_bool : KAL_TRUE - enable ae, KAL_FALSE - disable awb.
+*
+* RETURNS
+*	kal_bool : It means set awb right or not.
+*
+*************************************************************************/
 static kal_bool MT9T113MIPI_ae_enable(kal_bool enalbe)
 {	 
 	kal_uint16 temp_AE_reg = 0;
@@ -1767,11 +3134,27 @@ static kal_bool MT9T113MIPI_ae_enable(kal_bool enalbe)
 	return KAL_TRUE;
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPIPreview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9T113MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 
 {	
-	MT9T113MIPI_op_state.sensor_cap_state = KAL_FALSE;
 
 	#ifdef MT9T113MIPI_DEBUG
 	 printk("[MT9T113MIPIYUV]:preview\n");  
@@ -1779,6 +3162,8 @@ UINT32 MT9T113MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	//MT9T113MIPI_PV_setting(image_window, sensor_config_data);
 	/* After set exposure line, there should be delay for 2~4 frame time, then enable AEC */
 	mdelay(5);
+	spin_lock(&mt9t113mipi_drv_lock);
+	MT9T113MIPI_op_state.sensor_cap_state = KAL_FALSE;
 	MT9T113MIPI_VEDIO_encode_mode=KAL_FALSE;
 
 	//MT9T113MIPI_ae_enable(KAL_TRUE);
@@ -1788,7 +3173,11 @@ UINT32 MT9T113MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     MT9T113MIPI_sensor.pv_dummy_lines = 0;
 	
 	MT9T113MIPI_sensor.preview_pclk = 520;
+
 	MT9T113MIPI_op_state.is_PV_mode = KAL_TRUE;
+	spin_unlock(&mt9t113mipi_drv_lock);
+
+
 	    printk("[MT9T113MIPIYUV]sensor_config_data->SensorImageMirror 0x%x\n", sensor_config_data->SensorImageMirror);  
 	//MT9T113MIPI_set_dummy(MT9T113MIPI_sensor.pv_dummy_pixels, MT9T113MIPI_sensor.pv_dummy_lines);
 
@@ -1827,18 +3216,26 @@ UINT32 MT9T113MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window, MSDK
 	kal_uint32 prev_line_len = 0;
 	kal_uint32 cap_line_len = 0;
 	printk("[MT9T113MIPIYUV]:MT9T113MIPICapture capture");  
-	MT9T113MIPI_op_state.sensor_cap_state = KAL_TRUE;	
+	
 	MT9T113MIPI_ae_enable(KAL_FALSE);
 	MT9T113MIPI_awb_enable(KAL_FALSE);	
 	shutter = MT9T113MIPI_read_shutter();
-	MT9T113MIPI_sensor.pv_sensor_gain = MT9T113MIPI_read_sensor_gain();
+	temp_reg = MT9T113MIPI_read_sensor_gain();
+
+	spin_lock(&mt9t113mipi_drv_lock);
+    MT9T113MIPI_sensor.pv_sensor_gain = temp_reg;
+	MT9T113MIPI_op_state.sensor_cap_state = KAL_TRUE;	
+	spin_unlock(&mt9t113mipi_drv_lock);
 	
 	if ((image_window->ImageTargetWidth <= MT9T113_IMAGE_SENSOR_PV_WIDTH)
 		&& (image_window->ImageTargetHeight <= MT9T113_IMAGE_SENSOR_PV_HEIGHT))
 	{		/* Capture Size Less than PV Size */	
 
-			MT9T113MIPI_CAP_setting(image_window, sensor_config_data);			
+			MT9T113MIPI_CAP_setting(image_window, sensor_config_data);	
+
+			spin_lock(&mt9t113mipi_drv_lock);
 			MT9T113MIPI_sensor.capture_pclk = MT9T113MIPI_sensor.preview_pclk;   //Don't need change the clk for pv capture
+			spin_unlock(&mt9t113mipi_drv_lock);
 			//MT9T113MIPI_set_dummy(MT9T113MIPI_sensor.cap_dummy_pixels, MT9T113MIPI_sensor.cap_dummy_lines);
 
 			//[Go to capture]
@@ -2031,6 +3428,22 @@ UINT32 MT9T113MIPIControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE
 
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_set_param_wb
+*
+* DESCRIPTION
+*	wb setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9T113MIPI_set_param_wb(UINT16 para)
 {
 #if 1
@@ -2040,14 +3453,20 @@ BOOL MT9T113MIPI_set_param_wb(UINT16 para)
 		   #ifdef MT9T113MIPI_DEBUG
 				printk("[MT9T113MIPIYUV]:AWB off \n");
 			#endif	
+			spin_lock(&mt9t113mipi_drv_lock);
 	        MT9T113MIPI_AWB_ENABLE = KAL_FALSE; 
+			spin_unlock(&mt9t113mipi_drv_lock);
+			
 	        MT9T113MIPI_set_AWB_mode(MT9T113MIPI_AWB_ENABLE);
 	        break;             
 		case AWB_MODE_AUTO:
 			#ifdef MT9T113MIPI_DEBUG
 				printk("[MT9T113MIPIYUV]:AWB auto \n");
 			#endif
+			spin_lock(&mt9t113mipi_drv_lock);
             MT9T113MIPI_AWB_ENABLE = KAL_TRUE; 
+			spin_unlock(&mt9t113mipi_drv_lock);
+			
             MT9T113MIPI_set_AWB_mode(MT9T113MIPI_AWB_ENABLE);    
 		    MT9T113MIPI_write_cmos_sensor(0x098E, 0x6848 ); // MCU_ADDRESS [PRI_A_CONFIG_AWB_ALGO_RUN]
 			MT9T113MIPI_write_cmos_sensor(0x0990, 0x003F ); // MCU_DATA_0
@@ -2193,6 +3612,22 @@ BOOL MT9T113MIPI_set_param_wb(UINT16 para)
 	
 } /* MT9T113MIPI_set_param_wb */
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_set_param_effect
+*
+* DESCRIPTION
+*	effect setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9T113MIPI_set_param_effect(UINT16 para)
 {
   kal_uint32 ret = KAL_TRUE;
@@ -2381,6 +3816,22 @@ BOOL MT9T113MIPI_set_param_effect(UINT16 para)
 
 } /* MT9T113MIPI_set_param_effect */
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_set_param_banding
+*
+* DESCRIPTION
+*	banding setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9T113MIPI_set_param_banding(UINT16 para)
 {
 	kal_uint16 temp_reg = 0;
@@ -2406,7 +3857,9 @@ BOOL MT9T113MIPI_set_param_banding(UINT16 para)
 	
 		line_length = line_length * 2;		/* Multiple 2 is because one YUV422 pixels need two clock. */
 	
+		spin_lock(&mt9t113mipi_drv_lock);
 		MT9T113MIPI_op_state.curr_banding = para;	/* Record current banding setting. */
+		spin_unlock(&mt9t113mipi_drv_lock);
 		
 
 	switch (para)
@@ -2451,6 +3904,22 @@ BOOL MT9T113MIPI_set_param_banding(UINT16 para)
 
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9T113MIPI_set_param_exposure
+*
+* DESCRIPTION
+*	exposure setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9T113MIPI_set_param_exposure(UINT16 para)
 {
 	printk("[MT9T113MIPIYUV]:ev 0\n");  
@@ -2544,16 +4013,22 @@ UINT32 MT9T113MIPIYUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
 	break;
 	case FID_AE_SCENE_MODE: 
 	    if (iPara == AE_MODE_OFF) {
+				spin_lock(&mt9t113mipi_drv_lock);
                 MT9T113MIPI_AE_ENABLE = KAL_FALSE; 
+				spin_unlock(&mt9t113mipi_drv_lock);
             }
             else {
+				spin_lock(&mt9t113mipi_drv_lock);
                 MT9T113MIPI_AE_ENABLE = KAL_TRUE; 
+				spin_unlock(&mt9t113mipi_drv_lock);
 	    }
             MT9T113MIPI_set_AE_mode(MT9T113MIPI_AE_ENABLE);
             break; 
 
 	case FID_ZOOM_FACTOR:
+		spin_lock(&mt9t113mipi_drv_lock);
 	    zoom_factor = iPara; 		
+		spin_unlock(&mt9t113mipi_drv_lock);
 	break; 
 	default:
 	break;
@@ -2565,7 +4040,12 @@ UINT32 MT9T113MIPIYUVSetVideoMode(UINT16 u2FrameRate)
 {
     kal_uint8 iTemp,tmp;
     printk("[MT9T113MIPIYUV] Set Video Mode \n"); 
+	
+	spin_lock(&mt9t113mipi_drv_lock);
     MT9T113MIPI_VEDIO_encode_mode = KAL_TRUE; 
+	spin_unlock(&mt9t113mipi_drv_lock);
+
+	
     //iTemp = MT9T113MIPI_read_cmos_sensor(0x3014);
     //MT9T113MIPI_write_cmos_sensor(0x3014, iTemp & 0xf7); //Disable night mode
 
@@ -2686,7 +4166,9 @@ UINT32 MT9T113MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 		case SENSOR_FEATURE_SET_FLASHLIGHT:
 		break;
 		case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
+			spin_lock(&mt9t113mipi_drv_lock);
 			MT9T113MIPI_isp_master_clock=*pFeatureData32;
+			spin_unlock(&mt9t113mipi_drv_lock);
 		break;
 		case SENSOR_FEATURE_SET_REGISTER:
 			MT9T113MIPI_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);

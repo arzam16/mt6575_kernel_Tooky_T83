@@ -1,3 +1,41 @@
+# Copyright Statement:
+#
+# This software/firmware and related documentation ("MediaTek Software") are
+# protected under relevant copyright laws. The information contained herein
+# is confidential and proprietary to MediaTek Inc. and/or its licensors.
+# Without the prior written permission of MediaTek inc. and/or its licensors,
+# any reproduction, modification, use or disclosure of MediaTek Software,
+# and information contained herein, in whole or in part, shall be strictly prohibited.
+#
+# MediaTek Inc. (C) 2010. All rights reserved.
+#
+# BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+# THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+# RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
+# AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+# NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+# SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+# SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
+# THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
+# THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
+# CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
+# SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
+# STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+# CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+# AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+# OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
+# MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+#
+# The following software/firmware and/or related documentation ("MediaTek Software")
+# have been modified by MediaTek Inc. All revisions are subject to any receiver's
+# applicable license agreements with MediaTek Inc.
+
+
+# *************************************************************************
+# Set shell align with Android build system
+# *************************************************************************
 SHELL        := /bin/bash
 
 include mediatek/build/Makefile
@@ -9,7 +47,7 @@ PRJ_MF       := $(MTK_ROOT_CONFIG_OUT)/ProjectConfig.mk
 include $(MTK_ROOT_CONFIG_OUT)/ProjectConfig.mk
 ifdef OPTR_SPEC_SEG_DEF
   ifneq (NONE,$(OPTR_SPEC_SEG_DEF))
-    #include $(MTK_ROOT_SOURCE_OPERATOR)/OperatorInfo.mk
+    include $(MTK_ROOT_SOURCE_OPERATOR)/OperatorInfo.mk
   endif
 endif
 
@@ -25,7 +63,7 @@ remake update-api javaoptgen drvgen emigen nandgen: custgen
          check-modem update-modem sign-image encrypt-image sign-modem check-dep \
          dump-memusage gen-relkey check-appres \
          codegen btcodegen javaoptgen emigen nandgen custgen drvgen ptgen \
-         update-api modem-info bindergen dist version
+         update-api modem-info bindergen clean-modem perso check-sign
 
 #MKTOPDIR      =  $(shell pwd)
 LOGDIR        =  $(MKTOPDIR)/out/target/product
@@ -38,15 +76,16 @@ LOG   =  $(LOGDIR)/$(PROJECT)_
 CUSTOM_MEMORY_HDR = mediatek/custom/$(PROJECT)/preloader/inc/custom_MemoryDevice.h
 CUSTOM_NAND_HDR = mediatek/custom/$(PROJECT)/common/nand_device_list.h
 
-ifeq ($(MTK_TABLET_PLATFORM),yes)
+ifeq ($(MTK_TABLET_DRAM),yes)
 MEMORY_DEVICE_XLS = mediatek/build/tools/TabletEmiList/$(MTK_PLATFORM)/TabletMemoryDeviceList_$(MTK_PLATFORM).xls
 else
 MEMORY_DEVICE_XLS = mediatek/build/tools/emigen/$(MTK_PLATFORM)/MemoryDeviceList_$(MTK_PLATFORM).xls
 endif
 
 USERID        =  $(shell whoami)
-PRELOADER_WD  =  mediatek/source/preloader
+PRELOADER_WD  =  mediatek/preloader
 UBOOT_WD      =  bootable/bootloader/uboot
+LK_WD         =  bootable/bootloader/lk
 KERNEL_WD     =  kernel
 ANDROID_WD    =  .
 ALL_MODULES   =  
@@ -56,10 +95,11 @@ CMD_ARGU2    :=  $(filter-out -j%, $(CMD_ARGU))
 REMAKECMD    :=  make -fmediatek/build/makemtk.mk CMD_ARGU=$(CMD_ARGU) $(CMD_ARGU2) $(MAKE_DEBUG)
 CPUCORES     :=  $(shell cat /proc/cpuinfo | grep processor | wc -l)
 MAKEJOBS     :=  -j$(CPUCORES)
+MAKEPERSO    :=  make  $(MAKEJOBS) perso $(CMD_ARGU) $(MAKE_DEBUG)
 
 # Memory partition auto-gen related variable initilization
-MEM_PARTITION_GENERATOR   := mediatek/build/tools/ptgen/ptgen.pl
-MEM_PARTITION_TABLE       := mediatek/build/tools/ptgen/partition_table.xls
+MEM_PARTITION_GENERATOR   := mediatek/build/tools/ptgen/$(MTK_PLATFORM)/ptgen.pl
+MEM_PARTITION_TABLE       := mediatek/build/tools/ptgen/$(MTK_PLATFORM)/partition_table_$(MTK_PLATFORM).xls
 PARTITION_HEADER_LOCATION := mediatek/custom/$(PROJECT)/common
 BOARDCONFIG_LOCATION 	  := mediatek/config/$(PROJECT)/configs/EMMC_partition_size.mk
 OTA_SCATTER_GENERATOR     := mediatek/build/tools/ptgen/ota_scatter.pl
@@ -75,7 +115,14 @@ SHOWRSLT      =  /usr/bin/perl $(MKTOPDIR)/mediatek/build/tools/showRslt.pl
 PRELOADER_IMAGES := $(PRELOADER_WD)/bin/preloader_$(PROJECT).bin
 UBOOT_IMAGES     := $(UBOOT_WD)/uboot_$(PROJECT).bin \
                     $(UBOOT_WD)/logo.bin
-KERNEL_IMAGES    := $(KERNEL_WD)/kernel_$(PROJECT).bin
+
+LK_IMAGES     := $(LK_WD)/build-$(PROJECT)/lk.bin
+
+ifeq ($(strip $(KBUILD_OUTPUT_SUPPORT)),yes)
+  KERNEL_IMAGES    := $(KERNEL_WD)/out/kernel_$(PROJECT).bin
+else
+  KERNEL_IMAGES    := $(KERNEL_WD)/kernel_$(PROJECT).bin
+endif
 ANDROID_IMAGES   := $(LOGDIR)/$(PROJECT)/system.img \
                     $(LOGDIR)/$(PROJECT)/boot.img \
                     $(LOGDIR)/$(PROJECT)/recovery.img \
@@ -92,15 +139,15 @@ ifeq (MT6573, $(MTK_PLATFORM))
 endif
 
 ifeq ($(MTK_LCA_SUPPORT),yes)
-  SCATTER_FILE := mediatek/source/misc/$(MTK_PLATFORM)_Android_scatter_LCA.txt
+  SCATTER_FILE := mediatek/misc/$(MTK_PLATFORM)_Android_scatter_LCA.txt
 else
-  SCATTER_FILE := mediatek/source/misc/$(MTK_PLATFORM)_Android_scatter.txt
+  SCATTER_FILE := mediatek/misc/$(MTK_PLATFORM)_Android_scatter.txt
   ifeq ($(strip $(MTK_EMMC_SUPPORT)),yes)
-    SCATTER_FILE := mediatek/source/misc/$(MTK_PLATFORM)_Android_scatter_emmc.txt
+    SCATTER_FILE := mediatek/misc/$(MTK_PLATFORM)_Android_scatter_emmc.txt
   endif
 endif
 #wschen
-OTA_SCATTER_FILE := mediatek/source/misc/ota_scatter.txt
+OTA_SCATTER_FILE := mediatek/misc/ota_scatter.txt
 
 export TARGET_PRODUCT=$(PROJECT)
 export FLAVOR=$(FLAVOR)
@@ -132,6 +179,7 @@ ifeq ($(ENABLE_TEE), TRUE)
   DEAL_STDOUT_CUSTREL := 2>&1 | tee -a $(LOG)rel-cust.log
   DEAL_STDOUT_CHK_APPRES := 2>&1 | tee -a $(LOG)check-appres.log
   DEAL_STDOUT_BINDERGEN := 2>&1 | tee -a $(LOG)bindergen.log
+  DEAL_STDOUT_PERSO := 2>&1 | tee -a $(LOG)perso.log
 else
   DEAL_STDOUT  := >> $(MODULE_LOG) 2>&1
   DEAL_STDOUT_CODEGEN  := > $(CODEGEN_LOG) 2>&1
@@ -153,6 +201,7 @@ else
   DEAL_STDOUT_CUSTREL := > $(LOG)rel-cust.log 2>&1
   DEAL_STDOUT_CHK_APPRES := >> $(LOG)check-appres.log 2>&1
   DEAL_STDOUT_BINDERGEN := > $(LOG)bindergen.log 2>&1
+  DEAL_STDOUT_PERSO := > $(LOG)perso.log 2>&1
 endif
 
 ifneq ($(PROJECT),generic)
@@ -163,6 +212,10 @@ endif
 
 ifeq ($(BUILD_PRELOADER),yes)
   ALL_MODULES += preloader
+endif
+
+ifeq ($(BUILD_LK),yes)
+  ALL_MODULES += lk
 endif
 
 ifeq ($(BUILD_UBOOT),yes)
@@ -268,26 +321,38 @@ rel-cust:
 clean:
 	$(hide) $(REMAKECMD) ACTION=$@ $(CUR_MODULE)
 
+mrproper:
+	$(hide) $(REMAKECMD) ACTION=$@ $(CUR_MODULE)
+
 remake:
 	$(hide) /usr/bin/perl mediatek/build/tools/mtkBegin.pl $(PROJECT)
 	$(hide) $(REMAKECMD) ACTION= $(CUR_MODULE)
 
+#### Remove old modem files under mediatek/custom/out/$project/modem ####
+clean-modem:
+	$(hide) rm -rf $(strip $(MTK_ROOT_CUSTOM_OUT))/modem
 
-update-modem: custgen check-modem
+update-modem: clean-modem custgen check-modem sign-modem
 	$(hide) echo $(SHOWTIME) $@ing...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_LOG)$@.log
-	$(hide) rm -rf mediatek/custom/out/
-	$(hide) rm -rf mediatek/config/out/
 	$(hide) ./makeMtk $(FULL_PROJECT) mm build/target/board/ snod $(DEAL_STDOUT_UPDATE_MD) && \
          $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log || \
          $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log
 
+perso:  javaoptgen ptgen
+	$(hide) echo $(SHOWTIME) $@ing...
+	$(hide) /usr/bin/perl mediatek/build/tools/mtkBegin.pl $(PROJECT)
+	$(hide) $(MAKEPERSO) $(DEAL_STDOUT_PERSO)
 
+check-sign:
+	$(hide) make check-sign
+
+drvgen:PRIVATE_CUSTOM_KERNEL_DCT:= $(if $(CUSTOM_KERNEL_DCT),$(CUSTOM_KERNEL_DCT),dct)
 drvgen:
 ifneq ($(PROJECT),generic)
 	$(hide) echo $(SHOWTIME) $@ing...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_LOG)$@.log
-	$(hide) mediatek/source/dct/DrvGen mediatek/custom/$(PROJECT)/kernel/dct/dct/codegen.dws $(DEAL_STDOUT_DRVGEN) && \
+	$(hide) mediatek/dct/DrvGen mediatek/custom/$(PROJECT)/kernel/dct/$(PRIVATE_CUSTOM_KERNEL_DCT)/codegen.dws $(DEAL_STDOUT_DRVGEN) && \
 	 $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log || \
 	 $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log
 endif
@@ -310,13 +375,13 @@ endif
 ifneq ($(PROJECT),generic)
   ifeq ($(MTK_BT_SUPPORT), yes)
 btcodegen: BT_DB_AUTO_GEN_SCRIPTS_ENTRY := mediatek/build/tools/BTCodegen.pl
-btcodegen: BT_DB_AUTO_GEN_SCRIPTS_PATH := mediatek/source/external/bluetooth/blueangel/_bt_scripts
-btcodegen: CGEN_EXECUTABLE := mediatek/source/cgen/Cgen
-btcodegen: CGEN_HOST_CFG := mediatek/source/cgen/cgencfg/pc_cnf
-btcodegen: CGEN_TARGET_CFG := mediatek/source/cgen/cgencfg/tgt_cnf
+btcodegen: BT_DB_AUTO_GEN_SCRIPTS_PATH := mediatek/protect/external/bluetooth/blueangel/_bt_scripts
+btcodegen: CGEN_EXECUTABLE := mediatek/cgen/Cgen
+btcodegen: CGEN_HOST_CFG := mediatek/cgen/cgencfg/pc_cnf
+btcodegen: CGEN_TARGET_CFG := mediatek/cgen/cgencfg/tgt_cnf
 btcodegen:
     # Todo: use partial source flag to wrap here
-    ifneq ($(wildcard mediatek/source/external/bluetooth/blueangel/_bt_scripts/BTCodegen.pl),)
+    ifneq ($(wildcard mediatek/protect/external/bluetooth/blueangel/_bt_scripts/BTCodegen.pl),)
 	$(hide) echo $(SHOWTIME) $@ing ...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_LOG)$@.log
 	$(hide) perl $(BT_DB_AUTO_GEN_SCRIPTS_ENTRY) \
@@ -361,7 +426,7 @@ javaoptgen:
 sign-image:
 	$(hide) echo $(SHOWTIME) $@ing ...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_LOG)$@.log
-	$(hide) perl mediatek/build/tools/SignTool/SignTool.pl $(PROJECT) $(FULL_PROJECT) $(MTK_SEC_SECRO_AC_SUPPORT) $(DEAL_STDOUT_SIGN_IMAGE) && \
+	$(hide) perl mediatek/build/tools/SignTool/SignTool.pl $(PROJECT) $(FULL_PROJECT) $(MTK_SEC_SECRO_AC_SUPPORT) $(MTK_NAND_PAGE_SIZE) $(DEAL_STDOUT_SIGN_IMAGE) && \
 	  $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log || \
           $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log
 
@@ -427,7 +492,7 @@ check-modem: ;
 endif
 
 emigen:
-ifeq (,$(filter MT8320 MT6575 MT6583,$(MTK_PLATFORM)))
+ifeq (,$(filter MT8320 MT6575 MT6577 MT6583,$(MTK_PLATFORM)))
 ifneq ($(PROJECT), generic)
 	$(hide) echo $(SHOWTIME) $@ing ...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_LOG)$@.log
@@ -440,7 +505,7 @@ endif
 
 nandgen:
 ifneq ($(PROJECT), generic)
-ifneq (,$(filter MT6575 MT6573,$(MTK_PLATFORM)))
+ifneq (,$(filter MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
 	$(hide) echo $(SHOWTIME) $@ing ...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_LOG)$@.log
 	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/nandgen.pl \
@@ -480,13 +545,14 @@ ifneq ($(PROJECT), generic)
 	$(hide) perl $(MEM_PARTITION_GENERATOR) \
                      MTK_PLATFORM=$(MTK_PLATFORM) \
                      PROJECT=$(PROJECT) \
+                     FULL_PROJECT=$(FULL_PROJECT) \
                      MTK_LCA_SUPPORT=$(MTK_LCA_SUPPORT) \
                      MTK_NAND_PAGE_SIZE=$(MTK_NAND_PAGE_SIZE) \
                      MTK_EMMC_SUPPORT=$(MTK_EMMC_SUPPORT) \
                      EMMC_CHIP=$(EMMC_CHIP) \
                      MTK_LDVT_SUPPORT=$(MTK_LDVT_SUPPORT) \
                      TARGET_BUILD_VARIANT=$(TARGET_BUILD_VARIANT) \
-			MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
+                     MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
                      $(DEAL_STDOUT_PTGEN) && \
                      $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log || \
                      $(SHOWRSLT) $${PIPESTATUS[0]} $(LOG)$@.log
@@ -530,19 +596,11 @@ ifneq ($(ACTION), )
 	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) $(ACTION) || \
 	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) $(ACTION)) && cd $(MKTOPDIR)
 else
-ifeq ($(MTK_PLATFORM), MT6516)
+ifneq (,$(filter MT6516 MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
 	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
                 $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
 endif
-ifeq ($(MTK_PLATFORM), MT6573)
-	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
-                $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
-endif
-ifeq ($(MTK_PLATFORM), MT6575)
-	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
-                $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
-endif
-ifneq (,$(filter MT6575 MT6573,$(MTK_PLATFORM)))
+ifneq (,$(filter MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
 	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/nandgen.pl \
                      $(CUSTOM_NAND_HDR) \
                      $(MEMORY_DEVICE_XLS) \
@@ -554,13 +612,14 @@ endif
 	$(hide) perl $(MEM_PARTITION_GENERATOR) \
                      MTK_PLATFORM=$(MTK_PLATFORM) \
                      PROJECT=$(PROJECT) \
+                     FULL_PROJECT=$(FULL_PROJECT) \
                      MTK_LCA_SUPPORT=$(MTK_LCA_SUPPORT) \
                      MTK_NAND_PAGE_SIZE=$(MTK_NAND_PAGE_SIZE) \
                      MTK_EMMC_SUPPORT=$(MTK_EMMC_SUPPORT) \
                      EMMC_CHIP=$(EMMC_CHIP) \
                      MTK_LDVT_SUPPORT=$(MTK_LDVT_SUPPORT) \
                      TARGET_BUILD_VARIANT=$(TARGET_BUILD_VARIANT) \
-			MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
+                     MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
                      $(DEAL_STDOUT_PTGEN)
 
 	$(hide) perl $(OTA_SCATTER_GENERATOR) $(SCATTER_FILE) $(OTA_SCATTER_FILE)
@@ -576,29 +635,21 @@ else
 	$(hide) echo Not support $@.
 endif
 
-uboot:
-ifeq ($(BUILD_UBOOT),yes)
+lk:
+ifeq ($(BUILD_LK),yes)
 	$(hide) echo $(SHOWTIME) $(SHOWBUILD)ing $@...
 	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_MODULE_LOG)
 ifneq ($(ACTION), )
-	$(hide) cd $(UBOOT_WD) && \
-	  (make distclean $(DEAL_STDOUT) && \
+	$(hide) cd $(LK_WD) && \
+	  (PROJECT=$(PROJECT) make clean $(DEAL_STDOUT) && \
 	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) $(ACTION) || \
 	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) $(ACTION)) && cd $(MKTOPDIR)
 else
-ifeq ($(MTK_PLATFORM), MT6516)
+ifneq (,$(filter MT6516 MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
 	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
                 $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
 endif
-ifeq ($(MTK_PLATFORM), MT6573)
-	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
-                $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
-endif
-ifeq ($(MTK_PLATFORM), MT6575)
-	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
-                $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
-endif
-ifneq (,$(filter MT6575 MT6573,$(MTK_PLATFORM)))
+ifneq (,$(filter MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
 	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/nandgen.pl \
                      $(CUSTOM_NAND_HDR) \
                      $(MEMORY_DEVICE_XLS) \
@@ -610,13 +661,68 @@ endif
 	$(hide) perl $(MEM_PARTITION_GENERATOR) \
                      MTK_PLATFORM=$(MTK_PLATFORM) \
                      PROJECT=$(PROJECT) \
+                     FULL_PROJECT=$(FULL_PROJECT) \
                      MTK_LCA_SUPPORT=$(MTK_LCA_SUPPORT) \
                      MTK_NAND_PAGE_SIZE=$(MTK_NAND_PAGE_SIZE) \
                      MTK_EMMC_SUPPORT=$(MTK_EMMC_SUPPORT) \
                      EMMC_CHIP=$(EMMC_CHIP) \
                      MTK_LDVT_SUPPORT=$(MTK_LDVT_SUPPORT) \
                      TARGET_BUILD_VARIANT=$(TARGET_BUILD_VARIANT) \
-			MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
+                    MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
+                     $(DEAL_STDOUT_PTGEN)
+
+# disable ota scatter generation
+#	$(hide) perl $(OTA_SCATTER_GENERATOR) $(SCATTER_FILE) $(OTA_SCATTER_FILE)
+
+	 $(hide) cd $(LK_WD) && \
+	  (FULL_PROJECT=$(FULL_PROJECT) make $(MAKEJOBS) $(PROJECT) $(ACTION) $(DEAL_STDOUT) && \
+	  cd $(MKTOPDIR) && \
+	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) || \
+	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG))
+
+
+#	  cd $(MKTOPDIR) && \
+#	   $(call chkImgSize,$(ACTION),$(PROJECT),$(SCATTER_FILE),$(LK_IMAGES),$(DEAL_STDOUT) &&) \
+
+endif
+else
+	$(hide) echo Not support $@.
+endif
+
+uboot:
+ifeq ($(BUILD_UBOOT),yes)
+	$(hide) echo $(SHOWTIME) $(SHOWBUILD)ing $@...
+	$(hide) echo -e \\t\\t\\t\\b\\b\\b\\bLOG: $(S_MODULE_LOG)
+ifneq ($(ACTION), )
+	$(hide) cd $(UBOOT_WD) && \
+	  (make distclean $(DEAL_STDOUT) && \
+	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) $(ACTION) || \
+	  $(SHOWRSLT) $${PIPESTATUS[0]} $(MODULE_LOG) $(ACTION)) && cd $(MKTOPDIR)
+else
+ifneq (,$(filter MT6516 MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
+	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/emigen.pl $(CUSTOM_MEMORY_HDR) \
+                $(MEMORY_DEVICE_XLS) $(MTK_PLATFORM) $(PROJECT) $(DEAL_STDOUT)
+endif
+ifneq (,$(filter MT6575 MT6577 MT6573,$(MTK_PLATFORM)))
+	$(hide) perl mediatek/build/tools/emigen/$(MTK_PLATFORM)/nandgen.pl \
+                     $(CUSTOM_NAND_HDR) \
+                     $(MEMORY_DEVICE_XLS) \
+                     $(MTK_PLATFORM) \
+                     $(PROJECT) \
+                     $(MTK_NAND_PAGE_SIZE) \
+                     $(DEAL_STDOUT)
+endif
+	$(hide) perl $(MEM_PARTITION_GENERATOR) \
+                     MTK_PLATFORM=$(MTK_PLATFORM) \
+                     PROJECT=$(PROJECT) \
+                     FULL_PROJECT=$(FULL_PROJECT) \
+                     MTK_LCA_SUPPORT=$(MTK_LCA_SUPPORT) \
+                     MTK_NAND_PAGE_SIZE=$(MTK_NAND_PAGE_SIZE) \
+                     MTK_EMMC_SUPPORT=$(MTK_EMMC_SUPPORT) \
+                     EMMC_CHIP=$(EMMC_CHIP) \
+                     MTK_LDVT_SUPPORT=$(MTK_LDVT_SUPPORT) \
+                     TARGET_BUILD_VARIANT=$(TARGET_BUILD_VARIANT) \
+                     MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
                      $(DEAL_STDOUT_PTGEN)
 
 	$(hide) perl $(OTA_SCATTER_GENERATOR) $(SCATTER_FILE) $(OTA_SCATTER_FILE)
@@ -632,19 +738,22 @@ else
 	$(hide) echo Not support $@.
 endif
 
+kernel: nandgen
+
 kernel:
 ifeq ($(BUILD_KERNEL),yes)
   ifeq ($(ACTION),)
 	$(hide) perl $(MEM_PARTITION_GENERATOR) \
                      MTK_PLATFORM=$(MTK_PLATFORM) \
                      PROJECT=$(PROJECT) \
+                     FULL_PROJECT=$(FULL_PROJECT) \
                      MTK_LCA_SUPPORT=$(MTK_LCA_SUPPORT) \
                      MTK_NAND_PAGE_SIZE=$(MTK_NAND_PAGE_SIZE) \
                      MTK_EMMC_SUPPORT=$(MTK_EMMC_SUPPORT) \
                      EMMC_CHIP=$(EMMC_CHIP) \
                      MTK_LDVT_SUPPORT=$(MTK_LDVT_SUPPORT) \
                      TARGET_BUILD_VARIANT=$(TARGET_BUILD_VARIANT) \
-			MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
+                     MTK_EMMC_OTP_SUPPORT=$(MTK_EMMC_SUPPORT_OTP) \
                      $(DEAL_STDOUT_PTGEN)
 	$(hide) perl $(OTA_SCATTER_GENERATOR) $(SCATTER_FILE) $(OTA_SCATTER_FILE)
   endif
@@ -705,12 +814,11 @@ endif
 
 ifeq ($(ACTION), )
 	$(hide) /usr/bin/perl mediatek/build/tools/mtkFinalize.pl $(PROJECT) $(MTK_PLATFORM) $(MTK_EMMC_SUPPORT)
-	$(hide) /usr/bin/perl mediatek/build/tools/version.pl $(PROJECT)
+	$(hide) /usr/bin/perl mediatek/build/tools/jrd_magic.pl $(PROJECT)
 endif
 endif
-
-version:
-	/usr/bin/perl mediatek/build/tools/version.pl $(PROJECT)
+jrdmagic:
+	/usr/bin/perl mediatek/build/tools/jrd_magic.pl $(PROJECT)
 st:
 	
 

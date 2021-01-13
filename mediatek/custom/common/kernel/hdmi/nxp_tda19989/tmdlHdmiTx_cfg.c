@@ -38,10 +38,18 @@
 /*                       INCLUDE FILES                                        */
 /*============================================================================*/
 
-
+#ifndef TMFL_TDA19989 
 #define TMFL_TDA19989 
+#endif
+
+#ifndef TMFL_NO_RTOS 
 #define TMFL_NO_RTOS 
+#endif
+
+#ifndef TMFL_LINUX_OS_KERNEL_DRIVER
 #define TMFL_LINUX_OS_KERNEL_DRIVER
+#endif 
+
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -54,7 +62,7 @@
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
 #include <asm/uaccess.h>
-#include <mach/mt6575_gpio.h>
+#include <mach/mt_gpio.h>
 #include <linux/slab.h>
 #include "tmNxCompId.h"
 #include "tmdlHdmiTx_Types.h"
@@ -123,11 +131,11 @@ unsigned char  my_i2c_data[255];
 #endif
 
 //#ifdef TMFL_LINUX_OS_KERNEL_DRIVER
-#ifdef TMFL_CFG_ZOOMII // OMAP Zoom II
+#if defined(TMFL_CFG_ZOOMII) // OMAP Zoom II
 #	include "tmdlHdmiTx_Linux_cfg.c"
-#elif TMFL_CFG_INTELCE4100 // Intel CE 4100
+#elif defined(TMFL_CFG_INTELCE4100) // Intel CE 4100
 #	include "tmdlHdmiTx_IntelCE4100_cfg.c"
-#elif TMFL_OS_WINDOWS // Windows demo application
+#elif defined(TMFL_OS_WINDOWS) // Windows demo application
 #	include "tmdlHdmiTx_Win_cfg.c"
 #else // Section to be modified by customer - Default configuration for NXP evalkit
 
@@ -733,6 +741,7 @@ tmErrorCode_t tmdlHdmiTxIWWait
               inconsistent
 
 ******************************************************************************/
+/*
 tmErrorCode_t tmdlHdmiTxIWSemaphoreCreate
 (
     tmdlHdmiTxIWSemHandle_t *pHandle
@@ -740,7 +749,7 @@ tmErrorCode_t tmdlHdmiTxIWSemaphoreCreate
 {
     struct semaphore * mutex;
     
-    /* check that input pointer is not NULL */
+    // check that input pointer is not NULL
     RETIF(pHandle == Null, TMDL_ERR_DLHDMITX_INCONSISTENT_PARAMS)
 
     mutex = (struct semaphore *)kmalloc(sizeof(struct semaphore),GFP_KERNEL);
@@ -757,6 +766,39 @@ tmErrorCode_t tmdlHdmiTxIWSemaphoreCreate
 
     return(TM_OK);
 }
+*/
+
+DEFINE_SEMAPHORE(mutex0);
+DEFINE_SEMAPHORE(mutex1);
+DEFINE_SEMAPHORE(mutex2);
+
+tmErrorCode_t 
+tmdlHdmiTxIWSemaphoreCreate(tmdlHdmiTxIWSemHandle_t *pHandle)
+{
+
+    
+    static int i = 0;
+    struct semaphore * mutex[3];
+    // check that input pointer is not NULL
+    RETIF(pHandle == Null, TMDL_ERR_DLHDMITX_INCONSISTENT_PARAMS)
+       
+    mutex[0] = &mutex0;
+    mutex[1] = &mutex1;
+    mutex[2] = &mutex2;
+
+    if (i > 2 || i < 0)
+    {
+        printk("%s,create semphore error\n", __func__);
+        return -1;
+    }
+    *pHandle = (tmdlHdmiTxIWSemHandle_t)mutex[i];
+    i++;
+
+    RETIF(pHandle == NULL, TMDL_ERR_DLHDMITX_NO_RESOURCES)
+
+    return(TM_OK);
+}
+
 
 /******************************************************************************
     \brief  This function destroys an existing semaphore.
@@ -774,13 +816,13 @@ tmErrorCode_t tmdlHdmiTxIWSemaphoreDestroy
 )
 {
    RETIF(handle == False, TMDL_ERR_DLHDMITX_BAD_HANDLE);
-   
+   /*
    if (atomic_read((atomic_t*)&((struct semaphore *)handle)->count) < 1) {
       printk(KERN_ERR "release catched semaphore");
    }
    
-   kfree((void*)handle);
-   
+   //kfree((void*)handle);
+   */
    return(TM_OK);
 }
 

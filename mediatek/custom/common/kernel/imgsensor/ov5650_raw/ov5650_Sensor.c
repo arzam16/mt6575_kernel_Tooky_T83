@@ -1,5 +1,21 @@
-
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   Sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Image sensor driver function
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
  //s_porting add
 //s_porting add
 //s_porting add
@@ -12,6 +28,7 @@
 #include <linux/fs.h>
 #include <asm/atomic.h>
 #include <linux/slab.h>
+#include <asm/system.h>
 
 
 #include "kd_camera_hw.h"
@@ -113,6 +130,11 @@ kal_uint16 OV5650_g_iPV_Pixels_Per_Line = 0;
 
 kal_uint32 OV5650_isp_master_clock;
 
+static kal_bool OV5650_g_Fliker_Mode = KAL_FALSE;
+static kal_bool OV5650_g_ZSD_Mode = KAL_FALSE;
+MSDK_SCENARIO_ID_ENUM CurrentScenarioId = ACDK_SCENARIO_ID_CAMERA_PREVIEW;
+
+
 
 //static kal_bool OV5650_g_bXGA_Mode = KAL_TRUE;
 //static kal_uint16 OV5650_g_iExpLines = 0,OV5650_g_iExtra_ExpLines = 0;
@@ -144,6 +166,7 @@ SENSOR_REG_STRUCT OV5650SensorReg[ENGINEER_END]=CAMERA_SENSOR_REG_DEFAULT_VALUE;
 MSDK_SENSOR_CONFIG_STRUCT OV5650SensorConfigData;
 
 
+static DEFINE_SPINLOCK(ov5650_drv_lock);
 
 
 
@@ -559,43 +582,19 @@ kal_uint16 ov5650_update_lenc_register_from_otp(void)
 
 #endif
 
-//static void OV5650_write_cmos_sensor(const kal_uint32 addr, const kal_uint32 para)
-//{    
-//      OV5650I2CConfig.operation=I2C_OP_WRITE;
-//	  OV5650I2CConfig.slaveAddr=OV5650_sensor_write_I2C_address>>1;
-//	  OV5650I2CConfig.transfer_num=1;	/* TRANSAC_LEN */
-//	  OV5650I2CConfig.transfer_len=3;
-//	  OV5650I2CConfig.buffer[0]=(UINT8)(addr>>8);
-//	  OV5650I2CConfig.buffer[1]=(UINT8)(addr&0xFF);
-//	  OV5650I2CConfig.buffer[2]=(UINT8)para;
-//	  DRV_I2CTransaction(OV5650hDrvI2C, &OV5650I2CConfig);
-//}   /*  OV5650_OV5650_write_cmos_sensor()  */
 
-//static kal_uint32 OV5650_read_cmos_sensor(const kal_uint32 addr)
-//{   
-//    kal_uint8 iGetByte = 0;
-//         OV5650I2CConfig.operation=I2C_OP_WRITE;
-//	     OV5650I2CConfig.slaveAddr=OV5650_sensor_write_I2C_address>>1;
-//	     OV5650I2CConfig.transfer_num=1;	/* TRANSAC_LEN */
-//	     OV5650I2CConfig.transfer_len=2;
-//	     OV5650I2CConfig.buffer[0]=(UINT8)(addr>>8);
-//	     OV5650I2CConfig.buffer[1]=(UINT8)(addr&0xFF);
-//	     DRV_I2CTransaction(OV5650hDrvI2C, &OV5650I2CConfig);
-
-//	     OV5650I2CConfig.operation=I2C_OP_READ;
-//	     OV5650I2CConfig.slaveAddr=OV5650_sensor_read_I2C_address>>1;
-//	     OV5650I2CConfig.transfer_num=1;	/* TRANSAC_LEN */
-//	     OV5650I2CConfig.transfer_len=1;
-//	     DRV_I2CTransaction(OV5650hDrvI2C, &OV5650I2CConfig);
-//	     iGetByte=OV5650I2CConfig.buffer[0];
-//    return iGetByte;
-//}   /*  OV5650_read_cmos_sensor()  */
 
 static void OV5650_Write_Shutter(const kal_uint16 iShutter)
 {
 
     kal_uint16 iExp = iShutter;
 	kal_uint16 Total_line;
+	kal_uint16 Extra_ExpLines = 0;
+	kal_uint16 realtime_fp = 0;
+	kal_uint32 pclk = 0;
+	kal_uint16 line_length = 0;
+	//kal_uint16 frame_length = 0;
+	unsigned long flags;
 //OV5650_g_iExtra_ExpLines  = total lines
 	Total_line = (OV5650_read_cmos_sensor(0x380e) & 0x0f)<<8;
 	Total_line |= OV5650_read_cmos_sensor(0x380f);
@@ -605,90 +604,90 @@ static void OV5650_Write_Shutter(const kal_uint16 iShutter)
 
 	if (OV5650_g_bXGA_Mode) {
         if (iExp <= OV5650_PV_EXPOSURE_LIMITATION + OV5650_g_iDummyLines) {
-            OV5650_g_iExtra_ExpLines = OV5650_PV_EXPOSURE_LIMITATION + OV5650_g_iDummyLines;
+            Extra_ExpLines = OV5650_PV_EXPOSURE_LIMITATION + OV5650_g_iDummyLines;
 
 			SENSORDB("bxga little iExpr\n");
 			SENSORDB("OV5650_g_iDummyLines %d\r\n",OV5650_g_iDummyLines);
         }else {
-            OV5650_g_iExtra_ExpLines = iExp+28;//; - OV5650_PV_EXPOSURE_LIMITATION - OV5650_g_iDummyLines;
+            Extra_ExpLines = iExp+28;//; - OV5650_PV_EXPOSURE_LIMITATION - OV5650_g_iDummyLines;
 			//iExp = OV5650_PV_EXPOSURE_LIMITATION + OV5650_g_iDummyLines;
 			SENSORDB("bxga large iExp\n");
-			SENSORDB("OV5650_g_iExtra_ExpLines %d\r\n",OV5650_g_iExtra_ExpLines);
+			SENSORDB("OV5650_g_iExtra_ExpLines %d\r\n",Extra_ExpLines);
         }
 
     }else {
         if (iExp <= OV5650_FULL_EXPOSURE_LIMITATION + OV5650_g_iDummyLines) {
-            OV5650_g_iExtra_ExpLines = OV5650_FULL_EXPOSURE_LIMITATION+ OV5650_g_iDummyLines;
+            Extra_ExpLines = OV5650_FULL_EXPOSURE_LIMITATION+ OV5650_g_iDummyLines;
 			SENSORDB("!bxga little iExp\n");
 			SENSORDB("OV5650_g_iDummyLines %d\r\n",OV5650_g_iDummyLines);
 
         }else {
-            OV5650_g_iExtra_ExpLines = iExp+28;// - OV5650_FULL_EXPOSURE_LIMITATION - OV5650_g_iDummyLines;
+            Extra_ExpLines = iExp+28;// - OV5650_FULL_EXPOSURE_LIMITATION - OV5650_g_iDummyLines;
 			//iExp = OV5650_FULL_EXPOSURE_LIMITATION + OV5650_g_iDummyLines;
 			SENSORDB("!bxga large iExp\n");
-			SENSORDB("OV5650_g_iExtra_ExpLines %d\r\n",OV5650_g_iExtra_ExpLines);
+			SENSORDB("OV5650_g_iExtra_ExpLines %d\r\n",Extra_ExpLines);
 
         }
     }
 
-	OV5650_write_cmos_sensor(0x380e, OV5650_g_iExtra_ExpLines >> 8);
-	OV5650_write_cmos_sensor(0x380f, OV5650_g_iExtra_ExpLines & 0x00FF);
+	if(KAL_TRUE == OV5650_g_Fliker_Mode)
+		{
+			if(KAL_TRUE == OV5650_g_ZSD_Mode)
+				{
+					pclk = OV5650_g_fCP_PCLK;
+					line_length = OV5650_QXGA_MODE_WITHOUT_DUMMY_PIXELS+ OV5650_iDummypixels; 
+					//frame_length = Extra_ExpLines; //OV5650_QXGA_MODE_WITHOUT_DUMMY_LINES + OV5650_g_iDummyLines;
+				}
+			else
+				{
+					pclk = OV5650_g_fPV_PCLK;
+					line_length = OV5650_XGA_MODE_WITHOUT_DUMMY_PIXELS + OV5650_iDummypixels;  
+					//frame_length = Extra_ExpLines; //OV5650_XGA_MODE_WITHOUT_DUMMY_LINES + OV5650_g_iDummyLines;
+				}
+			realtime_fp = pclk*10 / (line_length *Extra_ExpLines);
+
+			SENSORDB("[OV5650_Write_Shutter]pv_clk:%d\n",pclk);
+			SENSORDB("[OV5650_Write_Shutter]line_length:%d\n",line_length);
+			//SENSORDB("[OV5650_Write_Shutter]frame_height:%d\n",frame_length);
+			SENSORDB("[OV5650_Write_Shutter]framerate(10base):%d\n",realtime_fp);
+
+			if((realtime_fp >= 297)&&(realtime_fp <=303))
+				{
+					realtime_fp = 296;
+					Extra_ExpLines = pclk*10 /(line_length *realtime_fp);
+					SENSORDB("[autofliker realtime_fp=30,extern heights slowdown to 29.6fps][height:%d]",Extra_ExpLines);
+				}
+			else if((realtime_fp >=147)&&(realtime_fp <=153))
+				{
+					realtime_fp = 146;
+
+					Extra_ExpLines = pclk*10 /(line_length *realtime_fp);
+
+					SENSORDB("[autofliker realtime_fp=15,extern heights slowdown to 14.6fps][height:%d]",Extra_ExpLines);
+				}
+
+			
+		}
+
+	OV5650_write_cmos_sensor(0x380e, Extra_ExpLines >> 8);
+	OV5650_write_cmos_sensor(0x380f, Extra_ExpLines & 0x00FF);
 	
 	OV5650_write_cmos_sensor(0x3500, (iExp>> 12) & 0xFF);
 	OV5650_write_cmos_sensor(0x3501, (iExp >> 4) & 0xFF);
 	
 	OV5650_write_cmos_sensor(0x3502, (iExp<<4) & 0xFF);
 
-	
-	//OV5650_write_cmos_sensor(0x3501,iExp>>8);
-	//OV5650_write_cmos_sensor(0x3502,iExp & 0x00ff);
-
- /*   if (OV5650_g_bXGA_Mode) {
-        if (iExp <= OV5650_PV_EXPOSURE_LIMITATION + OV5650_g_iDummyLines) {
-            OV5650_g_iExtra_ExpLines = 0;
-        }else {
-            OV5650_g_iExtra_ExpLines = iExp - OV5650_PV_EXPOSURE_LIMITATION - OV5650_g_iDummyLines;
-			iExp = OV5650_PV_EXPOSURE_LIMITATION + OV5650_g_iDummyLines;
-        }
-
-    }else {
-        if (iExp <= OV5650_FULL_EXPOSURE_LIMITATION + OV5650_g_iDummyLines) {
-            OV5650_g_iExtra_ExpLines = 0;
-        }else {
-            OV5650_g_iExtra_ExpLines = iExp - OV5650_FULL_EXPOSURE_LIMITATION - OV5650_g_iDummyLines;
-			iExp = OV5650_FULL_EXPOSURE_LIMITATION + OV5650_g_iDummyLines;
-        }
-    }
-
-	
-    OV5650_write_cmos_sensor(0x3002, iExp >> 8);
-    OV5650_write_cmos_sensor(0x3003, iExp & 0x00FF);
-
-    // 0x302D, 0x302E will increase VBLANK to get exposure larger than frame exposure
-    // limitation. 0x302D, 0x302E must update at the same frame as sensor gain update.
-    // AE doesn't update sensor gain at capture mode, thus extra exposure lines must be
-    // updated here.
-#if (defined(DRV_ISP_6228_SERIES) || defined(DRV_ISP_6229_SERIES))
-    if (OV5650_g_iOV5650_Mode == OV5650_MODE_CAPTURE) {
-#elif (defined(DRV_ISP_6238_SERIES))
-    // @frame rate change point, the extra exposure lines must be updated with ordinary
-    // exposure line registers. I don't know why!
-    if ((OV5650_g_iBackupExtraExp == 0 && OV5650_g_iExtra_ExpLines > 0) ||
-         OV5650_g_iOV5650_Mode == OV5650_MODE_CAPTURE ||
-         aeIsEnable() == KAL_FALSE) {
-#endif
-        OV5650_write_cmos_sensor(0x302D, OV5650_g_iExtra_ExpLines >> 8);
-        OV5650_write_cmos_sensor(0x302E, OV5650_g_iExtra_ExpLines & 0x00FF);
-    }
-
-    OV5650_g_iBackupExtraExp = OV5650_g_iExtra_ExpLines;*/
+    spin_lock_irqsave(&ov5650_drv_lock,flags);
+	OV5650_g_iExtra_ExpLines = Extra_ExpLines;
+	OV5650_g_iExpLines = iShutter;
+	spin_unlock_irqrestore(&ov5650_drv_lock,flags);
 
 
 }   /*  OV5650_Write_Shutter    */
 
 static void OV5650_Set_Dummy(const kal_uint16 iPixels, const kal_uint16 iLines)
 {
-#if 1
+
 //kal_uint16 iPCLKs_inOneLine = OV5650_QXGA_MODE_WITHOUT_DUMMY_PIXELS, iTotalLines;
 kal_uint16 iTotalLines,iTotapixels;
 // Add dummy pixels:
@@ -698,8 +697,10 @@ kal_uint16 iTotalLines,iTotapixels;
 // If need to add dummy pixels, just increase 0x3028 and 0x3029 directly
 
 //added by mandrave 
+spin_lock(&ov5650_drv_lock);
   OV5650_iDummypixels = iPixels;
   OV5650_g_iDummyLines = iLines;
+  spin_unlock(&ov5650_drv_lock);
 //added end
 
 if(OV5650_g_bXGA_Mode == KAL_TRUE)
@@ -728,37 +729,29 @@ if(OV5650_g_iExtra_ExpLines > iTotalLines)
 OV5650_write_cmos_sensor(0x380e, (iTotalLines >> 8) & 0xFF);
 OV5650_write_cmos_sensor(0x380f, iTotalLines & 0xFF);
 
-#else
-	kal_uint16 iPCLKs_inOneLine = QXGA_MODE_WITHOUT_DUMMY_PIXELS, iTotalLines;
 
-    // Add dummy pixels:
-    // 0x3028, 0x3029 defines the PCLKs in one line of OV5650
-    // If [0x3028:0x3029] = N, the total PCLKs in one line of QXGA(3M full mode) is (N+1), and
-    // total PCLKs in one line of XGA subsampling mode is (N+1) / 2
-    // If need to add dummy pixels, just increase 0x3028 and 0x3029 directly
-    iPCLKs_inOneLine += (iPixels * (OV5650_g_bXGA_Mode == KAL_TRUE ? 2 : 1));
-    OV5650_write_cmos_sensor(0x3028, (iPCLKs_inOneLine - 1) >> 8);
-    OV5650_write_cmos_sensor(0x3029, (iPCLKs_inOneLine - 1) & 0x00FF);
-
-    // Add dummy lines:
-    // 0x302A, 0x302B defines total lines in one frame of OV5650
-    // If [0x302A:0x302B] = N, the total lines in one is N in dependent of resolution setting
-    // Even in XGA subsampling mode, total lines defined by 0x302A, 0x302B is not subsampled.
-    // If need dummy lines, just increase 0x302A and 0x302B directly
-    //iTotalLines = (OV5650_read_cmos_sensor(0x302A) << 8) + OV5650_read_cmos_sensor(0x302B) + iLines;
- if(OV5650_g_bXGA_Mode == KAL_TRUE)
-		iTotalLines=XGA_MODE_WITHOUT_DUMMY_LINES + iLines;
- else
-		iTotalLines=QXGA_MODE_WITHOUT_DUMMY_LINES + iLines;
-    OV5650_write_cmos_sensor(0x302A, iTotalLines >> 8);
-    OV5650_write_cmos_sensor(0x302B, iTotalLines & 0x00FF);
-	#endif
 }   /*  OV5650_Set_Dummy    */
 
+/*************************************************************************
+* FUNCTION
+*	OV5650_SetShutter
+*
+* DESCRIPTION
+*	This function set e-shutter of OV5650 to change exposure time.
+*
+* PARAMETERS
+*   iShutter : exposured lines
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void set_OV5650_shutter(kal_uint16 iShutter)
 {
-    OV5650_g_iExpLines = iShutter;
-    OV5650_Write_Shutter(OV5650_g_iExpLines);
+   
+    OV5650_Write_Shutter(iShutter);
 
 }   /*  Set_OV5650_Shutter */
 
@@ -808,6 +801,22 @@ static kal_uint16 OV5650_Reg2Gain(const kal_uint8 iReg)
 		}
 
 
+/*************************************************************************
+* FUNCTION
+*	OV5650_SetGain
+*
+* DESCRIPTION
+*	This function is to set global gain to sensor.
+*
+* PARAMETERS
+*   iGain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*	the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_uint16 OV5650_SetGain(kal_uint16 iGain)
 
 {
@@ -828,6 +837,23 @@ const kal_uint16 iBaseGain = 64;//OV5650_Reg2Gain(camera_para.SENSOR.cct[OV5650_
 
 }
 
+/*************************************************************************
+* FUNCTION
+*	OV5650_NightMode
+*
+* DESCRIPTION
+*	This function night mode of OV5650.
+*
+* PARAMETERS
+*	bEnable: KAL_TRUE -> enable night mode, otherwise, disable night mode
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
+#if 0
 void OV5650_night_mode(kal_bool bEnable)
 {
 #if 1
@@ -926,7 +952,7 @@ if (bEnable) //Night mode
 	#endif
 	
 }   /*  OV5650_NightMode    */
-
+#endif
 
 void OV5650_camera_para_to_sensor(void)
 {
@@ -949,15 +975,30 @@ void OV5650_camera_para_to_sensor(void)
 void OV5650_sensor_to_camera_para(void)
 {
     kal_uint16 iI;
+	kal_uint16 temp_data;
 
     for (iI = 0; 0xFFFFFFFF != OV5650SensorReg[iI].Addr; iI++) {
-       OV5650SensorReg[iI].Para = OV5650_read_cmos_sensor(OV5650SensorReg[iI].Addr);
+	   	temp_data = OV5650_read_cmos_sensor(OV5650SensorReg[iI].Addr);
+
+		spin_lock(&ov5650_drv_lock);
+		OV5650SensorReg[iI].Para = temp_data;
+		spin_unlock(&ov5650_drv_lock);
     }
 
 	for (iI = ENGINEER_START_ADDR; 0xFFFFFFFF != OV5650SensorReg[iI].Addr; iI++) {
-       OV5650SensorReg[iI].Para = OV5650_read_cmos_sensor(OV5650SensorReg[iI].Addr);
+        temp_data = OV5650_read_cmos_sensor(OV5650SensorReg[iI].Addr);
+
+	    spin_lock(&ov5650_drv_lock);
+		OV5650SensorReg[iI].Para = temp_data;
+		spin_unlock(&ov5650_drv_lock);
     }
 
+/*
+    // CCT record should be not overwritten except by engineering mode
+    for (iI = 0; iI < CCT_END_ADDR; iI++) {
+        camera_para.SENSOR.cct[iI].para = read_OV5650_reg(camera_para.SENSOR.cct[iI].addr);
+    }
+*/
 }
 //------------------------Engineer mode---------------------------------
 kal_int32  OV5650_get_sensor_group_count(void)
@@ -1119,6 +1160,7 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
 {
 //   kal_int16 temp_reg;
    kal_uint16 temp_gain=0, temp_addr=0;//, temp_para=0;
+   kal_uint16 temp_data;
    
    switch (group_idx)
 	{
@@ -1132,7 +1174,9 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
                   }
 				 
 				   temp_gain = ItemValue * 0x40 / 1000;  // R, G, B gain = reg. / 0x40
+				   spin_lock(&ov5650_drv_lock);
                    OV5650SensorCCT[temp_addr].Para= temp_gain;
+				   spin_unlock(&ov5650_drv_lock);
                    OV5650_write_cmos_sensor(OV5650SensorCCT[temp_addr].Addr, temp_gain);
                   break;
 				
@@ -1143,7 +1187,9 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
                   }
 				 
 				   temp_gain = ItemValue * 0x40 / 1000;  // R, G, B gain = reg. / 0x40
+				   spin_lock(&ov5650_drv_lock);
                    OV5650SensorCCT[temp_addr].Para= temp_gain;
+				   spin_unlock(&ov5650_drv_lock);
                    OV5650_write_cmos_sensor(OV5650SensorCCT[temp_addr].Addr, temp_gain);
 				break;
 			 case 2:
@@ -1153,7 +1199,9 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
                   }
 				 
 				   temp_gain = ItemValue * 0x40 / 1000;  // R, G, B gain = reg. / 0x40
+				   spin_lock(&ov5650_drv_lock);
                    OV5650SensorCCT[temp_addr].Para= temp_gain;
+				   spin_unlock(&ov5650_drv_lock);
                    OV5650_write_cmos_sensor(OV5650SensorCCT[temp_addr].Addr, temp_gain);
 				break;
 			 case 3:
@@ -1163,7 +1211,9 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
                   }
 				 
 				   temp_gain = ItemValue * 0x40 / 1000;  // R, G, B gain = reg. / 0x40
+				   spin_lock(&ov5650_drv_lock);
                    OV5650SensorCCT[temp_addr].Para= temp_gain;
+				   spin_unlock(&ov5650_drv_lock);
                    OV5650_write_cmos_sensor(OV5650SensorCCT[temp_addr].Addr, temp_gain);
 				break;
 			  case 4:
@@ -1174,7 +1224,9 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
                   }
 
                   temp_gain = OV5650_Gain2Reg(ItemValue * BASEGAIN / 1000);
+				  spin_lock(&ov5650_drv_lock);
                   OV5650SensorCCT[temp_addr].Para= temp_gain;
+				  spin_unlock(&ov5650_drv_lock);
                   OV5650_write_cmos_sensor(OV5650SensorCCT[temp_addr].Addr, temp_gain);
 				  break;
 				default:
@@ -1186,6 +1238,7 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
 			switch (item_idx)
 			{
 				case 0:
+					spin_lock(&ov5650_drv_lock);
 				  if(ItemValue==2)
 				  {
 				      OV5650SensorReg[CMMCLK_CURRENT_INDEX].Para = ISP_DRIVING_2MA;
@@ -1206,6 +1259,7 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
 				      OV5650SensorReg[CMMCLK_CURRENT_INDEX].Para = ISP_DRIVING_8MA;
 //				      OV5650_set_isp_driving_current(ISP_DRIVING_8MA);
 				  }
+				  spin_unlock(&ov5650_drv_lock);
 				break;
 				default:
 				   ASSERT(0);
@@ -1218,7 +1272,9 @@ kal_bool OV5650_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, 
 					if (ItemValue < 0 || ItemValue > 0xFF) {
                         return KAL_FALSE;
                     }
+					spin_lock(&ov5650_drv_lock);
 				  OV5650_FAC_SENSOR_REG=ItemValue;
+				  spin_unlock(&ov5650_drv_lock);
 				break;
 				case 1:
 					if (ItemValue < 0 || ItemValue > 0xFF) {
@@ -1385,6 +1441,22 @@ static void OV5650_Sensor_Init(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*	OV5650Open
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 OV5650Open(void)
 {
@@ -1399,6 +1471,11 @@ UINT32 OV5650Open(void)
      return ERROR_SENSOR_CONNECT_FAIL;
  
    SENSORDB("Sensor Read ID OK!\n");
+
+   spin_lock(&ov5650_drv_lock);
+   OV5650_g_Fliker_Mode = KAL_FALSE;
+   OV5650_g_ZSD_Mode = KAL_FALSE;
+   spin_unlock(&ov5650_drv_lock);
 	 
 
    // initail sequence write in
@@ -1430,6 +1507,22 @@ UINT32 OV5650Open(void)
    return ERROR_NONE;
 }   /* OV5650Open  */
 
+/*************************************************************************
+* FUNCTION
+*	OV5650Close
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5650Close(void)
 {
   //CISModulePowerOn(FALSE);
@@ -1437,10 +1530,27 @@ UINT32 OV5650Close(void)
 	return ERROR_NONE;
 }   /* OV5650Close */
 
+/*************************************************************************
+* FUNCTION
+* OV5650Preview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5650Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
-#if 1
+
     //SENSORDB("ov5650preview enter\r\n");
     kal_uint8 iTemp;
     kal_uint16 iStartX = 2, iStartY = 2;//0,1
@@ -1449,6 +1559,8 @@ UINT32 OV5650Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	kal_uint16 dummy_pixel_temp;
 	kal_uint16 Total_line;
 	SENSORDB("ov5650 preview begin\r\n");
+//Daniel
+	OV5650_write_cmos_sensor(0x3008,0x42);//registers power down
 
 	OV5650_write_cmos_sensor(0x3b07,0x0d);
 	OV5650_write_cmos_sensor(0x3017,0x7f);//FREX input
@@ -1492,18 +1604,22 @@ UINT32 OV5650Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	  {
 	    
 	  	iDummyPixels = 555;
+		spin_lock(&ov5650_drv_lock);
 		OV5650_g_iDummyLines = 0;
 		OV5650_g_iOV5650_Mode = OV5650_MODE_CIF_VIDEO;
+		spin_unlock(&ov5650_drv_lock);
 	  }
 
 	  else 
 	  { // camear preview mode			  
 		iDummyPixels = 555;
+		spin_lock(&ov5650_drv_lock);
 		OV5650_g_iDummyLines = 0;
 	    OV5650_g_iOV5650_Mode = OV5650_MODE_PREVIEW;
+		spin_unlock(&ov5650_drv_lock);
 	  }
 	  
-		  OV5650_g_bXGA_Mode = KAL_TRUE; 
+		   
 	  
 		  // Mirror/Flip function
 		  //for CCT TEST
@@ -1556,8 +1672,14 @@ UINT32 OV5650Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 			  default:
 				  ASSERT(0);
 		  }
+		  spin_lock(&ov5650_drv_lock);
+		  OV5650_g_bXGA_Mode = KAL_TRUE;
 		 OV5650_g_iPV_Pixels_Per_Line = OV5650_XGA_MODE_WITHOUT_DUMMY_PIXELS + iDummyPixels;// = dummy_pixel_temp;
+		 spin_unlock(&ov5650_drv_lock);
 		 OV5650_Set_Dummy(iDummyPixels, OV5650_g_iDummyLines);
+//Daniel
+	OV5650_write_cmos_sensor(0x3008,0x02);//registers power down
+	SENSORDB("OV5650 group hold done(pre)\n");
 
 	  ////////////////////////////////////////////////////////
 	image_window->GrabStartX= iStartX;
@@ -1570,140 +1692,29 @@ UINT32 OV5650Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	return ERROR_NONE;
 	
 
-#else
-    kal_uint32 iTemp,iTemp2;
-    kal_uint16 iStartX = 0, iStartY = 1;
 
-    OV5650_write_cmos_sensor(0x3012, 0x10);    // change to XGA mode
-    OV5650_write_cmos_sensor(0x3023, 0x06);    // Vertical Window Start 8 LSBs
-    OV5650_write_cmos_sensor(0x3026, 0x03);    // Vertical Height 8 MSBs
-    OV5650_write_cmos_sensor(0x3027, 0x04);    // Vertical Height 8 LSBs
-    OV5650_write_cmos_sensor(0x302A, XGA_MODE_WITHOUT_DUMMY_LINES >> 8/*0x03*/);   // Vertical Total Size 8 MSBs
-    OV5650_write_cmos_sensor(0x302B, XGA_MODE_WITHOUT_DUMMY_LINES & 0x00FF/*0x10*/);   // Vertical Total Size 8 LSBs
-    OV5650_write_cmos_sensor(0x3075, 0x24);    // VSYNC pulse options
-    OV5650_write_cmos_sensor(0x300D, 0x01);    // PCLK MY_OUTPUT control, divided by 2 
-    OV5650_write_cmos_sensor(0x30D7, 0x90);    // reserved gaiyang add
-    OV5650_write_cmos_sensor(0x3069, 0x04);    // reserved  gaiyang add
-    OV5650_write_cmos_sensor(0x303E, 0x00);    // Average Window Vertical Height 8 MSBs
-    OV5650_write_cmos_sensor(0x303F, 0xC0);    // Average Window Vertical Height 8 LSBs
-    OV5650_write_cmos_sensor(0x3302, 0xEA);  /*0xEE*//*0xEF*/  // DSP_CTRL_2, disable AWB(b0 = 0) //gaiyang add
-//    OV5650_write_cmos_sensor(0x3302, 0xEE/*0xEF*/);    // DSP_CTRL_2, disable AWB(b0 = 0) Sean
-
-    OV5650_write_cmos_sensor(0x335F, 0x34);    // SIZE_IN_MISC
-    OV5650_write_cmos_sensor(0x3360, 0x0C);    // HSIZE_IN_L
-    OV5650_write_cmos_sensor(0x3361, 0x04);    // VSIZE_IN_L
-    OV5650_write_cmos_sensor(0x3362, 0x34);    // SIZE_OUT_MISC, Zoom_out MY_OUTPUT size
-    OV5650_write_cmos_sensor(0x3363, 0x08);    // HSIZE_OUT_L
-    OV5650_write_cmos_sensor(0x3364, 0x04);    // VSIZE_OUT_L
-    OV5650_write_cmos_sensor(0x3403, 0x42);    // ISP_PAD_CTR2
-    OV5650_write_cmos_sensor(0x3088, 0x04);    // ISP_X_OUT[15:8], x_MY_OUTPUT_size
-    OV5650_write_cmos_sensor(0x3089, 0x00);    // ISP_X_OUT[7:0]
-    OV5650_write_cmos_sensor(0x308A, 0x03);    // ISP_Y_OUT[15:8], y_MY_OUTPUT_size
-    OV5650_write_cmos_sensor(0x308B, 0x00);    // ISP_Y_OUT[7:0]
-
-    //-------------------------------------------------------------------------------
-    // PLL MY_OUTPUT clock(fclk)
-    // fclk = (0x40 - 0x300E[5:0]) x N x Bit8Div x MCLK / M, where
-    //      N = 1, 1.5, 2, 3 for 0x300F[7:6] = 0~3, respectively
-    //      M = 1, 1.5, 2, 3 for 0x300F[1:0] = 0~3, respectively
-    //      Bit8Div = 1, 1, 4, 5 for 0x300F[5:4] = 0~3, respectively
-    // Sys Clk = fclk / Bit8Div / SenDiv
-    // Sensor MY_OUTPUT clock(DVP PCLK)
-    // DVP PCLK = ISP CLK / DVPDiv, where
-    //      ISP CLK =  fclk / Bit8Div / SenDiv / CLKDiv / 2, where
-    //          Bit8Div = 1, 1, 4, 5 for 0x300F[5:4] = 0~3, respectively
-    //          SenDiv = 1, 2 for 0x3010[4] = 0 or 1 repectively
-    //          CLKDiv = (0x3011[5:0] + 1)
-    //      DVPDiv = 0x304C[3:0] * (2 ^ 0x304C[4]), if 0x304C[3:0] = 0, use 16 instead
-    //
-    // Base shutter calculation
-    //      60Hz: (1/120) * ISP Clk / QXGA_MODE_WITHOUT_DUMMY_PIXELS
-    //      50Hz: (1/100) * ISP Clk / QXGA_MODE_WITHOUT_DUMMY_PIXELS
-    //-------------------------------------------------------------------------------
-    #if 0
-    OV5650_write_cmos_sensor(0x300F, 0x21); //pclk=26M
-    OV5650_write_cmos_sensor(0x3010, 0x20);
-    OV5650_write_cmos_sensor(0x3011, 0x00);
-    OV5650_write_cmos_sensor(0x300E, 0x34);//0x33
-    OV5650_write_cmos_sensor(0x304C, 0x84);
-	#endif
-	
-    #if  1
-    OV5650_write_cmos_sensor(0x300F, 0x21); //pclk=28.1666M
-    OV5650_write_cmos_sensor(0x3010, 0x20);
-    OV5650_write_cmos_sensor(0x3011, 0x00);
-    OV5650_write_cmos_sensor(0x300E, 0x33);
-    OV5650_write_cmos_sensor(0x304C, 0x84);
-	#endif
-	
-	if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		// MPEG4 Encode Mode
-	{
-	    SENSORDB(1,(TEXT("Camera Video preview\r\n")));
-		OV5650_MPEG4_encode_mode = KAL_TRUE;	
-	}
-	else
-	{
-	    SENSORDB(1,(TEXT("Camera preview\r\n")));
-		OV5650_MPEG4_encode_mode = KAL_FALSE;	
-		g_iOV5650_Mode = OV5650_MODE_PREVIEW;		
-	}
-   
-   OV5650_g_fPV_PCLK  =28166666;
- 
-   OV5650_iDummyPixels = 0;
-   OV5650_g_iDummyLines = 0;//26000000/28166666
-         
-   OV5650_g_bXGA_Mode = KAL_TRUE; // 1024x768 MY_OUTPUT
-
-    iTemp = OV5650_read_cmos_sensor(0x307C) & (~0x03);
- iTemp2 = OV5650_read_cmos_sensor(0x3090) & (~0x08);
-    switch (sensor_config_data->SensorImageMirror) {
-    case IMAGE_NORMAL:
-         OV5650_write_cmos_sensor(0x307C, iTemp | 0x03);
-	 OV5650_write_cmos_sensor(0x3090, iTemp2|0x08);
-        if (g_iOV5650_Mode == OV5650_MODE_PREVIEW) {
-            iStartX = 0;
-            iStartY = 2;
-        }else {
-            iStartX = 0;
-            iStartY = 2;
-        }
-        break;
-    case IMAGE_HV_MIRROR:
-        OV5650_write_cmos_sensor(0x307C, iTemp );
-        OV5650_write_cmos_sensor(0x3090, iTemp2);
-        if (g_iOV5650_Mode == OV5650_MODE_PREVIEW) {
-            iStartX = 0;
-            iStartY = 1;
-        }else {
-            iStartX = 0;
-            iStartY = 1;
-        }
-        break;
-    default:
-	 break;
-    }
-
-    OV5650_g_iPV_Pixels_Per_Line = XGA_MODE_WITHOUT_DUMMY_PIXELS + OV5650_iDummyPixels;
-    OV5650_Set_Dummy(OV5650_iDummyPixels, OV5650_g_iDummyLines);
-
-   image_window->GrabStartX= iStartX;
-   image_window->GrabStartY= iStartY;
- image_window->ExposureWindowWidth = IMAGE_SENSOR_PV_WIDTH - 16;//16
- image_window->ExposureWindowHeight = IMAGE_SENSOR_PV_HEIGHT - 12;//12
-
-    OV5650_Write_Shutter(OV5650_g_iExpLines); 
-	// copy sensor_config_data
-	memcpy(&OV5650SensorConfigData, sensor_config_data, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
-	return ERROR_NONE;
-	#endif
 
 }   /*  OV5650Preview   */
 
+/*************************************************************************
+* FUNCTION
+*	OV5650Capture
+*
+* DESCRIPTION
+*	This function setup the CMOS sensor in capture MY_OUTPUT mode
+*
+* PARAMETERS
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 OV5650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 						  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
-#if 1
+
     kal_uint32 iShutter = OV5650_g_iExpLines;
     //const kal_bool bMetaMode = pSensor_Config_Data->meta_mode != CAPTURE_MODE_NORMAL;
     kal_uint16 iStartX = 2, iStartY = 2, iGrabWidth = 0, iGrabHeight = 0;
@@ -1716,7 +1727,14 @@ UINT32 OV5650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     //static float fCP_PCLK = 0;
 	static kal_uint32 fCP_PCLK = 0;
 
+	SENSORDB("ov5650capture start\r\n");
+
+if(OV5650_MODE_PREVIEW == OV5650_g_iOV5650_Mode)
+{
+    spin_lock(&ov5650_drv_lock);
     OV5650_g_iOV5650_Mode = OV5650_MODE_CAPTURE;
+    OV5650_g_Fliker_Mode = KAL_FALSE;
+	spin_unlock(&ov5650_drv_lock);
 
     if (sensor_config_data->EnableShutterTansfer == KAL_TRUE) {
         iShutter =sensor_config_data->CaptureShutter;
@@ -1740,7 +1758,9 @@ UINT32 OV5650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                 iGrabWidth = OV5650_IMAGE_SENSOR_PV_WIDTH - iStartX - (OV5650_ISP_INTERPOLATIO_FILTER_WIDTH - 1);
                 iGrabHeight = OV5650_IMAGE_SENSOR_PV_HEIGHT - iStartY - (OV5650_ISP_INTERPOLATIO_FILTER_HEIGHT - 1);
 				iDummyPixels = 555;
+				spin_lock(&ov5650_drv_lock);
 				OV5650_g_iDummyLines = 0;
+				spin_unlock(&ov5650_drv_lock);
 			//#endif
         
 
@@ -1748,9 +1768,12 @@ UINT32 OV5650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     }
 	else 
     { // ordinary capture mode for > XGA resolution
-        OV5650_g_bXGA_Mode = KAL_FALSE;
+    
+        
 	SENSORDB("ov5650full size capture\n");	
-
+//Daniel
+	OV5650_write_cmos_sensor(0x3008,0x42);//registers power down
+//Daniel
 	OV5650_write_cmos_sensor(0x3b07,0x0c);
 	OV5650_write_cmos_sensor(0x3017,0xff);
 	OV5650_write_cmos_sensor(0x3703,0xe6);
@@ -1843,7 +1866,12 @@ UINT32 OV5650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 		  }
 
 		iDummyPixels = 140;
+		
+		spin_lock(&ov5650_drv_lock);
 		OV5650_g_iDummyLines = 24;
+		OV5650_g_bXGA_Mode = KAL_FALSE;
+		spin_unlock(&ov5650_drv_lock);
+		
 		fCP_PCLK = OV5650_g_fCP_PCLK;
         iGrabWidth = OV5650_IMAGE_SENSOR_FULL_WIDTH_DRV; //- iStartX - (OV5650_ISP_INTERPOLATIO_FILTER_WIDTH - 1);//2578
         iGrabHeight = OV5650_IMAGE_SENSOR_FULL_HEIGHT_DRV;// - iStartY - (OV5650_ISP_INTERPOLATIO_FILTER_HEIGHT - 1);//1936
@@ -1877,155 +1905,25 @@ UINT32 OV5650Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	//kal_prompt_trace(MOD_ENG,"%d",iShutter);
 	OV5650_Set_Dummy(iDummyPixels,OV5650_g_iDummyLines);
 	OV5650_Write_Shutter(iShutter);
+	//Daniel
+	OV5650_write_cmos_sensor(0x3008,0x02);//registers power down
+	SENSORDB("Group hold done!\r\n");
+//Daniel
 	SENSORDB("capture set dummy and shutter done!\r\n");
+}
 	SENSORDB("ov5650capture end\r\n");
 
     // copy sensor_config_data
 	memcpy(&OV5650SensorConfigData, sensor_config_data, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
     return ERROR_NONE;
 
-#else
-	kal_uint32 iShutter = OV5650_g_iExpLines;    
-    kal_uint16 iStartX = 0, iStartY = 0, iGrabWidth = 0, iGrabHeight = 0;
-    kal_uint16 iCP_Pixels_Per_Line = 0;
-//    static float fCP_PCLK = 0;
-    static kal_uint32 fCP_PCLK = 0;
 
-	g_iOV5650_Mode = OV5650_MODE_CAPTURE;
-	
-    switch (sensor_config_data->SensorImageMirror) {
-        case IMAGE_NORMAL:
-            iStartX = 0;
-            iStartY = 2;
-            break;
-
-        case IMAGE_HV_MIRROR:
-            iStartX = 0;
-            iStartY = 1;
-            break;
-
-        default:
-            ASSERT(0);
-        }   
-	 if ((image_window->ImageTargetWidth<= IMAGE_SENSOR_PV_WIDTH) &&
-        (image_window->ImageTargetHeight<= IMAGE_SENSOR_PV_HEIGHT)) 
-	  	{  	
-		  SENSORDB(1,(TEXT("Camera capture small size\r\n")));
-
-		  fCP_PCLK = OV5650_g_fPV_PCLK;
-		  
-		  OV5650_iDummyPixels=0;
-          OV5650_g_iDummyLines = 0;
-		
-          iGrabWidth = IMAGE_SENSOR_PV_WIDTH - 16;
-          iGrabHeight = IMAGE_SENSOR_PV_HEIGHT - 12;
-		  iCP_Pixels_Per_Line = XGA_MODE_WITHOUT_DUMMY_PIXELS + OV5650_iDummyPixels;
-		 
-		}
-	else
-		{
-     // ordinary capture mode for > XGA resolution
-        SENSORDB(1,(TEXT("Camera capture big size\r\n")));
-        OV5650_g_bXGA_Mode = KAL_FALSE;
-
-        OV5650_write_cmos_sensor(0x3012, 0x00);    // change to QXGA mode(2048x1536)
-        OV5650_write_cmos_sensor(0x3020, 0x01);    // H window start 8 MSBs
-        OV5650_write_cmos_sensor(0x3021, 0x1D);    // H window start 8 LSBs
-        OV5650_write_cmos_sensor(0x3022, 0x00);    // V window start 8 MSBs
-        OV5650_write_cmos_sensor(0x3023, 0x0A);    // V window start 8 LSBs
-//        OV5650_write_cmos_sensor(0x3023, 0x09);    // Koli change
-        OV5650_write_cmos_sensor(0x3024, 0x08);    // H width 8 MSBs
-        OV5650_write_cmos_sensor(0x3025, 0x18);    // H width 8 LSBs
-        OV5650_write_cmos_sensor(0x3026, 0x06);    // V height 8 MSBs
-        OV5650_write_cmos_sensor(0x3027, 0x0C);    // Vertical Height 8 LSBs
-        OV5650_write_cmos_sensor(0x302A, QXGA_MODE_WITHOUT_DUMMY_LINES >> 8);      // Vertical Total Size 8 MSBs
-        OV5650_write_cmos_sensor(0x302B, QXGA_MODE_WITHOUT_DUMMY_LINES & 0x00FF);  // Vertical Total Size 8 LSBs
-        OV5650_write_cmos_sensor(0x3075, 0x44);    // Vsync pulse options
-        OV5650_write_cmos_sensor(0x300D, 0x00);    // PCLK MY_OUTPUT control
-        OV5650_write_cmos_sensor(0x30D7, 0x10);    // reserved
-        OV5650_write_cmos_sensor(0x3069, 0x44);    // BLC control
-        OV5650_write_cmos_sensor(0x303E, 0x01);    // Average Window Vertical Height 8 MSBs
-        OV5650_write_cmos_sensor(0x303F, 0x80);    // Average Window Vertical Height 8 LSBs
-        OV5650_write_cmos_sensor(0x3302, 0xEA/*0xEE*//*0xEF*/);    // DSP_CTRL_2, disable AWB(b0 = 0)
-//        OV5650_write_cmos_sensor(0x3302, 0xEE/*0xEF*/);    // DSP_CTRL_2, disable AWB(b0 = 0) Sean
-        OV5650_write_cmos_sensor(0x335F, 0x68);    // SIZE_IN_MISC
-        OV5650_write_cmos_sensor(0x3360, 0x18);    // HSIZE_IN_L
-        OV5650_write_cmos_sensor(0x3361, 0x0C);    // VSIZE_IN_L
-        OV5650_write_cmos_sensor(0x3362, 0x68);    // SIZE_OUT_MISC, Zoom_out MY_OUTPUT size
-        OV5650_write_cmos_sensor(0x3363, 0x08);    // HSIZE_OUT_L
-        OV5650_write_cmos_sensor(0x3364, 0x04);    // VSIZE_OUT_L
-        OV5650_write_cmos_sensor(0x3403, 0x42);    // ISP_PAD_CTR2
-        OV5650_write_cmos_sensor(0x3088, 0x08);    // ISP_X_OUT[15:8], x_MY_OUTPUT_size
-        OV5650_write_cmos_sensor(0x3089, 0x00);    // ISP_X_OUT[7:0]
-        OV5650_write_cmos_sensor(0x308A, 0x06);    // ISP_YOUT[15:8], y_MY_OUTPUT_size
-        OV5650_write_cmos_sensor(0x308B, 0x00);    // ISP_YOUT[7:0]
-//        OV5650_write_cmos_sensor(0x3011, 0x01);  // for QXGA mode, must satisfy " >= 0x01"
-       #if 1
-        OV5650_write_cmos_sensor(0x304C, 0x82);    // reserved, must be set for QXGA mode      
-        OV5650_write_cmos_sensor(0x300E, 0x35);    // PCLK = 47.666666MHz
-	   #endif
-	   #if 0
-        OV5650_write_cmos_sensor(0x304C, 0x82);    // reserved, must be set for QXGA mode      
-        OV5650_write_cmos_sensor(0x300E, 0x36);    // PCLK = 43.333333MHz
-	   #endif
-       fCP_PCLK = 47666666;     
-      // fCP_PCLK = 43333333;
-        OV5650_iDummyPixels=0;
-        OV5650_g_iDummyLines = 0;                
-	   iGrabWidth = IMAGE_SENSOR_FULL_WIDTH;
-	   iGrabHeight = IMAGE_SENSOR_FULL_HEIGHT;
-
-        iCP_Pixels_Per_Line = QXGA_MODE_WITHOUT_DUMMY_PIXELS + OV5650_iDummyPixels;
-		}
-   
-
-    image_window->GrabStartX = iStartX;
-    image_window->GrabStartY = iStartY;
-    image_window->ExposureWindowWidth= iGrabWidth;
-    image_window->ExposureWindowHeight = iGrabHeight;   
-
-//    iShutter = iShutter * (fCP_PCLK / OV5650_g_fPV_PCLK) * OV5650_g_iPV_Pixels_Per_Line / iCP_Pixels_Per_Line;
-	  iShutter = (iShutter * (1024*(fCP_PCLK>>10) / (OV5650_g_fPV_PCLK>>10)) * OV5650_g_iPV_Pixels_Per_Line / iCP_Pixels_Per_Line) >>10;
-
-	  SENSORDB(1, (TEXT("Camera compute iShutter= %x \r\n"),iShutter));
-
-    if (OV5650_g_bXGA_Mode == KAL_FALSE) {
-        iShutter <<= 1; // XGA mode's brightness level = 2x QXGA mode's brightness level
-      }
-	
-  
-    if (iShutter < 1) {
-        iShutter = 1;
-    }
-	// config flashlight preview setting
-		sensor_config_data->DefaultPclk = fCP_PCLK; 
-		sensor_config_data->Pixels = iCP_Pixels_Per_Line;
-		
-		if(OV5650_g_bXGA_Mode == KAL_TRUE)
-		sensor_config_data->FrameLines =QXGA_MODE_WITHOUT_DUMMY_LINES+OV5650_g_iDummyLines ;
-		else
-		sensor_config_data->FrameLines =PV_PERIOD_LINE_NUMS ;
-		
-		sensor_config_data->Lines = image_window->ExposureWindowHeight;    
-		sensor_config_data->Shutter =iShutter;	
-
-{
-    kal_uint8 iTemp = OV5650_read_cmos_sensor(0x3001);//trigger BLC,gain change
-    OV5650_write_cmos_sensor(0x3001, ++iTemp); //gaiyang modify
-    OV5650_write_cmos_sensor(0x3001, --iTemp);
-}
-    OV5650_Set_Dummy(OV5650_iDummyPixels, OV5650_g_iDummyLines);
-    OV5650_Write_Shutter(iShutter);
-	// copy sensor_config_data
-	memcpy(&OV5650SensorConfigData, sensor_config_data, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
-    return ERROR_NONE;
-	#endif
 }   /* OV5650_Capture() */
 
 UINT32 OV5650GetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolution)
 {
-	pSensorResolution->SensorFullWidth=OV5650_IMAGE_SENSOR_FULL_WIDTH_DRV;
-	pSensorResolution->SensorFullHeight=OV5650_IMAGE_SENSOR_FULL_HEIGHT_DRV;
+	pSensorResolution->SensorFullWidth=OV5650_IMAGE_SENSOR_FULL_WIDTH_DRV - 40;
+	pSensorResolution->SensorFullHeight=OV5650_IMAGE_SENSOR_FULL_HEIGHT_DRV - 32;
 	pSensorResolution->SensorPreviewWidth=OV5650_IMAGE_SENSOR_PV_WIDTH - 16;
 	pSensorResolution->SensorPreviewHeight=OV5650_IMAGE_SENSOR_PV_HEIGHT - 12;
 	return ERROR_NONE;
@@ -2133,8 +2031,8 @@ UINT32 OV5650GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 			pSensorInfo->SensorClockFallingCount=2;
 			pSensorInfo->SensorPixelClockCount=3;
 			pSensorInfo->SensorDataLatchCount=2;
-			pSensorInfo->SensorGrabStartX = 2; 		
-			pSensorInfo->SensorGrabStartY = 2; 
+			pSensorInfo->SensorGrabStartX = 12; 		
+			pSensorInfo->SensorGrabStartY = 16; 
 			#else
 			pSensorInfo->SensorClockFreq=24;
 			pSensorInfo->SensorClockDividCount=	4;
@@ -2155,7 +2053,9 @@ UINT32 OV5650GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 			pSensorInfo->SensorGrabStartY = 2; 
 		break;
 	}
+	spin_lock(&ov5650_drv_lock);
 	OV5650PixelClockDivider=pSensorInfo->SensorPixelClockCount;
+	spin_unlock(&ov5650_drv_lock);
 		memcpy(pSensorConfigData, &OV5650SensorConfigData, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
 return ERROR_NONE;
 }	/* OV5650GetInfo() */
@@ -2164,6 +2064,8 @@ return ERROR_NONE;
 UINT32 OV5650Control(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *pImageWindow,
 					  MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData)
 {
+
+	CurrentScenarioId = ScenarioId;
 	switch (ScenarioId)
 	{
 		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
@@ -2173,7 +2075,10 @@ UINT32 OV5650Control(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WIND
 		break;
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
+			OV5650Capture(pImageWindow, pSensorConfigData);
+		break;
 		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+		    OV5650_g_ZSD_Mode = KAL_TRUE;
 			OV5650Capture(pImageWindow, pSensorConfigData);
 		break;		
         //s_porting add
@@ -2207,6 +2112,56 @@ UINT32 OV5650SetCalData(PSET_SENSOR_CALIBRATION_DATA_STRUCT pSetSensorCalData)
 	return ERROR_NONE;
 }
 
+UINT32 OV5650SetVideoMode(UINT16 u2FrameRate)
+{
+
+  kal_uint16 dummy_lines;
+
+  SENSORDB("OV5650SetVideoMode£¬u2FrameRate:%d\n",u2FrameRate);
+
+  if((30 == u2FrameRate)||(15 == u2FrameRate))
+  	{
+  	    
+	    dummy_lines = (kal_uint16)((OV5650_g_fPV_PCLK/u2FrameRate)/(OV5650_PV_PERIOD_PIXEL_NUMS+OV5650_iDummypixels));      
+		dummy_lines = dummy_lines - OV5650_PV_PERIOD_LINE_NUMS;
+	    OV5650_Set_Dummy(0,dummy_lines);
+  	}
+  else if(0 == u2FrameRate)
+  	{
+  	   SENSORDB("disable video mode\n");
+  	}
+  return TRUE;
+  
+}
+
+
+UINT32 OV5650SetAutoFlickerMode(kal_bool bEnable, UINT16 u2FrameRate)
+{
+	
+	
+	
+	SENSORDB("[OV5650SetAutoFlickerMode] frame rate(10base) = %d %d\n", bEnable, u2FrameRate);
+
+	if(bEnable)
+		{
+		    
+			
+			OV5650_g_Fliker_Mode = KAL_TRUE;
+
+			
+		}
+	else
+		{
+			
+			OV5650_g_Fliker_Mode = KAL_FALSE;
+			
+		}
+	SENSORDB("[OV5650SetAutoFlickerMode]bEnable:%x \n",bEnable);
+}
+
+
+
+
 UINT32 OV5650FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 							 UINT8 *pFeaturePara,UINT32 *pFeatureParaLen)
 {
@@ -2234,21 +2189,44 @@ MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData=(MSDK_SENSOR_CONFIG_STRUCT *) pFeat
 			*pFeatureParaLen=4;
 		break;
 		case SENSOR_FEATURE_GET_PERIOD:
-			*pFeatureReturnPara16++=OV5650_XGA_MODE_WITHOUT_DUMMY_PIXELS + OV5650_iDummypixels;  //OV5650_IMAGE_SENSOR_PV_WIDTH - 16;//PV_PERIOD_PIXEL_NUMS;//+OV5650_iDummyPixels;
-			*pFeatureReturnPara16=OV5650_XGA_MODE_WITHOUT_DUMMY_LINES + OV5650_g_iDummyLines;   //OV5650_IMAGE_SENSOR_PV_HEIGHT - 12;//PV_PERIOD_LINE_NUMS+OV5650_g_iDummyLines;
-			*pFeatureParaLen=4;
-			 SENSORDB("OV5650FeatureControl OV5650_iDummypixels =%d\n",OV5650_iDummypixels);
-			 SENSORDB("OV5650FeatureControl OV5650_g_iDummyLines =%d\n",OV5650_g_iDummyLines);
+			switch(CurrentScenarioId)
+				{
+					case MSDK_SCENARIO_ID_CAMERA_ZSD:
+						*pFeatureReturnPara16++=OV5650_QXGA_MODE_WITHOUT_DUMMY_PIXELS+ OV5650_iDummypixels;  
+						*pFeatureReturnPara16=OV5650_QXGA_MODE_WITHOUT_DUMMY_LINES + OV5650_g_iDummyLines;   
+						*pFeatureParaLen=4;
+						 SENSORDB("OV5650FeatureControl CAP OV5650_iDummypixels =%d\n",OV5650_iDummypixels);
+						 //SENSORDB("OV5650FeatureControl OV5650_g_iDummyLines =%d\n",OV5650_g_iDummyLines);
+						break;
+					default:
+						*pFeatureReturnPara16++=OV5650_XGA_MODE_WITHOUT_DUMMY_PIXELS + OV5650_iDummypixels;  
+						*pFeatureReturnPara16=OV5650_XGA_MODE_WITHOUT_DUMMY_LINES + OV5650_g_iDummyLines;  
+						*pFeatureParaLen=4;
+						 SENSORDB("OV5650FeatureControl PV OV5650_iDummypixels =%d\n",OV5650_iDummypixels);
+						 //SENSORDB("OV5650FeatureControl OV5650_g_iDummyLines =%d\n",OV5650_g_iDummyLines);
+						 break;
+				}
 		break;
 		case SENSOR_FEATURE_GET_PIXEL_CLOCK_FREQ:
-			*pFeatureReturnPara32 = OV5650_g_fPV_PCLK;
-			*pFeatureParaLen=4;
+			switch(CurrentScenarioId)
+				{
+					case MSDK_SCENARIO_ID_CAMERA_ZSD:
+						*pFeatureReturnPara32 = OV5650_g_fCP_PCLK;
+				        *pFeatureParaLen=4;
+						SENSORDB("OV5650FeatureControl OV5650_g_fCP_PCLK =%d\n",OV5650_g_fCP_PCLK);
+						break;
+					default:
+					   *pFeatureReturnPara32 = OV5650_g_fPV_PCLK;
+				       *pFeatureParaLen=4;
+					   SENSORDB("OV5650FeatureControl OV5650_g_fPV_PCLK =%d\n",OV5650_g_fPV_PCLK);
+					   break;
+				}
 		break;
 		case SENSOR_FEATURE_SET_ESHUTTER:
 			set_OV5650_shutter(*pFeatureData16);
 		break;
 		case SENSOR_FEATURE_SET_NIGHTMODE:
-			OV5650_night_mode((BOOL) *pFeatureData16);
+			//OV5650_night_mode((BOOL) *pFeatureData16);
 		break;
 		case SENSOR_FEATURE_SET_GAIN:
 			OV5650_SetGain((UINT16) *pFeatureData16);
@@ -2256,7 +2234,9 @@ MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData=(MSDK_SENSOR_CONFIG_STRUCT *) pFeat
 		case SENSOR_FEATURE_SET_FLASHLIGHT:
 		break;
 		case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
+			spin_lock(&ov5650_drv_lock);
 			OV5650_isp_master_clock=*pFeatureData32;
+			spin_unlock(&ov5650_drv_lock);
 		break;
 		case SENSOR_FEATURE_SET_REGISTER:
 OV5650_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
@@ -2270,8 +2250,10 @@ OV5650_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
 				return FALSE;
 			for (i=0;i<OV5650SensorRegNumber;i++)
 			{
+				spin_lock(&ov5650_drv_lock);
 				OV5650SensorCCT[i].Addr=*pFeatureData32++;
 				OV5650SensorCCT[i].Para=*pFeatureData32++;
+				spin_unlock(&ov5650_drv_lock);
 			}
 		break;
 		case SENSOR_FEATURE_GET_CCT_REGISTER:
@@ -2291,8 +2273,10 @@ OV5650_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
 				return FALSE;
 			for (i=0;i<OV5650SensorRegNumber;i++)
 			{
+				spin_lock(&ov5650_drv_lock);
 				OV5650SensorReg[i].Addr=*pFeatureData32++;
 				OV5650SensorReg[i].Para=*pFeatureData32++;
+				spin_unlock(&ov5650_drv_lock);
 			}
 		break;
 		case SENSOR_FEATURE_GET_ENG_REGISTER:
@@ -2356,9 +2340,14 @@ case SENSOR_FEATURE_GET_CONFIG_PARA:
 			*pFeatureReturnPara32=LENS_DRIVER_ID_DO_NOT_CARE;
 			*pFeatureParaLen=4;
 		break;
-		
+		case SENSOR_FEATURE_SET_VIDEO_MODE:
+		       OV5650SetVideoMode(*pFeatureData16);
+        break; 
 		case SENSOR_FEATURE_SET_CALIBRATION_DATA:
 			OV5650SetCalData(pSetSensorCalData);
+			break;
+		case SENSOR_FEATURE_SET_AUTO_FLICKER_MODE:
+			OV5650SetAutoFlickerMode((BOOL)*pFeatureData16,*(pFeatureData16+1));
 			break;
 		default:
 			break;
@@ -2385,22 +2374,4 @@ UINT32 OV5650SensorInit(PSENSOR_FUNCTION_STRUCT *pfFunc)
   return ERROR_NONE;
 } /* SensorInit() */
 
-//SENSOR_FUNCTION_STRUCT	SensorFuncOV5650=
-//{
-//	OV5650Open,
-//	OV5650GetInfo,
-//	OV5650GetResolution,
-//	OV5650FeatureControl,
-//	OV5650Control,
-//	OV5650Close
-//};
-
-//UINT8 OV5650SensorInit(PSENSOR_FUNCTION_STRUCT *pfFunc)
-//{
-//	/* To Do : Check Sensor status here */
-//	if (pfFunc!=NULL)
-//		*pfFunc=&SensorFuncOV5650;
-
-//	return ERROR_NONE;
-//}	/* SensorInit() */
 

@@ -11,8 +11,6 @@
 # Copyright (C) 1995-2002 Russell King
 #
 
-MKIMAGE         := $(srctree)/scripts/mkuboot.sh
-
 ifneq ($(MACHINE),)
 include $(srctree)/$(MACHINE)/Makefile.boot
 endif
@@ -28,6 +26,30 @@ INITRD_PHYS := $(initrd_phys-y)
 export ZRELADDR INITRD_PHYS PARAMS_PHYS
 
 targets := Image zImage xipImage bootpImage uImage
+
+# [Mediatek]
+# Check if (sizeof(Image)+sizeof(zImage)-0x8000) > $(CONFIG_RAMDISK_OFFSET)
+# Remember to align the value of CONFIG_RAMDISK_OFFSET with CFG_RAMDISK_LOAD_ADDR
+# in mediatek/custom/<project>/uboot/inc/configs/ubconfigs.h
+# Ex. CFG_RAMDISK_LOAD_ADDR is configured in ubconfigs.h as below
+# '#define CFG_RAMDISK_LOAD_ADDR (RIL_SIZE + 0xD00000)'
+# so CONFIG_RAMDISK_OFFSET should be configured as '0xD00000' in kconfig
+define chk-kernel-img-size
+  Image_size=`stat --format=%s $(obj)/Image`; \
+  zImage_size=`stat --format=%s $(obj)/zImage`; \
+  offset=$$(($$Image_size + $$zImage_size - 32768)); \
+  ramdisk_offset=`printf %d $(CONFIG_RAMDISK_OFFSET)`; \
+  shortage=$$(($$offset - $$ramdisk_offset)); \
+  if [ $$offset -gt $$ramdisk_offset ]; then \
+    echo \[Kernel Size Expired\] Kernel size is too big that might overwrite Ramdisk, please optimize Kernel size.; \
+    echo \[Kernel Size Expired\] Current offset is \"`printf "0x%x" $$offset`\" \(Image + zImage - 0x8000\).; \
+    echo \[Kernel Size Expired\] The offset has to be less than \"`printf "0x%x" $$ramdisk_offset`\" \(RAMDISK_LOAD_ADDR\).; \
+    echo \[Kernel Size Expired\] The total size \(Image + zImage\) is over \"$$shortage\" bytes than expected.; \
+    echo \[Kernel Size Expired\] If the code size is hard to be optimized, please contact memory expert for code review.; \
+    exit 1; \
+  fi
+endef
+
 
 ifeq ($(CONFIG_XIP_KERNEL),y)
 
@@ -55,24 +77,41 @@ $(obj)/compressed/vmlinux: $(obj)/Image FORCE
 
 $(obj)/zImage:	$(obj)/compressed/vmlinux FORCE
 	$(call if_changed,objcopy)
+	$(Q)$(chk-kernel-img-size)
 	@echo '  Kernel: $@ is ready'
 
 endif
 
-quiet_cmd_uimage = UIMAGE  $@
-      cmd_uimage = $(CONFIG_SHELL) $(MKIMAGE) -A arm -O linux -T kernel \
-		   -C none -a $(LOADADDR) -e $(STARTADDR) \
-		   -n 'Linux-$(KERNELRELEASE)' -d $< $@
+targets += $(dtb-y)
 
-ifeq ($(CONFIG_ZBOOT_ROM),y)
-$(obj)/uImage: LOADADDR=$(CONFIG_ZBOOT_ROM_TEXT)
+# Rule to build device tree blobs
+$(obj)/%.dtb: $(src)/dts/%.dts FORCE
+	$(call if_changed_dep,dtc)
+
+$(obj)/dtbs: $(addprefix $(obj)/, $(dtb-y))
+
+clean-files := *.dtb
+
+ifneq ($(LOADADDR),)
+  UIMAGE_LOADADDR=$(LOADADDR)
 else
-$(obj)/uImage: LOADADDR=$(ZRELADDR)
+  ifeq ($(CONFIG_ZBOOT_ROM),y)
+    UIMAGE_LOADADDR=$(CONFIG_ZBOOT_ROM_TEXT)
+  else
+    UIMAGE_LOADADDR=$(ZRELADDR)
+  endif
 endif
 
-$(obj)/uImage: STARTADDR=$(LOADADDR)
+check_for_multiple_loadaddr = \
+if [ $(words $(UIMAGE_LOADADDR)) -gt 1 ]; then \
+	echo 'multiple load addresses: $(UIMAGE_LOADADDR)'; \
+	echo 'This is incompatible with uImages'; \
+	echo 'Specify LOADADDR on the commandline to build an uImage'; \
+	false; \
+fi
 
 $(obj)/uImage:	$(obj)/zImage FORCE
+	@$(check_for_multiple_loadaddr)
 	$(call if_changed,uimage)
 	@echo '  Image $@ is ready'
 

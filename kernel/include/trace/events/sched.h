@@ -6,6 +6,7 @@
 
 #include <linux/sched.h>
 #include <linux/tracepoint.h>
+#include <linux/binfmts.h>
 
 #ifdef CONFIG_MT65XX_TRACER
 #include <trace/events/mt65xx_mon_trace.h>
@@ -52,6 +53,23 @@ TRACE_EVENT(sched_kthread_stop_ret,
 	TP_printk("ret=%d", __entry->ret)
 );
 
+#ifdef CREATE_TRACE_POINTS
+static inline long __trace_sched_switch_state(struct task_struct *p)
+{
+	long state = p->state;
+
+#ifdef CONFIG_PREEMPT
+	/*
+	 * For all intents and purposes a preempted task is a running task.
+	 */
+	if (task_thread_info(p)->preempt_count & PREEMPT_ACTIVE)
+		state = TASK_RUNNING | TASK_STATE_MAX;
+#endif
+
+	return state;
+}
+#endif
+
 /*
  * Tracepoint for waking up a task:
  */
@@ -67,6 +85,11 @@ DECLARE_EVENT_CLASS(sched_wakeup_template,
 		__field(	int,	prio			)
 		__field(	int,	success			)
 		__field(	int,	target_cpu		)
+#ifdef CONFIG_MTK_SCHED_TRACERS
+        __field(    unsigned char,    state           )
+        // mtk04259: use unsigned char to filter state > 256
+        //           although different from sched_switch
+#endif
 	),
 
 	TP_fast_assign(
@@ -75,11 +98,28 @@ DECLARE_EVENT_CLASS(sched_wakeup_template,
 		__entry->prio		= p->prio;
 		__entry->success	= success;
 		__entry->target_cpu	= task_cpu(p);
+#ifdef CONFIG_MTK_SCHED_TRACERS
+        __entry->state      =__trace_sched_switch_state(p);
+#endif
 	),
 
-	TP_printk("comm=%s pid=%d prio=%d success=%d target_cpu=%03d",
+	TP_printk(
+#ifdef CONFIG_MTK_SCHED_TRACERS
+            "comm=%s pid=%d prio=%d success=%d target_cpu=%03d state=%s",
+#else
+            "comm=%s pid=%d prio=%d success=%d target_cpu=%03d",
+#endif
 		  __entry->comm, __entry->pid, __entry->prio,
-		  __entry->success, __entry->target_cpu)
+		  __entry->success, __entry->target_cpu
+#ifdef CONFIG_MTK_SCHED_TRACERS
+        ,
+		__entry->state & (TASK_STATE_MAX-1) ?
+		  __print_flags(__entry->state & (TASK_STATE_MAX-1), "|",
+				{ 1, "S"} , { 2, "D" }, { 4, "T" }, { 8, "t" },
+				{ 16, "Z" }, { 32, "X" }, { 64, "x" },
+                { 128, "W" }) : "R"
+#endif
+          )
 );
 
 DEFINE_EVENT(sched_wakeup_template, sched_wakeup,
@@ -92,23 +132,6 @@ DEFINE_EVENT(sched_wakeup_template, sched_wakeup,
 DEFINE_EVENT(sched_wakeup_template, sched_wakeup_new,
 	     TP_PROTO(struct task_struct *p, int success),
 	     TP_ARGS(p, success));
-
-#ifdef CREATE_TRACE_POINTS
-static inline long __trace_sched_switch_state(struct task_struct *p)
-{
-	long state = p->state;
-
-#ifdef CONFIG_PREEMPT
-	/*
-	 * For all intents and purposes a preempted task is a running task.
-	 */
-	if (task_thread_info(p)->preempt_count & PREEMPT_ACTIVE)
-		state = TASK_RUNNING;
-#endif
-
-	return state;
-}
-#endif
 
 /*
  * Tracepoint for task switches, performed by the scheduler:
@@ -128,6 +151,9 @@ TRACE_EVENT(sched_switch,
 		__array(	char,	next_comm,	TASK_COMM_LEN	)
 		__field(	pid_t,	next_pid			)
 		__field(	int,	next_prio			)
+#ifdef CONFIG_MTK_SCHED_TRACERS
+        __field(    long,   next_state          )
+#endif
 	),
 
 	TP_fast_assign(
@@ -138,16 +164,34 @@ TRACE_EVENT(sched_switch,
 		memcpy(__entry->prev_comm, prev->comm, TASK_COMM_LEN);
 		__entry->next_pid	= next->pid;
 		__entry->next_prio	= next->prio;
+#ifdef CONFIG_MTK_SCHED_TRACERS
+        __entry->next_state = __trace_sched_switch_state(next);
+#endif
 	),
 
-	TP_printk("prev_comm=%s prev_pid=%d prev_prio=%d prev_state=%s ==> next_comm=%s next_pid=%d next_prio=%d",
+	TP_printk(
+#ifdef CONFIG_MTK_SCHED_TRACERS
+            "prev_comm=%s prev_pid=%d prev_prio=%d prev_state=%s%s ==> next_comm=%s next_pid=%d next_prio=%d next_state=%s",
+#else
+            "prev_comm=%s prev_pid=%d prev_prio=%d prev_state=%s%s ==> next_comm=%s next_pid=%d next_prio=%d",
+#endif
 		__entry->prev_comm, __entry->prev_pid, __entry->prev_prio,
-		__entry->prev_state ?
-		  __print_flags(__entry->prev_state, "|",
+		__entry->prev_state & (TASK_STATE_MAX-1) ?
+		  __print_flags(__entry->prev_state & (TASK_STATE_MAX-1), "|",
 				{ 1, "S"} , { 2, "D" }, { 4, "T" }, { 8, "t" },
 				{ 16, "Z" }, { 32, "X" }, { 64, "x" },
 				{ 128, "W" }) : "R",
-		__entry->next_comm, __entry->next_pid, __entry->next_prio)
+		__entry->prev_state & TASK_STATE_MAX ? "+" : "",
+		__entry->next_comm, __entry->next_pid, __entry->next_prio
+#ifdef CONFIG_MTK_SCHED_TRACERS
+        ,
+		__entry->next_state & (TASK_STATE_MAX-1) ?
+		  __print_flags(__entry->next_state & (TASK_STATE_MAX-1), "|",
+				{ 1, "S"} , { 2, "D" }, { 4, "T" }, { 8, "t" },
+				{ 16, "Z" }, { 32, "X" }, { 64, "x" },
+				{ 128, "W" }) : "R"
+#endif
+        )
 );
 
 /*
@@ -278,6 +322,32 @@ TRACE_EVENT(sched_process_fork,
 );
 
 /*
+ * Tracepoint for exec:
+ */
+TRACE_EVENT(sched_process_exec,
+
+	TP_PROTO(struct task_struct *p, pid_t old_pid,
+		 struct linux_binprm *bprm),
+
+	TP_ARGS(p, old_pid, bprm),
+
+	TP_STRUCT__entry(
+		__string(	filename,	bprm->filename	)
+		__field(	pid_t,		pid		)
+		__field(	pid_t,		old_pid		)
+	),
+
+	TP_fast_assign(
+		__assign_str(filename, bprm->filename);
+		__entry->pid		= p->pid;
+		__entry->old_pid	= old_pid;
+	),
+
+	TP_printk("filename=%s pid=%d old_pid=%d", __get_str(filename),
+		  __entry->pid, __entry->old_pid)
+);
+
+/*
  * XXX the below sched_stat tracepoints only apply to SCHED_OTHER/BATCH/IDLE
  *     adding sched_stat support to SCHED_FIFO/RR would be welcome.
  */
@@ -329,6 +399,13 @@ DEFINE_EVENT(sched_stat_template, sched_stat_sleep,
  * due to waiting on IO to complete).
  */
 DEFINE_EVENT(sched_stat_template, sched_stat_iowait,
+	     TP_PROTO(struct task_struct *tsk, u64 delay),
+	     TP_ARGS(tsk, delay));
+
+/*
+ * Tracepoint for accounting blocked time (time the task is in uninterruptible).
+ */
+DEFINE_EVENT(sched_stat_template, sched_stat_blocked,
 	     TP_PROTO(struct task_struct *tsk, u64 delay),
 	     TP_ARGS(tsk, delay));
 

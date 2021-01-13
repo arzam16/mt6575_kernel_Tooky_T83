@@ -1,4 +1,18 @@
-
+/* drivers/i2c/chips/ami304.c - AMI304 compass driver
+ *
+ * Copyright (C) 2009 AMIT Technology Inc.
+ * Author: Kyle Chen <sw-support@amit-inc.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -23,27 +37,11 @@
 #include "ami304.h"
 #include <linux/hwmsen_helper.h>
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
 
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-
-#ifdef MT6575
-
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#endif
 
 /*-------------------------MT6516&MT6573 define-------------------------------*/
 #ifdef MT6516
@@ -58,6 +56,9 @@
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_AMI304 304
@@ -1294,6 +1295,13 @@ static void ami304_late_resume(struct early_suspend *h)
 /*----------------------------------------------------------------------------*/
 //#endif /*CONFIG_HAS_EARLYSUSPEND*/
 /*----------------------------------------------------------------------------*/
+/*
+static int ami304_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+{    
+	strcpy(info->type, AMI304_DEV_NAME);
+	return 0;
+}
+*/
 
 /*----------------------------------------------------------------------------*/
 static int ami304_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
@@ -1365,7 +1373,7 @@ static int ami304_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	}
 	
 #if CONFIG_HAS_EARLYSUSPEND
-	data->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	data->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	data->early_drv.suspend  = ami304_early_suspend,
 	data->early_drv.resume   = ami304_late_resume,    
 	register_early_suspend(&data->early_drv);

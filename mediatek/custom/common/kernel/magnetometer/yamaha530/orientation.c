@@ -47,7 +47,7 @@
 /* for debugging */
 #define DEBUG 0
 #define SENSOR_NAME "orientation"
-
+#define SENSOR_TYPE (3)
 #define SENSOR_DEFAULT_DELAY            (200)   /* 200 ms */
 #define SENSOR_MAX_DELAY                (2000)  /* 2000 ms */
 #define ABS_STATUS                      (ABS_BRAKE)
@@ -65,8 +65,9 @@ struct sensor_data {
     int suspend;
 #endif
 };
-
-//static struct platform_device *sensor_pdev = NULL;
+#if DEBUG
+static struct platform_device *sensor_pdev = NULL;
+#endif
 static struct input_dev *this_data = NULL;
 
 static int
@@ -98,7 +99,7 @@ static int
 resume(void)
 {
     /* implement resume of the sensor */
-    printk(("%s: resume\n", SENSOR_NAME));
+    printk("%s: resume\n", SENSOR_NAME);
 
     if (strcmp(SENSOR_NAME, "gyroscope") == 0) {
         /* resume gyroscope */
@@ -169,6 +170,7 @@ sensor_delay_store(struct device *dev,
     data->delay = value;
 
     input_report_abs(input_data, ABS_CONTROL_REPORT, (data->enabled<<16) | value);
+	input_sync(input_data);
 
     mutex_unlock(&data->mutex);
 
@@ -208,6 +210,7 @@ sensor_enable_store(struct device *dev,
     mutex_lock(&data->mutex);
 
     input_report_abs(input_data, ABS_CONTROL_REPORT, (value<<16) | data->delay);
+	input_sync(input_data);
 
     if (data->enabled && !value) {
         suspend();
@@ -232,6 +235,7 @@ sensor_wake_store(struct device *dev,
     static int cnt = 1;
 
     input_report_abs(input_data, ABS_WAKE, cnt++);
+	input_sync(input_data);
 
     return count;
 }
@@ -372,6 +376,7 @@ sensor_suspend(struct platform_device *pdev, pm_message_t state)
 
     if (data->enabled) {
         input_report_abs(this_data, ABS_CONTROL_REPORT, (0<<16) | data->delay);
+		input_sync(this_data);
         rt = suspend();
     }
 
@@ -391,6 +396,7 @@ sensor_resume(struct platform_device *pdev)
     if (data->enabled) {
         rt = resume();
         input_report_abs(this_data, ABS_CONTROL_REPORT, (1<<16) | data->delay);
+		input_sync(this_data);
     }
 
     mutex_unlock(&data->mutex);
@@ -467,6 +473,7 @@ sensor_set_delay(int msec)
 
     data->delay = msec;
     input_report_abs(this_data, ABS_CONTROL_REPORT, (data->enabled<<16) | msec);
+	input_sync(this_data);
 
     mutex_unlock(&data->mutex);
 
@@ -508,6 +515,7 @@ sensor_set_enable(int enable)
     data->enabled = enable;
 
     input_report_abs(this_data, ABS_CONTROL_REPORT, (enable<<16) | data->delay);
+	input_sync(this_data);
 
     mutex_unlock(&data->mutex);
 
@@ -516,6 +524,9 @@ sensor_set_enable(int enable)
 EXPORT_SYMBOL(sensor_set_enable);
 
 #endif
+/*----------------------------------------------------------------------------*/
+//for data statable 
+static int oldvalue[3];
 
 /*----------------------------------------------------------------------------*/
 int yamaha530_orientation_operate(void* self, uint32_t command, void* buff_in, int size_in,
@@ -529,7 +540,7 @@ int yamaha530_orientation_operate(void* self, uint32_t command, void* buff_in, i
 	struct input_dev *input_data = this_data;
 
 
-	//printk("yamaha530_orientation_operate!\n");
+	printk("yamaha530_orientation_operate!\n");
 	switch (command)
 	{
 		case SENSOR_DELAY:
@@ -585,11 +596,27 @@ int yamaha530_orientation_operate(void* self, uint32_t command, void* buff_in, i
 
 				spin_unlock_irqrestore(&input_data->event_lock, flags);		 
 #else
+				
 			    osensor_data->values[0] = input_abs_get_val(input_data, ABS_X);
 			    osensor_data->values[1] = input_abs_get_val(input_data, ABS_Y);
 			    osensor_data->values[2] = input_abs_get_val(input_data, ABS_Z);
+
+
+				if((abs(osensor_data->values[0] - oldvalue[0]))<=5000){
+					osensor_data->values[0] = oldvalue[0];
+				}else if((abs(osensor_data->values[1] - oldvalue[1]))<=5000){
+					osensor_data->values[1] = oldvalue[1];
+				}else if((abs(osensor_data->values[2] - oldvalue[2]))<=5000){
+					osensor_data->values[2] = oldvalue[2];
+				}
+
+				oldvalue[0] = osensor_data->values[0];
+				oldvalue[1] = osensor_data->values[1];
+				oldvalue[2] = osensor_data->values[2];
+				
 			    //osensor_data->values[3] = input_abs_get_val(input_data, ABS_STATUS);
 			    osensor_data->status = input_abs_get_val(input_data, ABS_STATUS);
+				//printk("yucong debug O sensor: %d,%d,%d\n",osensor_data->values[0],osensor_data->values[1],osensor_data->values[2]);
 #endif
 				
 				osensor_data->value_divide = 1000;				
@@ -619,7 +646,7 @@ sensor_probe(struct platform_device *pdev)
 #ifdef MEDIATEK_CODE
 //    int misc_registered = 0;
 #endif
-
+	//printk("yucong debug tag orientation sensor probe!func");
     data = kzalloc(sizeof(struct sensor_data), GFP_KERNEL);
     if (!data) {
         rt = -ENOMEM;

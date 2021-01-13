@@ -95,6 +95,7 @@ struct tag_serialnr {
 
 struct tag_revision {
 	__u32 rev;
+       __u32 vbat;
 };
 
 /* initial values for vesafb-type framebuffers. see struct screen_info
@@ -154,10 +155,9 @@ struct tag_boot {
 #define ATAG_META_COM 0x41000803
 
 struct tag_meta_com {
-	u32 meta_com_type; /* identify meta via uart or usb */
+        u32 meta_com_type; /* identify meta via uart or usb */
     u32 meta_com_id;  /* multiple meta need to know com port id */
 };
-
 
 struct tag {
 	struct tag_header hdr;
@@ -181,12 +181,8 @@ struct tag {
 		 * DC21285 specific
 		 */
 		struct tag_memclk	memclk;
-
-		/*
-		 * MTK specific
-		 */
-		struct tag_boot		boot;
-                struct tag_meta_com     meta_com;		
+                struct tag_boot         boot;
+                struct tag_meta_com     meta_com;
 	} u;
 };
 
@@ -209,12 +205,12 @@ struct tagtable {
 
 #define __tag __used __attribute__((__section__(".taglist.init")))
 #define __tagtable(tag, fn) \
-static struct tagtable __tagtable_##fn __tag = { tag, fn }
+static const struct tagtable __tagtable_##fn __tag = { tag, fn }
 
 /*
  * Memory map description
  */
-#define NR_BANKS 8
+#define NR_BANKS	CONFIG_ARM_NR_BANKS
 
 struct membank {
 	phys_addr_t start;

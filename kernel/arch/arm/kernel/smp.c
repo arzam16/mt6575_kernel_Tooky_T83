@@ -16,7 +16,6 @@
 #include <linux/cache.h>
 #include <linux/profile.h>
 #include <linux/errno.h>
-#include <linux/ftrace.h>
 #include <linux/mm.h>
 #include <linux/err.h>
 #include <linux/cpu.h>
@@ -26,11 +25,15 @@
 #include <linux/percpu.h>
 #include <linux/clockchips.h>
 #include <linux/completion.h>
+#include <linux/cpufreq.h>
 
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 #include <asm/cacheflush.h>
 #include <asm/cpu.h>
 #include <asm/cputype.h>
+#include <asm/exception.h>
+#include <asm/idmap.h>
+#include <asm/topology.h>
 #include <asm/mmu_context.h>
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -39,7 +42,9 @@
 #include <asm/tlbflush.h>
 #include <asm/ptrace.h>
 #include <asm/localtimer.h>
+#include <asm/smp_plat.h>
 
+#include <linux/mt_sched_mon.h>
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
  * so we need some other way of telling a new secondary core
@@ -47,20 +52,12 @@
  */
 struct secondary_data secondary_data;
 
-enum ipi_msg_type {
-	IPI_TIMER = 2,
-	IPI_RESCHEDULE,
-	IPI_CALL_FUNC,
-	IPI_CALL_FUNC_SINGLE,
-	IPI_CPU_STOP,
-	IPI_CPU_BACKTRACE,
-};
+static DECLARE_COMPLETION(cpu_running);
 
 int __cpuinit __cpu_up(unsigned int cpu)
 {
 	struct cpuinfo_arm *ci = &per_cpu(cpu_data, cpu);
 	struct task_struct *idle = ci->idle;
-	pgd_t *pgd;
 	int ret;
 
 	/*
@@ -83,29 +80,11 @@ int __cpuinit __cpu_up(unsigned int cpu)
 	}
 
 	/*
-	 * Allocate initial page tables to allow the new CPU to
-	 * enable the MMU safely.  This essentially means a set
-	 * of our "standard" page tables, with the addition of
-	 * a 1:1 mapping for the physical address of the kernel.
-	 */
-	pgd = pgd_alloc(&init_mm);
-	if (!pgd)
-		return -ENOMEM;
-
-	if (PHYS_OFFSET != PAGE_OFFSET) {
-#ifndef CONFIG_HOTPLUG_CPU
-		identity_mapping_add(pgd, __pa(__init_begin), __pa(__init_end));
-#endif
-		identity_mapping_add(pgd, __pa(_stext), __pa(_etext));
-		identity_mapping_add(pgd, __pa(_sdata), __pa(_edata));
-	}
-
-	/*
 	 * We need to tell the secondary core where to find
 	 * its stack and the page tables.
 	 */
 	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP;
-	secondary_data.pgdir = virt_to_phys(pgd);
+	secondary_data.pgdir = virt_to_phys(idmap_pgd);
 	secondary_data.swapper_pg_dir = virt_to_phys(swapper_pg_dir);
 	__cpuc_flush_dcache_area(&secondary_data, sizeof(secondary_data));
 	outer_clean_range(__pa(&secondary_data), __pa(&secondary_data + 1));
@@ -115,20 +94,12 @@ int __cpuinit __cpu_up(unsigned int cpu)
 	 */
 	ret = boot_secondary(cpu, idle);
 	if (ret == 0) {
-		unsigned long timeout;
-
 		/*
 		 * CPU was successfully started, wait for it
 		 * to come online or time out.
 		 */
-		timeout = jiffies + HZ;
-		while (time_before(jiffies, timeout)) {
-			if (cpu_online(cpu))
-				break;
-
-			udelay(10);
-			barrier();
-		}
+		wait_for_completion_timeout(&cpu_running,
+						 msecs_to_jiffies(1000));
 
 		if (!cpu_online(cpu)) {
 			pr_crit("CPU%u: failed to come online\n", cpu);
@@ -140,16 +111,6 @@ int __cpuinit __cpu_up(unsigned int cpu)
 
 	secondary_data.stack = NULL;
 	secondary_data.pgdir = 0;
-
-	if (PHYS_OFFSET != PAGE_OFFSET) {
-#ifndef CONFIG_HOTPLUG_CPU
-		identity_mapping_del(pgd, __pa(__init_begin), __pa(__init_end));
-#endif
-		identity_mapping_del(pgd, __pa(_stext), __pa(_etext));
-		identity_mapping_del(pgd, __pa(_sdata), __pa(_edata));
-	}
-
-	pgd_free(&init_mm, pgd);
 
 	return ret;
 }
@@ -269,7 +230,11 @@ static void __cpuinit smp_store_cpu_info(unsigned int cpuid)
 	struct cpuinfo_arm *cpu_info = &per_cpu(cpu_data, cpuid);
 
 	cpu_info->loops_per_jiffy = loops_per_jiffy;
+
+	store_cpu_topology(cpuid);
 }
+
+static void percpu_timer_setup(void);
 
 /*
  * This is the secondary CPU boot entry.  We're using this CPUs
@@ -279,8 +244,6 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu = smp_processor_id();
-
-	printk("CPU%u: Booted secondary processor\n", cpu);
 
 	/*
 	 * All kernel threads share the same mm context; grab a
@@ -292,6 +255,8 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	cpu_switch_mm(mm->pgd, mm);
 	enter_lazy_tlb(mm, current);
 	local_flush_tlb_all();
+
+	printk("CPU%u: Booted secondary processor\n", cpu);
 
 	cpu_init();
 	preempt_disable();
@@ -311,22 +276,16 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	/*
 	 * OK, now it's safe to let the boot CPU continue.  Wait for
 	 * the CPU migration code to notice that the CPU is online
-	 * before we continue.
+	 * before we continue - which happens after __cpu_up returns.
 	 */
 	set_cpu_online(cpu, true);
+	complete(&cpu_running);
 
 	/*
 	 * Setup the percpu timer for this CPU.
 	 */
 	percpu_timer_setup();
 
-	while (!cpu_active(cpu))
-		cpu_relax();
-
-	/*
-	 * cpu_active bit is set, so it's safe to enable interrupts
-	 * now.
-	 */
 	local_irq_enable();
 	local_fiq_enable();
 
@@ -362,6 +321,8 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 {
 	unsigned int ncores = num_possible_cpus();
 
+	init_cpu_topology();
+
 	smp_store_cpu_info(smp_processor_id());
 
 	/*
@@ -369,13 +330,20 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	 */
 	if (max_cpus > ncores)
 		max_cpus = ncores;
-
-	if (max_cpus > 1) {
+	if (ncores > 1 && max_cpus) {
 		/*
 		 * Enable the local timer or broadcast device for the
 		 * boot CPU, but only if we have more than one CPU.
 		 */
 		percpu_timer_setup();
+
+		/*
+		 * Initialise the present map, which describes the set of CPUs
+		 * actually populated at the present time. A platform should
+		 * re-initialize the map in platform_smp_prepare_cpus() if
+		 * present != possible (e.g. physical hotplug).
+		 */
+		init_cpu_present(cpu_possible_mask);
 
 		/*
 		 * Initialise the SCU if there are more than one CPU
@@ -435,10 +403,6 @@ u64 smp_irq_stat_cpu(unsigned int cpu)
 	for (i = 0; i < NR_IPI; i++)
 		sum += __get_irq_stat(cpu, ipi_irqs[i]);
 
-#ifdef CONFIG_LOCAL_TIMERS
-	sum += __get_irq_stat(cpu, local_timer_irqs);
-#endif
-
 	return sum;
 }
 
@@ -450,37 +414,8 @@ static DEFINE_PER_CPU(struct clock_event_device, percpu_clockevent);
 static void ipi_timer(void)
 {
 	struct clock_event_device *evt = &__get_cpu_var(percpu_clockevent);
-	irq_enter();
 	evt->event_handler(evt);
-	irq_exit();
 }
-
-#ifdef CONFIG_LOCAL_TIMERS
-asmlinkage void __exception_irq_entry do_local_timer(struct pt_regs *regs)
-{
-	struct pt_regs *old_regs = set_irq_regs(regs);
-	int cpu = smp_processor_id();
-
-	if (local_timer_ack()) {
-		__inc_irq_stat(cpu, local_timer_irqs);
-		ipi_timer();
-	}
-
-	set_irq_regs(old_regs);
-}
-
-void show_local_irqs(struct seq_file *p, int prec)
-{
-	unsigned int cpu;
-
-	seq_printf(p, "%*s: ", prec, "LOC");
-
-	for_each_present_cpu(cpu)
-		seq_printf(p, "%10u ", __get_irq_stat(cpu, local_timer_irqs));
-
-	seq_printf(p, " Local timer interrupts\n");
-}
-#endif
 
 #ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
 static void smp_timer_broadcast(const struct cpumask *mask)
@@ -509,7 +444,20 @@ static void __cpuinit broadcast_timer_setup(struct clock_event_device *evt)
 	clockevents_register_device(evt);
 }
 
-void __cpuinit percpu_timer_setup(void)
+static struct local_timer_ops *lt_ops;
+
+#ifdef CONFIG_LOCAL_TIMERS
+int local_timer_register(struct local_timer_ops *ops)
+{
+	if (lt_ops)
+		return -EBUSY;
+
+	lt_ops = ops;
+	return 0;
+}
+#endif
+
+static void __cpuinit percpu_timer_setup(void)
 {
 	unsigned int cpu = smp_processor_id();
 	struct clock_event_device *evt = &per_cpu(percpu_clockevent, cpu);
@@ -517,7 +465,7 @@ void __cpuinit percpu_timer_setup(void)
 	evt->cpumask = cpumask_of(cpu);
 	evt->broadcast = smp_timer_broadcast;
 
-	if (local_timer_setup(evt))
+	if (!lt_ops || lt_ops->setup(evt))
 		broadcast_timer_setup(evt);
 }
 
@@ -532,29 +480,39 @@ static void percpu_timer_stop(void)
 	unsigned int cpu = smp_processor_id();
 	struct clock_event_device *evt = &per_cpu(percpu_clockevent, cpu);
 
-	evt->set_mode(CLOCK_EVT_MODE_UNUSED, evt);
+	if (lt_ops)
+		lt_ops->stop(evt);
 }
 #endif
 
-static DEFINE_SPINLOCK(stop_lock);
+static DEFINE_RAW_SPINLOCK(stop_lock);
 
 /*
  * ipi_cpu_stop - handle IPI from smp_send_stop()
  */
 static void ipi_cpu_stop(unsigned int cpu)
 {
+    printk("\n CPU%u: stopping and cpu_relax,state:%d\n", cpu, system_state);
+    dump_stack();
 	if (system_state == SYSTEM_BOOTING ||
 	    system_state == SYSTEM_RUNNING) {
-		spin_lock(&stop_lock);
+		raw_spin_lock(&stop_lock);
 		printk(KERN_CRIT "CPU%u: stopping\n", cpu);
 		dump_stack();
-		spin_unlock(&stop_lock);
-	}
+		raw_spin_unlock(&stop_lock);
+    }
 
 	set_cpu_online(cpu, false);
 
 	local_fiq_disable();
 	local_irq_disable();
+
+        /* For L1 data coherence with the other cores, 
+         * we need to flush this core's l1 cache. by Chia-Hao Hsu 
+         */
+        flush_cache_all();
+        cpu_proc_fin();
+        flush_cache_all();
 
 	while (1)
 		cpu_relax();
@@ -617,6 +575,11 @@ static void ipi_cpu_backtrace(unsigned int cpu, struct pt_regs *regs)
  */
 asmlinkage void __exception_irq_entry do_IPI(int ipinr, struct pt_regs *regs)
 {
+	handle_IPI(ipinr, regs);
+}
+
+void handle_IPI(int ipinr, struct pt_regs *regs)
+{
 	unsigned int cpu = smp_processor_id();
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
@@ -625,7 +588,11 @@ asmlinkage void __exception_irq_entry do_IPI(int ipinr, struct pt_regs *regs)
 
 	switch (ipinr) {
 	case IPI_TIMER:
+        mt_trace_ISR_start(ipinr);
+		irq_enter();
 		ipi_timer();
+        mt_trace_ISR_end(ipinr);
+		irq_exit();
 		break;
 
 	case IPI_RESCHEDULE:
@@ -633,24 +600,40 @@ asmlinkage void __exception_irq_entry do_IPI(int ipinr, struct pt_regs *regs)
 		break;
 
 	case IPI_CALL_FUNC:
+        mt_trace_ISR_start(ipinr);
+		irq_enter();
 		generic_smp_call_function_interrupt();
+        mt_trace_ISR_end(ipinr);
+		irq_exit();
 		break;
 
 	case IPI_CALL_FUNC_SINGLE:
+        mt_trace_ISR_start(ipinr);
+		irq_enter();
 		generic_smp_call_function_single_interrupt();
+        mt_trace_ISR_end(ipinr);
+		irq_exit();
 		break;
 
 	case IPI_CPU_STOP:
+        mt_trace_ISR_start(ipinr);
+		irq_enter();
 		ipi_cpu_stop(cpu);
+        mt_trace_ISR_end(ipinr);
+		irq_exit();
 		break;
 
 	case IPI_CPU_BACKTRACE:
+        mt_trace_ISR_start(ipinr);
 		ipi_cpu_backtrace(cpu, regs);
+        mt_trace_ISR_end(ipinr);
 		break;
 
 	default:
+        mt_trace_ISR_start(ipinr);
 		printk(KERN_CRIT "CPU%u: Unknown IPI message 0x%x\n",
 		       cpu, ipinr);
+        mt_trace_ISR_end(ipinr);
 		break;
 	}
 	set_irq_regs(old_regs);
@@ -661,16 +644,29 @@ void smp_send_reschedule(int cpu)
 	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 
+//FIXME For JB Early Release, SS1 Marc will follow up this issue
+#if 0 
+#ifdef CONFIG_HOTPLUG_CPU
+static void smp_kill_cpus(cpumask_t *mask)
+{
+	unsigned int cpu;
+	for_each_cpu(cpu, mask)
+		platform_cpu_kill(cpu);
+}
+#else
+static void smp_kill_cpus(cpumask_t *mask) { }
+#endif
+#endif 
+
 void smp_send_stop(void)
 {
 	unsigned long timeout;
+	struct cpumask mask;
 
-	if (num_online_cpus() > 1) {
-		cpumask_t mask = cpu_online_map;
-		cpu_clear(smp_processor_id(), mask);
-
-		smp_cross_call(&mask, IPI_CPU_STOP);
-	}
+	cpumask_copy(&mask, cpu_online_mask);
+	cpumask_clear_cpu(smp_processor_id(), &mask);
+	printk("Send IPI to stop CPUs...\n");
+	smp_cross_call(&mask, IPI_CPU_STOP);
 
 	/* Wait up to one second for other CPUs to stop */
 	timeout = USEC_PER_SEC;
@@ -679,6 +675,9 @@ void smp_send_stop(void)
 
 	if (num_online_cpus() > 1)
 		pr_warning("SMP: failed to stop secondary CPUs\n");
+
+	//FIXME For JB Early Release, SS1 Marc will follow up this issue
+	//smp_kill_cpus(&mask);
 }
 
 /*
@@ -688,3 +687,56 @@ int setup_profiling_timer(unsigned int multiplier)
 {
 	return -EINVAL;
 }
+
+#ifdef CONFIG_CPU_FREQ
+
+static DEFINE_PER_CPU(unsigned long, l_p_j_ref);
+static DEFINE_PER_CPU(unsigned long, l_p_j_ref_freq);
+static unsigned long global_l_p_j_ref;
+static unsigned long global_l_p_j_ref_freq;
+
+static int cpufreq_callback(struct notifier_block *nb,
+					unsigned long val, void *data)
+{
+	struct cpufreq_freqs *freq = data;
+	int cpu = freq->cpu;
+
+	if (freq->flags & CPUFREQ_CONST_LOOPS)
+		return NOTIFY_OK;
+
+	if (!per_cpu(l_p_j_ref, cpu)) {
+		per_cpu(l_p_j_ref, cpu) =
+			per_cpu(cpu_data, cpu).loops_per_jiffy;
+		per_cpu(l_p_j_ref_freq, cpu) = freq->old;
+		if (!global_l_p_j_ref) {
+			global_l_p_j_ref = loops_per_jiffy;
+			global_l_p_j_ref_freq = freq->old;
+		}
+	}
+
+	if ((val == CPUFREQ_PRECHANGE  && freq->old < freq->new) ||
+	    (val == CPUFREQ_POSTCHANGE && freq->old > freq->new) ||
+	    (val == CPUFREQ_RESUMECHANGE || val == CPUFREQ_SUSPENDCHANGE)) {
+		loops_per_jiffy = cpufreq_scale(global_l_p_j_ref,
+						global_l_p_j_ref_freq,
+						freq->new);
+		per_cpu(cpu_data, cpu).loops_per_jiffy =
+			cpufreq_scale(per_cpu(l_p_j_ref, cpu),
+					per_cpu(l_p_j_ref_freq, cpu),
+					freq->new);
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block cpufreq_notifier = {
+	.notifier_call  = cpufreq_callback,
+};
+
+static int __init register_cpufreq_notifier(void)
+{
+	return cpufreq_register_notifier(&cpufreq_notifier,
+						CPUFREQ_TRANSITION_NOTIFIER);
+}
+core_initcall(register_cpufreq_notifier);
+
+#endif

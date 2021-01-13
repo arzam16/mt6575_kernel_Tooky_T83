@@ -2,7 +2,6 @@
 #ifndef _LOGGER_H_
 #define _LOGGER_H_
 
-#define ENABLE_USB_LOGGER
 #ifdef ENABLE_USB_LOGGER
 
 #include <mach/mt_storage_logger.h>

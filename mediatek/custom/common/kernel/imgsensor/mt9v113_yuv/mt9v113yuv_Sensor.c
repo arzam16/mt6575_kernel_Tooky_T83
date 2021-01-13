@@ -1,4 +1,43 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   PC Huang (MTK02204)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 01 04 2012 hao.wang
+ * [ALPS00109603] getsensorid func check in
+ * .
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
@@ -46,6 +85,9 @@ kal_uint16 MT9V113_read_cmos_sensor(kal_uint32 addr)
 }
 
 
+/*******************************************************************************
+* // Adapter for Winmo typedef 
+********************************************************************************/
 #define WINMO_USE 0
 
 #define Sleep(ms) mdelay(ms)
@@ -438,6 +480,22 @@ static kal_uint16 MT9V113_power_on(void)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113Open
+*
+* DESCRIPTION
+*	This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9V113Open(void)
 {
      SENSORDB("[Enter]:MT9V113 Open func zhijie:");
@@ -481,6 +539,22 @@ UINT32 MT9V113GetSensorID(UINT32 *sensorID)
 }	/* MT9V113Open() */
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113Close
+*
+* DESCRIPTION
+*	This function is to turn off sensor module power.
+*
+* PARAMETERS
+*	None
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 MT9V113Close(void)
 {
 
@@ -539,6 +613,18 @@ static void MT9V113_HVMirror(kal_uint8 image_mirror)
    	MT9V113_write_cmos_sensor(0x0990, 0x0006);
 }
 
+/*****************************************************************************
+* FUNCTION
+*  set_preview_dummy
+* DESCRIPTION
+*  		For preview config the dummy pixel and dummy line
+*
+* PARAMETERS
+*  H_Blank: The value of dummy pixels.
+*  V_Blank: The value of dummy lines.
+* RETURNS
+*  
+*****************************************************************************/
 void MT9V113_set_preview_dummy(kal_uint32 dummy_pixels, kal_uint32 dummy_lines)
 {
 	kal_uint32 line_len_pclk = 0;
@@ -662,6 +748,23 @@ void MT9V113_night_mode(kal_bool enable)
 	MT9V113FixFrameRate(MT9V113_Sensor_Driver.Min_Frame_Rate,MT9V113_Sensor_Driver.Max_Frame_Rate);
 }
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113Preview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 static UINT32 MT9V113Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -861,6 +964,22 @@ UINT32 MT9V113Control(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WIN
 }	/* MT9V113Control() */
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113_set_param_wb
+*
+* DESCRIPTION
+*	wb setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V113_set_param_wb(UINT16 para)
 {
 	
@@ -970,6 +1089,22 @@ BOOL MT9V113_set_param_wb(UINT16 para)
 	
 } /* MT9V113_set_param_wb */
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113_set_param_effect
+*
+* DESCRIPTION
+*	effect setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V113_set_param_effect(UINT16 para)
 {
 
@@ -1047,6 +1182,22 @@ BOOL MT9V113_set_param_effect(UINT16 para)
 
 } /* MT9V113_set_param_effect */
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113_set_param_banding
+*
+* DESCRIPTION
+*	banding setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V113_set_param_banding(UINT16 para)
 {
 
@@ -1092,6 +1243,22 @@ BOOL MT9V113_set_param_banding(UINT16 para)
 
 
 
+/*************************************************************************
+* FUNCTION
+*	MT9V113_set_param_exposure
+*
+* DESCRIPTION
+*	exposure setting.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 BOOL MT9V113_set_param_exposure(UINT16 para)
 {
 

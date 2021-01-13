@@ -16,6 +16,10 @@ static int write_mmp_block(struct buffer_head *bh)
 	lock_buffer(bh);
 	bh->b_end_io = end_buffer_write_sync;
 	get_bh(bh);
+#ifdef FEATURE_STORAGE_META_LOG
+	if( bh && bh->b_bdev && bh->b_bdev->bd_disk)
+		set_metadata_rw_status(bh->b_bdev->bd_disk->first_minor, WAIT_WRITE_CNT);
+#endif
 	submit_bh(WRITE_SYNC, bh);
 	wait_on_buffer(bh);
 	if (unlikely(!buffer_uptodate(bh)))
@@ -45,6 +49,10 @@ static int read_mmp_block(struct super_block *sb, struct buffer_head **bh,
 		get_bh(*bh);
 		lock_buffer(*bh);
 		(*bh)->b_end_io = end_buffer_read_sync;
+#ifdef FEATURE_STORAGE_META_LOG
+		if( (*bh) && (*bh)->b_bdev && (*bh)->b_bdev->bd_disk)
+			set_metadata_rw_status((*bh)->b_bdev->bd_disk->first_minor, WAIT_READ_CNT);
+#endif
 		submit_bh(READ_SYNC, *bh);
 		wait_on_buffer(*bh);
 		if (!buffer_uptodate(*bh)) {
@@ -109,7 +117,7 @@ static int kmmpd(void *data)
 	mmp->mmp_check_interval = cpu_to_le16(mmp_check_interval);
 	bdevname(bh->b_bdev, mmp->mmp_bdevname);
 
-	memcpy(mmp->mmp_nodename, init_utsname()->sysname,
+	memcpy(mmp->mmp_nodename, init_utsname()->nodename,
 	       sizeof(mmp->mmp_nodename));
 
 	while (!kthread_should_stop()) {
@@ -125,8 +133,9 @@ static int kmmpd(void *data)
 		 * Don't spew too many error messages. Print one every
 		 * (s_mmp_update_interval * 60) seconds.
 		 */
-		if (retval && (failed_writes % 60) == 0) {
-			ext4_error(sb, "Error writing to MMP block");
+		if (retval) {
+			if ((failed_writes % 60) == 0)
+				ext4_error(sb, "Error writing to MMP block");
 			failed_writes++;
 		}
 
@@ -256,8 +265,8 @@ int ext4_multi_mount_protect(struct super_block *sb,
 	 * If check_interval in MMP block is larger, use that instead of
 	 * update_interval from the superblock.
 	 */
-	if (mmp->mmp_check_interval > mmp_check_interval)
-		mmp_check_interval = mmp->mmp_check_interval;
+	if (le16_to_cpu(mmp->mmp_check_interval) > mmp_check_interval)
+		mmp_check_interval = le16_to_cpu(mmp->mmp_check_interval);
 
 	seq = le32_to_cpu(mmp->mmp_seq);
 	if (seq == EXT4_MMP_SEQ_CLEAN)
@@ -295,7 +304,8 @@ skip:
 	/*
 	 * write a new random sequence number.
 	 */
-	mmp->mmp_seq = seq = cpu_to_le32(mmp_new_seq());
+	seq = mmp_new_seq();
+	mmp->mmp_seq = cpu_to_le32(seq);
 
 	retval = write_mmp_block(bh);
 	if (retval)

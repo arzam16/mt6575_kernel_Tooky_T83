@@ -1,4 +1,16 @@
-
+/* yamaha529.c - YAMAHA529 compass driver
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include "yamaha529.h"
 
@@ -454,6 +466,9 @@ yas529_mach_sleep(uint16_t millisec)
     machdep_func.msleep((int)millisec);
 }
 
+/*------------------------------------------------------------------------------
+                        Compact Driver Measure Functions
+ -----------------------------------------------------------------------------*/
 
 struct yas529_compact_driver {
     uint8_t raw_calreg[9];
@@ -3666,6 +3681,23 @@ int yamaha529_operate(void* self, uint32_t command, void* buff_in, int size_in,
 				msensor_data->status = atomic_read(&data->last_status);
 								
 				msensor_data->value_divide = 1000;
+/*
+				switch (status)
+		        	{
+		            case 1: case 2:
+		                msensor_data->status = SENSOR_STATUS_ACCURACY_HIGH;
+		                break;
+		            case 3:
+		                msensor_data->status = SENSOR_STATUS_ACCURACY_MEDIUM;
+		                break;
+		            case 4:
+		                msensor_data->status = SENSOR_STATUS_ACCURACY_LOW;
+		                break;
+		            default:        
+		                msensor_data->status = SENSOR_STATUS_UNRELIABLE;
+		                break;
+				}
+*/				
 				
 			}
 			break;
@@ -3681,6 +3713,106 @@ int yamaha529_operate(void* self, uint32_t command, void* buff_in, int size_in,
 
 }
 
+/*
+int yamaha529_orientation_operate(void* self, uint32_t command, void* buff_in, int size_in,
+		void* buff_out, int size_out, int* actualout)
+{
+	int err = 0;
+	int value, sample_delay, status;
+//	hwm_sensor_data* osensor_data;
+
+/*	
+	//MSE_FUN(f);
+	switch (command)
+	{
+		case SENSOR_DELAY:
+			if((buff_in == NULL) || (size_in < sizeof(int)))
+			{
+				MSE_ERR("Set delay parameter error!\n");
+				err = -EINVAL;
+			}
+			else
+			{
+				value = *(int *)buff_in;
+				if(value <= 20)
+				{
+					sample_delay = 20;
+				}
+				
+				
+				yamaha529mid_data.controldata[0] = sample_delay;  // Loop Delay
+			}	
+			break;
+
+		case SENSOR_ENABLE:
+			if((buff_in == NULL) || (size_in < sizeof(int)))
+			{
+				MSE_ERR("Enable sensor parameter error!\n");
+				err = -EINVAL;
+			}
+			else
+			{
+				value = *(int *)buff_in;
+				read_lock(&yamaha529mid_data.ctrllock);
+				if(value = 1)
+				{
+					yamaha529mid_data.controldata[7] |= SENSOR_ORIENTATION;
+				}
+				else
+				{
+					yamaha529mid_data.controldata[7] &= ~SENSOR_ORIENTATION;
+				}				
+				read_unlock(&yamaha529mid_data.ctrllock);
+				// Do nothing
+			}
+			break;
+
+		case SENSOR_GET_DATA:
+			if((buff_out == NULL) || (size_out< sizeof(hwm_sensor_data)))
+			{
+				MSE_ERR("get sensor data parameter error!\n");
+				err = -EINVAL;
+			}
+			else
+			{
+				osensor_data = (hwm_sensor_data *)buff_out;
+				read_lock(&yamaha529mid_data.datalock);
+				osensor_data->values[0] = yamaha529mid_data.yaw;
+				osensor_data->values[1] = yamaha529mid_data.pitch;
+				osensor_data->values[2] = yamaha529mid_data.roll;
+				status = yamaha529mid_data.mag_status;
+				read_unlock(&yamaha529mid_data.datalock); 
+				
+				
+				osensor_data->value_divide = ORIENTATION_ACCURACY_RATE;				
+			}
+
+			switch (status)
+	        {
+	            case 1: case 2:
+	                osensor_data->status = SENSOR_STATUS_ACCURACY_HIGH;
+	                break;
+	            case 3:
+	                osensor_data->status = SENSOR_STATUS_ACCURACY_MEDIUM;
+	                break;
+	            case 4:
+	                osensor_data->status = SENSOR_STATUS_ACCURACY_LOW;
+	                break;
+	            default:        
+	                osensor_data->status = SENSOR_STATUS_UNRELIABLE;
+	                break;    
+	        }
+			break;
+		default:
+			MSE_ERR("gsensor operate function no this parameter %d!\n", command);
+			err = -1;
+			break;
+	}
+	
+	return err;
+
+}
+*/
 
 
 

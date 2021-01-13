@@ -1,3 +1,43 @@
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.h
+ *
+ * Project:
+ * --------
+ *   ALPS
+ *
+ * Description:
+ * ------------
+ *   Header file of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Anyuan Huang (MTK70663)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 03 09 2011 koli.lin
+ * [ALPS00030473] [Camera]
+ * Add the SIV120B sensor driver for MT6575 LDVT.
+ *
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 /* SENSOR FULL SIZE */
 #ifndef __SENSOR_H
 #define __SENSOR_H

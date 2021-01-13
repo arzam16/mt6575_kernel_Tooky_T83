@@ -183,7 +183,7 @@ extern "C" {
 #define TMDL_HDMITX_CHANNELALLOC_LUT_SIZE 32
 
 
-static UInt8 kChanAllocChanNum[TMDL_HDMITX_CHANNELALLOC_LUT_SIZE] = \
+static UInt8 kChanAllocChanNum[TMDL_HDMITX_CHANNELALLOC_LUT_SIZE] __maybe_unused = \
 {2,3,3,4,3,4,4,5,4,5,5,6,5,6,6,7,6,7,7,8,4,5,5,6,5,6,6,7,6,7,7,8 };
 
 
@@ -193,7 +193,7 @@ static UInt8 kChanAllocChanNum[TMDL_HDMITX_CHANNELALLOC_LUT_SIZE] = \
  * Aspect ratio 1=4:3, 2=16:9
  */
 #ifndef FORMAT_PC
-static UInt8 kVfmtToAspect_TV[TMDL_HDMITX_VFMT_TV_NUM] =
+static UInt8 kVfmtToAspect_TV[TMDL_HDMITX_VFMT_TV_NUM] __maybe_unused =
 #else /* FORMAT_PC */
 static UInt8 kVfmtToAspect_TV[TMDL_HDMITX_VFMT_TV_NUM + TMDL_HDMITX_VFMT_PC_NUM] =
 #endif /* FORMAT_PC */
@@ -278,7 +278,7 @@ static UInt8 kVfmtToAspect_TV[TMDL_HDMITX_VFMT_TV_NUM + TMDL_HDMITX_VFMT_PC_NUM]
  * Lookup table to convert from EIA/CEA TV video format to
  * the short format of resolution/interlace/frequency
  */
-static UInt8 kVfmtToShortFmt_TV[TMDL_HDMITX_VFMT_TV_NUM] =
+static UInt8 kVfmtToShortFmt_TV[TMDL_HDMITX_VFMT_TV_NUM] __maybe_unused =
 {
     TV_INVALID,         /* HDMITX_VFMT_NULL               */
     TV_VGA_60Hz,        /* HDMITX_VFMT_01_640x480p_60Hz   */
@@ -354,7 +354,7 @@ static struct
     UInt16  refLine;
     UInt16  scRefPix;           /* Scaler values */
     UInt16  scRefLine;
-} kRefpixRefline [] =
+} kRefpixRefline [] __maybe_unused =
 {
   /*************************************************************/
   /** Rows formatted in "Refpix_Refline.xls" and pasted here  **/

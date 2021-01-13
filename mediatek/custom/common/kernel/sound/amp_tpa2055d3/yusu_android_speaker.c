@@ -1,11 +1,54 @@
+/*****************************************************************************
+*  Copyright Statement:
+*  --------------------
+*  This software is protected by Copyright and the information contained
+*  herein is confidential. The software may not be copied and the information
+*  contained herein may not be used or disclosed except with the written
+*  permission of MediaTek Inc. (C) 2009
+*
+*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
+*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
+*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
+*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
+*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
+*
+*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
+*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
+*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+*
+*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
+*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
+*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
+*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
+*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
+*
+*****************************************************************************/
 
-
+/*****************************************************************************
+*                E X T E R N A L      R E F E R E N C E S
+******************************************************************************
+*/
 #include <asm/uaccess.h>
 #include <linux/xlog.h>
 #include <linux/i2c.h>
+#include <linux/delay.h>
 #include "yusu_android_speaker.h"
+#include "cust_sound.h"
+#include <mach/mt_gpio.h>
 
-
+/*****************************************************************************
+*                          DEBUG INFO
+******************************************************************************
+*/
 
 static bool eamp_log_on = true;
 
@@ -15,12 +58,16 @@ static bool eamp_log_on = true;
 	}while (0)
 
 
+/*****************************************************************************
+*				For I2C defination
+******************************************************************************
+*/	
 
 // device address
 #define EAMP_SLAVE_ADDR_WRITE	0xE0
 #define EAMP_SLAVE_ADDR_READ	0xE1
 #define EAMP_I2C_CHANNEL     	(0)        //I2C Channel 0
-#define EAMP_I2C_DEVNAME "EAMP_I2C_TPA2055D3"
+#define EAMP_I2C_DEVNAME "TPA2055D3"
 
 //define registers
 #define EAMP_REG_SUBSYSTEMCONTROL  			0x00
@@ -35,9 +82,7 @@ static bool eamp_log_on = true;
 //control point	
 #define AUDIO_CONTROL_POINT_NUM (5);
 
-static int Speaker_Volume =0;
 // I2C variable
-static bool i2c_init=false;
 static struct i2c_client *new_client = NULL;
 
 
@@ -50,7 +95,7 @@ static struct i2c_client_address_data addr_data = { .forces = forces,};
 
 // new I2C register method
 static const struct i2c_device_id eamp_i2c_id[] = {{EAMP_I2C_DEVNAME,0},{}}; 
-static struct i2c_board_info __initdata  eamp_dev={I2C_BOARD_INFO(EAMP_I2C_DEVNAME,EAMP_SLAVE_ADDR_WRITE>>1)};
+static struct i2c_board_info __initdata  eamp_dev={I2C_BOARD_INFO(EAMP_I2C_DEVNAME,(EAMP_SLAVE_ADDR_WRITE>>1))};
 
 //function declration
 static int eamp_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
@@ -76,10 +121,30 @@ static bool ghp_on = false;
 static u8  gspvol = 0x1f;
 static u8  ghplvol = 0x19;
 static u8  ghprvol = 0x19;
-static u8  gchgain = 0x0;
+static u8  gch1gain = 0x0;
+static u8  gch2gain = 0x0;
+
 //mode
 static u32 gMode	 = 0;
 static u32 gPreMode  = 0; 
+
+//response time
+
+static int const speaker_response_time = 6; //ms
+static int const headphone_response_time = 12; //ms
+
+//mask
+typedef enum
+{
+    GAIN_MASK_HP	  = 0x1,
+    GAIN_MASK_SPEAKER = 0x2,
+    GAIN_MASK_INPUT2  = 0x4,
+    GAIN_MASK_INPUT1  = 0x8,
+    GAIN_MASK_ALL     = (GAIN_MASK_HP     |
+                         GAIN_MASK_SPEAKER |
+                         GAIN_MASK_INPUT2  |
+                         GAIN_MASK_INPUT1)
+}gain_mask;
 
 //kernal to open speaker 
 static bool gsk_forceon = false;
@@ -95,33 +160,33 @@ static  s8  gCtrPoint[] = {2,2,5,5,5};  // repesent 2bis, 2bits,5bits,5bits,5bit
 static  s8  gCtrPoint_in1Gain[]= {0,6,12,20};
 static  s8  gCtrPoint_in2Gain[]= {0,6,12,20};
 static  s8  gCtrPoint_SpeakerVol[] = {
-	-60 ,-31, -30, -29,
-	-28 ,-27, -26, -25, 
-	-24 ,-23, -22, -21,
-	-20 ,-19, -18, -17,
-	-16 ,-15, -14, -13,
-	-12 ,-11, -10, -8 ,
-	-8  ,-6 , -5 , -4 ,
-	-3  ,-2 , -1 ,  0};
+	-60 ,-50, -45, -42,
+	-39 ,-36, -33, -30, 
+	-27 ,-24, -21, -20,
+	-19 ,-18, -17, -16,
+	-15 ,-14, -13, -12,
+	-11 ,-10, -9,  -8 ,
+	-7  ,-6 , -5 , -4 ,
+	-3  ,-2 , -1,  0};
 
 static  s8 gCtrPoint_HeadPhoneLVol[]= {
-	-60 ,-31, -30, -29,
-	-28 ,-27, -26, -25, 
-	-24 ,-23, -22, -21,
-	-20 ,-19, -18, -17,
-	-16 ,-15, -14, -13,
-	-12 ,-11, -10, -8 ,
-	-8  ,-6 , -5 , -4 ,
+	-60 ,-50, -45, -42,
+	-39 ,-36, -33, -30, 
+	-27 ,-24, -21, -20,
+	-19 ,-18, -17, -16,
+	-15 ,-14, -13, -12,
+	-11 ,-10, -9,  -8 ,
+	-7  ,-6 , -5 , -4 ,
 	-3  ,-2 , -1,  0};
 
 static  s8 gCtrPoint_HeadPhoneRVol[]= {
-	-60 ,-31, -30, -29,
-	-28 ,-27, -26, -25, 
-	-24 ,-23, -22, -21,
-	-20 ,-19, -18, -17,
-	-16 ,-15, -14, -13,
-	-12 ,-11, -10, -8 ,
-	-8  ,-6 , -5 , -4 ,
+	-60 ,-50, -45, -42,
+	-39 ,-36, -33, -30, 
+	-27 ,-24, -21, -20,
+	-19 ,-18, -17, -16,
+	-15 ,-14, -13, -12,
+	-11 ,-10, -9,  -8 ,
+	-7  ,-6 , -5 , -4 ,
 	-3  ,-2 , -1,  0};
 	
 static  s8 *gCtrPoint_table[5]={
@@ -156,7 +221,7 @@ ssize_t static eamp_read_byte(u8 addr, u8 *returnData)
 		return -1;
 	} 
 	*returnData = readData;
-	EAMP_PRINTK("reads recv data 0x%x",readData);
+	EAMP_PRINTK("addr 0x%x data 0x%x",addr, readData);
 	return 0;
 }
 	
@@ -185,7 +250,7 @@ static ssize_t	I2CWrite(u8 addr, u8 writeData)
 		EAMP_PRINTK("write sends command error!!");
 		return -1;
 	}
-	EAMP_PRINTK("write data 0x%x",writeData);
+	EAMP_PRINTK("addr 0x%x data 0x%x",addr,writeData);
 	return 0;
 }
 	
@@ -206,7 +271,7 @@ static ssize_t	eamp_write_byte(u8 addr, u8 writeData)
 		EAMP_PRINTK("write sends command error!!");
 		return -1;
 	}
-	EAMP_PRINTK("write data 0x%x",writeData);
+	EAMP_PRINTK("addr 0x%x data 0x%x",addr,writeData);
 	return 0;
 }
 
@@ -275,6 +340,34 @@ static ssize_t eamp_set_input_gain( u8 inGain)
 	
 	return 0;
 }
+
+// set input gain on channel 1 
+static ssize_t eamp_set_input1_gain( u8 inGain)
+{
+	EAMP_PRINTK("inGain(0x%x)",inGain);
+	u8 temp_input_reg = 0;
+	
+	eamp_read_byte(EMPA_REG_INPUTCONTROL,&temp_input_reg);
+	temp_input_reg = (temp_input_reg & 0xf3) | (inGain & 0x3)<<2 ;
+	eamp_write_byte(EMPA_REG_INPUTCONTROL, temp_input_reg);
+	
+	return 0;
+}
+
+// set input gain on channel 2
+
+static ssize_t eamp_set_input2_gain( u8 inGain)
+{
+	EAMP_PRINTK("inGain(0x%x)",inGain);
+	u8 temp_input_reg = 0;
+	
+	eamp_read_byte(EMPA_REG_INPUTCONTROL,&temp_input_reg);
+	temp_input_reg = ((temp_input_reg >>2)<<2) | (inGain & 0x3) ;
+	eamp_write_byte(EMPA_REG_INPUTCONTROL, temp_input_reg);
+	
+	return 0;
+}
+
 
 //  set input mode on channel 1 and 2.  0 for single-end inputs, 1 for differential inputs.
 static ssize_t eamp_set_input_mode( bool in1se, bool in2se)
@@ -459,9 +552,9 @@ static ssize_t eamp_set_headPhone_vol(u8 HP_vol)
 	EAMP_PRINTK("vol=0x%x",HP_vol);
 	u8 temp_hpvol_reg = 0;
 	eamp_read_byte(EMPA_REG_HEADPHONE_LEFT_VOLUME,&temp_hpvol_reg);
-	temp_hpvol_reg = (temp_hpvol_reg>>6)<<6;
-	temp_hpvol_reg = temp_hpvol_reg | (HP_vol & 0x3f);
-	
+	temp_hpvol_reg = (temp_hpvol_reg>>5)<<5;
+	temp_hpvol_reg = temp_hpvol_reg | 0x40;
+	temp_hpvol_reg = temp_hpvol_reg | (HP_vol & 0x1f);
 	return eamp_write_byte(EMPA_REG_HEADPHONE_LEFT_VOLUME,temp_hpvol_reg);
 }
 	
@@ -473,6 +566,7 @@ static ssize_t eamp_set_headPhone_lvol(u8 HPL_Vol)
 	u8 temp_hpvol_reg = 0;
 	eamp_read_byte(EMPA_REG_HEADPHONE_LEFT_VOLUME,&temp_hpvol_reg);
 	temp_hpvol_reg = (temp_hpvol_reg>>5)<<5;
+	temp_hpvol_reg = temp_hpvol_reg & 0xbf;
 	temp_hpvol_reg = temp_hpvol_reg | (HPL_Vol & 0x1f);
 	
 	return eamp_write_byte(EMPA_REG_HEADPHONE_LEFT_VOLUME,temp_hpvol_reg);
@@ -537,7 +631,9 @@ static ssize_t eamp_resetRegister()
 static ssize_t eamp_openEarpiece()
 {
 	EAMP_PRINTK("");
-	
+#if USE_ANALOG_SWITCH 
+    mt_set_gpio_out(GPIO_AUDIO_SEL, GPIO_OUT_ONE);
+#endif
 	I2CWrite(0,0x10); //close bypass and not shut down device for headphone
 	gep_on=true;
 	return 0;
@@ -546,6 +642,9 @@ static ssize_t eamp_openEarpiece()
 static ssize_t eamp_closeEarpiece()
 {
 	EAMP_PRINTK("");
+#if USE_ANALOG_SWITCH 
+	mt_set_gpio_out(GPIO_AUDIO_SEL, GPIO_OUT_ZERO);
+#endif
 	I2CWrite(0,0x00);//open bypass, open device for headphone
 	gep_on=false;
 	return 0;
@@ -564,11 +663,11 @@ static ssize_t eamp_openheadPhone()
 	}
 	if(gMode==2) //MODE_IN_CALL
 	{
-		I2CWrite(1,0x30 | gchgain);//difference end inputs with gchgain input gain, 110000
+		I2CWrite(1,0x30 | gch1gain<<2 | gch2gain);//difference end inputs with gchgain input gain, 110000
 	}
 	else
 	{
-		I2CWrite(1,0x00 | gchgain);//Single-ended inputs with gchgain input gain 		
+		I2CWrite(1,0x00 | gch1gain<<2 | gch2gain);//Single-ended inputs with gchgain input gain 		
 	}
 	I2CWrite(6,0x60);//set headphone -60 dB 
 	I2CWrite(7,0x20);//Right headphone enable  
@@ -586,10 +685,11 @@ static ssize_t eamp_openheadPhone()
 	}
 	else
 	{
-		I2CWrite(6,(0x40|ghplvol));
+		I2CWrite(6,(0x20|ghplvol));
 		I2CWrite(7,(0x20|ghprvol));
 	}
 	ghp_on = true;
+	msleep(headphone_response_time);
 	return 0;
 }
 
@@ -617,7 +717,7 @@ static ssize_t eamp_openspeaker()
 	if(gMode == 2) //MODE_IN_CALL
 	{
 		I2CWrite(0,0x00);//turn on subsystem
-		I2CWrite(1,0x30 | gchgain);// difference-ended inputs with gchgain input gain 
+		I2CWrite(1,0x30 | gch1gain<<2 | gch2gain);// difference-ended inputs with gchgain input gain 
 		I2CWrite(5,0x35);// Set SPK Volume	:110101
 		//I2CWrite(2,0x00);// turn on AGC fo all media play. 
 		I2CWrite(3,0x40);// set in2 and limiter : 1011101
@@ -626,13 +726,14 @@ static ssize_t eamp_openspeaker()
 	else
 	{
 		I2CWrite(0,0x00);//turn on subsystem
-		I2CWrite(1,0x00 | gchgain);// Single-ended inputs with 0 dB input gain 
+		I2CWrite(1,0x00 | gch1gain<<2 | gch2gain);// Single-ended inputs with 0 dB input gain 
 		I2CWrite(5,0x35);// Set SPK Volume	:110101
 		I2CWrite(2,0x00);// turn on AGC fo all media play. 
 		I2CWrite(3,0x3D);// set in1 and limiter : 111101
 		I2CWrite(5,0x20 | gspvol);// Set SPK Volume,default :111111
 	}
 	gsk_on = true;
+	msleep(speaker_response_time);
 	return 0;
 }
 
@@ -654,28 +755,53 @@ static ssize_t eamp_closespeaker()
 // gainvol is composed of 24 bit, the format is as bellows.
 //XXXXXXXXXXXXXXXXXXXXXXXX
 // bit[ 0-1]:in1 gain, bit[ 2-3]:in2 gain, bit[4-8]: speaker vol, 
-// bit[9-13]: headphone L volume, bit[14-18]: headphone R volume
+// bit[9-13]: headphone L volume, 
+//bit[14-18]: headphone R volume [resolved]
+// bit[21-24] mask 
 
 static ssize_t eamp_changeGainVolume(unsigned long int param)
 {
-	EAMP_PRINTK("param(%u)",param);
+	EAMP_PRINTK("param(0x%x)",param);
+	u8 mask = param & 0xF;
 	u32 gainvol = param & 0xFFFFFF;
-	gchgain = (gainvol>>20) & 0xf;
-	gspvol  = (gainvol>>15) & 0x1f;
-	ghplvol = (gainvol>>10) & 0x1f;
-	ghprvol = (gainvol>>5)  & 0x1f;
-	eamp_set_input_gain(gchgain);
-	eamp_set_speaker_vol(gspvol);
-	if(ghplvol == ghprvol)
+	if(mask & GAIN_MASK_INPUT1)
 	{
-		eamp_set_headPhone_vol(ghplvol);
+		u8 ch1 = (gainvol>>22) & 0x3;
+		if(gch1gain != ch1)
+		{
+			gch1gain = ch1;
+			eamp_set_input1_gain(gch1gain);
+		}
 	}
-	else
+	if(mask & GAIN_MASK_INPUT2)
 	{
-		eamp_set_headPhone_lvol(ghplvol);
-		eamp_set_headPhone_rvol(ghprvol);
+		u8 ch2 = (gainvol>>20) & 0x3;
+	    if(gch2gain != ch2)
+		{
+			gch2gain = ch2;
+			eamp_set_input2_gain(gch2gain);
+		}
 	}
-	
+	if(mask & GAIN_MASK_SPEAKER)
+	{
+	    u8 spk  = (gainvol>>15) & 0x1f;
+		if(gspvol != spk)
+		{
+			gspvol	= spk;
+			eamp_set_speaker_vol(gspvol);
+
+		}
+	}
+	if(mask & GAIN_MASK_HP)
+	{
+		u8 hpl = (gainvol>>10) & 0x1f;
+		if(ghplvol != hpl)
+	    {
+	    	ghplvol = hpl;
+	        ghprvol = ghplvol; // hpl equal hpr
+			eamp_set_headPhone_vol(ghplvol);
+		}
+	}
 	return 0;
 }
 	
@@ -856,15 +982,15 @@ int Audio_eamp_command(unsigned int type, unsigned long args, unsigned int count
 {
 	return eamp_command(type,args,count);
 }
-	
+
+#if 0	
 static int eamp_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) {		   
-	strcpy(info->type, EAMP_I2C_DEVNAME);														  
+    strcpy(info->type, EAMP_I2C_DEVNAME);														  
 	return 0;																						
 }																								   
-	
+#endif
+
 static int eamp_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id) {			   
-	
-	EAMP_PRINTK("");
 	new_client = client;
 	eamp_resetRegister();
 	EAMP_PRINTK("client=%x !!",client);
@@ -892,17 +1018,7 @@ static void eamp_powerdown(void)
 	
 static int eamp_init()
 {
-	if(i2c_init)
-		return 0;
-	i2c_init=true;
-	EAMP_PRINTK("");
 	eamp_poweron();
-	i2c_register_board_info(EAMP_I2C_CHANNEL,&eamp_dev,1);
-	if (i2c_add_driver(&eamp_i2c_driver)){
-		EAMP_PRINTK("fail to add device into i2c");
-		return -1;
-	}
-	
 	return 0;
 }
 	
@@ -910,21 +1026,44 @@ static int eamp_deinit()
 {
 	EAMP_PRINTK("");
 	eamp_powerdown();
-	i2c_init = false;
 	return 0;
 }
-	
+
+static int eamp_register()
+{
+	EAMP_PRINTK("");
+	i2c_register_board_info(SOUND_I2C_CHANNEL,&eamp_dev,1);
+	if (i2c_add_driver(&eamp_i2c_driver)){
+		EAMP_PRINTK("fail to add device into i2c");
+		return -1;
+	}
+	return 0;
+}
+
+/*****************************************************************************
+*                  F U N C T I O N        D E F I N I T I O N
+******************************************************************************
+*/
 extern void Yusu_Sound_AMP_Switch(BOOL enable);
 
 bool Speaker_Init(void)
 {
-	printk("+");
+	EAMP_PRINTK("");
 	eamp_init();
-	printk("-");
-	
 	return true;
 }
-	
+
+bool Speaker_Register(void)
+{
+	EAMP_PRINTK("");
+	eamp_register();
+	return true;
+}
+
+int ExternalAmp()
+{
+	return 1;
+}
 void Sound_SpeakerL_SetVolLevel(int level)
 {
 	EAMP_PRINTK("level=%d",level);
@@ -949,7 +1088,7 @@ void Sound_Speaker_Turnoff(int channel)
 	
 void Sound_Speaker_SetVolLevel(int level)
 {
-	Speaker_Volume =level;	
+	
 }
 	
 void Sound_Headset_Turnon(void)

@@ -1,4 +1,46 @@
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.c
+ *
+ * Project:
+ * --------
+ *   RAW
+ *
+ * Description:
+ * ------------
+ *   Source code of Sensor driver
+ *
+ *
+ * Author:
+ * -------
+ *   Jun Pei (MTK70837)
+ *
+ *============================================================================
+ *             HISTORY
+ * Below this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *------------------------------------------------------------------------------
+ * $Revision:$
+ * $Modtime:$
+ * $Log:$
+ * 
+ * 09 12 2012 wcpadmin
+ * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * .
+ *
+ * 06 13 2011 koli.lin
+ * [ALPS00053429] [Need Patch] [Volunteer Patch]
+ * [Camera] Modify the sensor color order for the CCT tool.
+ *
+ * 06 07 2011 koli.lin
+ * [ALPS00050047] [Camera]AE flash when set EV as -2
+ * [Camera] Rollback the preview resolution to 800x600.
+ *
+ *------------------------------------------------------------------------------
+ * Upper this line, this part is controlled by CC/CQ. DO NOT MODIFY!!
+ *============================================================================
+ ****************************************************************************/
 
 #include <linux/videodev2.h>
 #include <linux/i2c.h>
@@ -8,6 +50,7 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <asm/system.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
@@ -20,6 +63,7 @@
 
 
 //#define PRE_PCLK 135200000
+static DEFINE_SPINLOCK(imx105_drv_lock);
 
 #define IMX105MIPI_DEBUG
 #ifdef IMX105MIPI_DEBUG
@@ -44,6 +88,10 @@ SENSOR_REG_STRUCT IMX105MIPISensorReg[ENGINEER_END]=CAMERA_SENSOR_REG_DEFAULT_VA
 MSDK_SENSOR_CONFIG_STRUCT IMX105MIPISensorConfigData;
 /* Parameter For Engineer mode function */
 kal_uint32 IMX105MIPI_FAC_SENSOR_REG;
+kal_bool IMX105MIPI_Auto_Flicker_mode = KAL_FALSE;
+kal_bool IMX105MIPI_MPEG4_encode_mode = KAL_FALSE;
+
+
 
 kal_uint16 IMX105MIPI_MAX_EXPOSURE_LINES = IMX105MIPI_PV_FRAME_LENGTH_LINES -5;
 kal_uint8  IMX105MIPI_MIN_EXPOSURE_LINES = 1;
@@ -88,6 +136,7 @@ void IMX105MIPI_write_shutter(kal_uint16 shutter)
 	kal_uint32 frame_length = 0,line_length=0;
     kal_uint32 extra_lines = 0;
 	kal_uint32 max_exp_shutter = 0;
+	unsigned long flags;
 	
 	SENSORDB("[IMX105MIPI]%s()\n",__FUNCTION__);
 
@@ -111,15 +160,25 @@ void IMX105MIPI_write_shutter(kal_uint16 shutter)
 	 {
        frame_length = IMX105MIPI_PV_FRAME_LENGTH_LINES + IMX105MIPI_sensor.pv_dummy_lines + extra_lines;
 	   line_length = IMX105MIPI_PV_LINE_LENGTH_PIXELS + IMX105MIPI_sensor.pv_dummy_pixels;
+	   if(IMX105MIPI_Auto_Flicker_mode = TRUE)
+	   	 frame_length = frame_length + (frame_length >> 7);
+	   
+	   spin_lock_irqsave(&imx105_drv_lock,flags);
 	   IMX105MIPI_sensor.pv_line_length = line_length;
 	   IMX105MIPI_sensor.pv_frame_length = frame_length;
+	   spin_unlock_irqrestore(&imx105_drv_lock,flags);
 	 }
 	 else
      {
 	    frame_length = IMX105MIPI_FULL_FRAME_LENGTH_LINES + IMX105MIPI_sensor.cp_dummy_lines + extra_lines;
 		line_length = IMX105MIPI_FULL_LINE_LENGTH_PIXELS + IMX105MIPI_sensor.cp_dummy_pixels;
+		if(IMX105MIPI_Auto_Flicker_mode = TRUE)
+	   	  frame_length = frame_length + (frame_length >> 7);
+		 
+		spin_lock_irqsave(&imx105_drv_lock,flags);
 		IMX105MIPI_sensor.cp_line_length = line_length;
 	    IMX105MIPI_sensor.cp_frame_length = frame_length;
+		spin_unlock_irqrestore(&imx105_drv_lock,flags);
 	 }
 
    SENSORDB("[IMX105MIPI]Write_shutter:pv_mode =%d,shutter=%d,frame_length=%d\n",IMX105MIPI_sensor.pv_mode,shutter,frame_length);
@@ -132,6 +191,8 @@ void IMX105MIPI_write_shutter(kal_uint16 shutter)
     IMX105MIPI_write_cmos_sensor(0x0202, (shutter >> 8) & 0xFF);
     IMX105MIPI_write_cmos_sensor(0x0203, shutter  & 0xFF);
  //   IMX105MIPI_write_cmos_sensor(0x0104, 0);    
+ 
+ 
 
 #else
     kal_uint32 frame_length = 0,dummy_lines = 0;
@@ -254,6 +315,22 @@ static kal_uint8 IMX105MIPIGain2Reg(const kal_uint16 iGain)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    IMX105MIPI_SetGain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    gain : sensor global gain(base: 0x40)
+*
+* RETURNS
+*    the actually gain set to sensor.
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX105MIPI_SetGain(UINT16 iGain)
 {
     kal_uint8 iReg;
@@ -270,6 +347,36 @@ void IMX105MIPI_SetGain(UINT16 iGain)
 
 
 
+/*************************************************************************
+* FUNCTION
+*    IMX105MIPI_Read_Gain
+*
+* DESCRIPTION
+*    This function is to set global gain to sensor.
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
+/*
+kal_uint8 IMX105MIPI_Read_Gain(void)
+{
+   kal_uint8 gain = 0;
+   kal_uint8 reg_value = IMX105MIPI_read_cmos_sensor(0x0205);
+   
+	gain = IMX105MIPIReg2Gain(reg_value);
+	
+	SENSORDB("[IMX105MIPI]%s():0x0205=%x, gain=%d\n",__FUNCTION__,reg_value,gain);
+
+	return gain;
+}  
+
+*/
 
 void IMX105MIPI_camera_para_to_sensor(void)
 {
@@ -290,20 +397,58 @@ void IMX105MIPI_camera_para_to_sensor(void)
 
 
 
+/*************************************************************************
+* FUNCTION
+*    IMX105MIPI_sensor_to_camera_para
+*
+* DESCRIPTION
+*    // update camera_para from sensor register
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX105MIPI_sensor_to_camera_para(void)
 {
-    kal_uint32    i;
+    kal_uint32    i, temp_data;
     for(i=0; 0xFFFFFFFF!=IMX105MIPISensorReg[i].Addr; i++)
     {
-        IMX105MIPISensorReg[i].Para = IMX105MIPI_read_cmos_sensor(IMX105MIPISensorReg[i].Addr);
+        temp_data = IMX105MIPI_read_cmos_sensor(IMX105MIPISensorReg[i].Addr);
+		spin_lock(&imx105_drv_lock);
+        IMX105MIPISensorReg[i].Para = temp_data;
+		spin_unlock(&imx105_drv_lock);
     }
     for(i=ENGINEER_START_ADDR; 0xFFFFFFFF!=IMX105MIPISensorReg[i].Addr; i++)
     {
-        IMX105MIPISensorReg[i].Para = IMX105MIPI_read_cmos_sensor(IMX105MIPISensorReg[i].Addr);
+        temp_data = IMX105MIPI_read_cmos_sensor(IMX105MIPISensorReg[i].Addr);
+		spin_lock(&imx105_drv_lock);
+        IMX105MIPISensorReg[i].Para = temp_data;
+		spin_unlock(&imx105_drv_lock);
     }
 }
 
 
+/*************************************************************************
+* FUNCTION
+*    IMX105MIPI_get_sensor_group_count
+*
+* DESCRIPTION
+*    //
+*
+* PARAMETERS
+*    None
+*
+* RETURNS
+*    gain : sensor global gain(base: 0x40)
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 kal_int32  IMX105MIPI_get_sensor_group_count(void)
 {
     return GROUP_TOTAL_NUMS;
@@ -518,7 +663,9 @@ kal_bool IMX105MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_i
                     temp_para = (temp_gain-BASEGAIN)*256/BASEGAIN;
 			     }
 
+            spin_lock(&imx105_drv_lock);
 			IMX105MIPISensorCCT[temp_addr].Para = temp_para;
+			spin_unlock(&imx105_drv_lock);
 			IMX105MIPI_write_cmos_sensor(IMX105MIPISensorCCT[temp_addr].Addr, temp_para);
 
             break;
@@ -526,6 +673,7 @@ kal_bool IMX105MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_i
             switch (item_idx)
             {
                 case 0:
+					spin_lock(&imx105_drv_lock);
                     if(ItemValue==2)
                     {
                         IMX105MIPISensorReg[CMMCLK_CURRENT_INDEX].Para = ISP_DRIVING_2MA;
@@ -546,6 +694,7 @@ kal_bool IMX105MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_i
                         IMX105MIPISensorReg[CMMCLK_CURRENT_INDEX].Para = ISP_DRIVING_8MA;
                         //IMX105MIPI_set_isp_driving_current(ISP_DRIVING_8MA);
                     }
+					spin_unlock(&imx105_drv_lock);
                     break;
                 default:
                     ASSERT(0);
@@ -558,7 +707,9 @@ kal_bool IMX105MIPI_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_i
             switch (item_idx)
             {
                 case 0:
+					spin_lock(&imx105_drv_lock);
                     IMX105MIPI_FAC_SENSOR_REG=ItemValue;
+					spin_unlock(&imx105_drv_lock);
                     break;
                 case 1:
                     IMX105MIPI_write_cmos_sensor(IMX105MIPI_FAC_SENSOR_REG,ItemValue);
@@ -580,20 +731,24 @@ static void IMX105MIPI_SetDummy(const kal_uint16 iPixels, const kal_uint16 iLine
 
    if(IMX105MIPI_sensor.pv_mode == KAL_TRUE)
    	{
+   	 spin_lock(&imx105_drv_lock);
    	 IMX105MIPI_sensor.pv_dummy_pixels = iPixels;
 	 IMX105MIPI_sensor.pv_dummy_lines = iLines;
    	 IMX105MIPI_sensor.pv_line_length = IMX105MIPI_PV_LINE_LENGTH_PIXELS + iPixels;
 	 IMX105MIPI_sensor.pv_frame_length = IMX105MIPI_PV_FRAME_LENGTH_LINES + iLines;
+	 spin_unlock(&imx105_drv_lock);
 	 line_length = IMX105MIPI_sensor.pv_line_length;
 	 frame_length = IMX105MIPI_sensor.pv_frame_length;
 	 	
    	}
    else
    	{
+      spin_lock(&imx105_drv_lock);
    	  IMX105MIPI_sensor.cp_dummy_pixels = iPixels;
 	  IMX105MIPI_sensor.cp_dummy_lines = iLines;
 	  IMX105MIPI_sensor.cp_line_length = IMX105MIPI_FULL_LINE_LENGTH_PIXELS + iPixels;
 	  IMX105MIPI_sensor.cp_frame_length = IMX105MIPI_FULL_FRAME_LENGTH_LINES + iLines;
+	  spin_unlock(&imx105_drv_lock);
 	  line_length = IMX105MIPI_sensor.cp_line_length;
 	  frame_length = IMX105MIPI_sensor.cp_frame_length;
     }
@@ -715,8 +870,10 @@ static void IMX105MIPI_Sensor_Init(void)
 	
 	//Streaming																		  
 	IMX105MIPI_write_cmos_sensor(0x0100, 0x01); 											
-	//Streaming is started from here. =>	PLL Lock Up Time + Wake-Up Time ¡ú Init. Time
-
+	//Streaming is started from here. =>	PLL Lock Up Time + Wake-Up Time ï¿½ï¿½ Init. Time
+	 spin_lock(&imx105_drv_lock);
+     IMX105MIPI_Auto_Flicker_mode = KAL_FALSE;
+	 spin_unlock(&imx105_drv_lock);
 }   /*  IMX105MIPI_Sensor_Init  */
 
 void IMX105MIPI_Set_720P_PVsize(void)
@@ -793,7 +950,7 @@ void IMX105MIPI_Set_720P_PVsize(void)
 	 #endif
 	//Streaming 																	  
 	IMX105MIPI_write_cmos_sensor(0x0100, 0x01); 											
-	//Streaming is started from here. =>	PLL Lock Up Time + Wake-Up Time ¡ú Init. Time	
+	//Streaming is started from here. =>	PLL Lock Up Time + Wake-Up Time ï¿½ï¿½ Init. Time	
 
 }
 
@@ -886,8 +1043,10 @@ static kal_uint16 IMX105MIPI_power_on(void)
 	
     for(i=0;i<3;i++)
     {
+    spin_lock(&imx105_drv_lock);
 	IMX105MIPI_sensor.i2c_write_id = SCCB_Slave_addr[i][0];
 	IMX105MIPI_sensor.i2c_read_id = SCCB_Slave_addr[i][1];
+	spin_unlock(&imx105_drv_lock);
 
 	//Soft Reset
 	IMX105MIPI_write_cmos_sensor(0x0103, 0x01);
@@ -907,6 +1066,7 @@ static kal_uint16 IMX105MIPI_power_on(void)
 }
 static void IMX105MIPI_Init_Parameter(void)
 {
+    spin_lock(&imx105_drv_lock);
     IMX105MIPI_sensor.pv_mode = KAL_FALSE;
 	IMX105MIPI_sensor.first_init = KAL_TRUE;
     IMX105MIPI_sensor.night_mode = KAL_FALSE;
@@ -921,6 +1081,7 @@ static void IMX105MIPI_Init_Parameter(void)
 	IMX105MIPI_sensor.cp_line_length = IMX105MIPI_FULL_LINE_LENGTH_PIXELS + IMX105MIPI_sensor.cp_dummy_pixels;
 	IMX105MIPI_sensor.cp_frame_length = IMX105MIPI_FULL_FRAME_LENGTH_LINES+ IMX105MIPI_sensor.cp_dummy_lines;
     IMX105MIPI_sensor.mirror_flip = 0;  //normal:0, mirror:1, flip: 2, mirror_flip:3
+    spin_unlock(&imx105_drv_lock);
    // IMX105MIPI_sensor.pv_shutter = 0x200;
     
 }
@@ -930,6 +1091,22 @@ static void IMX105MIPI_Init_Parameter(void)
 /*****************************************************************************/
 /* Windows Mobile Sensor Interface */
 /*****************************************************************************/
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPIOpen
+*
+* DESCRIPTION
+*   This function initialize the registers of CMOS sensor
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 
 UINT32 IMX105MIPIOpen(void)
 {
@@ -949,6 +1126,22 @@ UINT32 IMX105MIPIOpen(void)
 
 }
 
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPIGetSensorID
+*
+* DESCRIPTION
+*   This function get the sensor ID 
+*
+* PARAMETERS
+*   *sensorID : return the sensor ID 
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 IMX105MIPIGetSensorID(UINT32 *sensorID) 
 {
     int  retry = 3; 
@@ -971,6 +1164,22 @@ UINT32 IMX105MIPIGetSensorID(UINT32 *sensorID)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPI_SetShutter
+*
+* DESCRIPTION
+*   This function set e-shutter of IMX105MIPI to change exposure time.
+*
+* PARAMETERS
+*   shutter : exposured lines
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX105MIPI_SetShutter(kal_uint16 iShutter)
 {
 
@@ -980,19 +1189,53 @@ void IMX105MIPI_SetShutter(kal_uint16 iShutter)
         iShutter = 1; 
 	else if(iShutter > 0xffff)
 		iShutter = 0xffff;
-
+	
+	spin_lock_irqsave(&imx105_drv_lock,flags);
     IMX105MIPI_sensor.pv_shutter = iShutter;
+	spin_unlock_irqrestore(&imx105_drv_lock,flags);
 	
     IMX105MIPI_write_shutter(iShutter);
 }   /*  IMX105MIPI_SetShutter   */
 
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPI_read_shutter
+*
+* DESCRIPTION
+*   This function to  Get exposure time.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   shutter : exposured lines
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT16 IMX105MIPI_read_shutter(void)
 {
     return (UINT16)( (IMX105MIPI_read_cmos_sensor(0x0202)<<8) | IMX105MIPI_read_cmos_sensor(0x0203) );
 }
 
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPI_night_mode
+*
+* DESCRIPTION
+*   This function night mode of IMX105MIPI.
+*
+* PARAMETERS
+*   none
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 void IMX105MIPI_NightMode(kal_bool bEnable)
 {
 	SENSORDB("[IMX105MIPI]%s():enable=%d\n",__FUNCTION__,bEnable);
@@ -1000,7 +1243,61 @@ void IMX105MIPI_NightMode(kal_bool bEnable)
 }/*	IMX105MIPI_NightMode */
 
 
+UINT32 IMX105MIPISetAutoFlickerMode(kal_bool bEnable, UINT16 u2FrameRate)
+{
+ kal_uint32 pv_max_frame_rate_lines = IMX105MIPI_MAX_EXPOSURE_LINES;
 
+ SENSORDB("[IMX105MIPI]%s():frame rate(10base)=%d %d\n",__FUNCTION__,bEnable,u2FrameRate);
+
+ if(bEnable)
+  {
+    spin_lock(&imx105_drv_lock);
+    IMX105MIPI_Auto_Flicker_mode = KAL_TRUE;
+	spin_unlock(&imx105_drv_lock);
+	if(IMX105MIPI_MPEG4_encode_mode == KAL_TRUE)
+		{
+		 pv_max_frame_rate_lines = IMX105MIPI_MAX_EXPOSURE_LINES +(IMX105MIPI_MAX_EXPOSURE_LINES>>7);
+		 spin_lock(&imx105_drv_lock);
+		 IMX105MIPI_sensor.pv_dummy_lines = pv_max_frame_rate_lines - IMX105MIPI_PV_FRAME_LENGTH_LINES
+		 spin_unlock(&imx105_drv_lock);
+		 IMX105MIPI_SetDummy(IMX105MIPI_sensor.pv_dummy_pixels,IMX105MIPI_sensor.pv_dummy_lines);
+		}
+  }
+ else
+  {
+     spin_lock(&imx105_drv_lock);
+	 IMX105MIPI_Auto_Flicker_mode = KAL_FALSE;
+	 spin_unlock(&imx105_drv_lock);
+	 if(IMX105MIPI_MPEG4_encode_mode == KAL_TRUE)
+		{
+		 pv_max_frame_rate_lines = IMX105MIPI_MAX_EXPOSURE_LINES;
+		 spin_lock(&imx105_drv_lock);
+		 IMX105MIPI_sensor.pv_dummy_lines = pv_max_frame_rate_lines - IMX105MIPI_PV_FRAME_LENGTH_LINES
+		 spin_unlock(&imx105_drv_lock);
+		 IMX105MIPI_SetDummy(IMX105MIPI_sensor.pv_dummy_pixels,IMX105MIPI_sensor.pv_dummy_lines);
+		}
+  }
+
+ return TRUE;
+}
+	
+
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPIClose
+*
+* DESCRIPTION
+*   This function is to turn off sensor module power.
+*
+* PARAMETERS
+*   None
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 IMX105MIPIClose(void)
 {
     
@@ -1012,8 +1309,10 @@ void IMX105MIPISetFlipMirror(kal_int32 imgMirror)
     kal_uint8  iTemp; 
 
      SENSORDB("[IMX105MIPI]%s():mirror_flip=%d\n",__FUNCTION__,imgMirror);
-	 
+
+	spin_lock(&imx105_drv_lock);
 	IMX105MIPI_sensor.mirror_flip = imgMirror;
+	spin_unlock(&imx105_drv_lock);
 	  
     iTemp = IMX105MIPI_read_cmos_sensor(0x0101) & 0x03;	//Clear the mirror and flip bits.
     switch (imgMirror)
@@ -1034,6 +1333,23 @@ void IMX105MIPISetFlipMirror(kal_int32 imgMirror)
 }
 
 
+/*************************************************************************
+* FUNCTION
+*   IMX105MIPIPreview
+*
+* DESCRIPTION
+*   This function start the sensor preview.
+*
+* PARAMETERS
+*   *image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*   None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
 UINT32 IMX105MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
                                                 MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
@@ -1041,10 +1357,27 @@ UINT32 IMX105MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
      if(IMX105MIPI_sensor.pv_mode == KAL_FALSE)
      {
+           spin_lock(&imx105_drv_lock);
 		   IMX105MIPI_sensor.pv_mode =	KAL_TRUE;
+		   spin_unlock(&imx105_drv_lock);
+		   
 		   IMX105MIPI_Set_720P_PVsize();   
 	 }
+	 
+	 spin_lock(&imx105_drv_lock);
+	 if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		 // MPEG4 Encode Mode
+	 {
+		 IMX105MIPI_MPEG4_encode_mode = KAL_TRUE;
+	 }
+	 else
+	 {
+		 IMX105MIPI_MPEG4_encode_mode = KAL_FALSE;
+	 }
+	 spin_unlock(&imx105_drv_lock);
 
+	 
+
+     spin_lock(&imx105_drv_lock);
      if(IMX105MIPI_sensor.fix_video_fps == KAL_TRUE)
      {
 	  IMX105MIPI_sensor.pv_dummy_pixels = 0;
@@ -1053,6 +1386,7 @@ UINT32 IMX105MIPIPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
      }
 	  IMX105MIPI_sensor.pv_line_length = IMX105MIPI_PV_LINE_LENGTH_PIXELS+IMX105MIPI_sensor.pv_dummy_pixels; 
 	  IMX105MIPI_sensor.pv_frame_length = IMX105MIPI_PV_FRAME_LENGTH_LINES+IMX105MIPI_sensor.pv_dummy_lines;
+	 spin_unlock(&imx105_drv_lock);
 	  //IMX105MIPI_sensor.fix_video_fps = KAL_FALSE;
 
     // if(IMX105MIPI_sensor.first_init == KAL_TRUE)
@@ -1078,11 +1412,15 @@ UINT32 IMX105MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	   
         IMX105MIPI_set_8M_FullSize();
 
+		spin_lock(&imx105_drv_lock);
 	    IMX105MIPI_sensor.pv_mode = KAL_FALSE;
 		IMX105MIPI_sensor.cp_dummy_pixels = 0;
 		IMX105MIPI_sensor.cp_dummy_lines = 0;
 		IMX105MIPI_sensor.cp_line_length = IMX105MIPI_FULL_LINE_LENGTH_PIXELS + IMX105MIPI_sensor.cp_dummy_pixels;
 	    IMX105MIPI_sensor.cp_frame_length = IMX105MIPI_FULL_FRAME_LENGTH_LINES + IMX105MIPI_sensor.cp_dummy_lines;
+	    IMX105MIPI_MPEG4_encode_mode = KAL_FALSE; 
+        IMX105MIPI_Auto_Flicker_mode = KAL_FALSE;
+        spin_unlock(&imx105_drv_lock);
 
        #if 1//#ifdef DEBUG_CAPPRV_LUX  //pv_pclk=cp_pclk
        shutter = (shutter * IMX105MIPI_sensor.pv_line_length)/IMX105MIPI_sensor.cp_line_length;
@@ -1256,7 +1594,10 @@ UINT32 IMX105MIPIGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
             break;
     }
 
+	spin_lock(&imx105_drv_lock);
     IMX105MIPIPixelClockDivider=pSensorInfo->SensorPixelClockCount;
+	spin_unlock(&imx105_drv_lock);
+	
     memcpy(pSensorConfigData, &IMX105MIPISensorConfigData, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
 
     return ERROR_NONE;
@@ -1266,7 +1607,10 @@ UINT32 IMX105MIPIGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 UINT32 IMX105MIPIControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *pImageWindow,
                                                 MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData)
 {
+    spin_lock(&imx105_drv_lock);
     CurrentScenarioId = ScenarioId;
+	spin_unlock(&imx105_drv_lock);
+	
     switch (ScenarioId)
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
@@ -1295,7 +1639,10 @@ static void IMX105MIPI_Fix_Video_Frame_Rate(kal_uint16 framerate)
     SENSORDB("[IMX105MIPI]%s():fix_frame_rate=%d\n",__FUNCTION__,framerate);
 	
     framerate = framerate * 10;
+	
+	spin_lock(&imx105_drv_lock);
 	IMX105MIPI_sensor.fix_video_fps = KAL_TRUE;
+	spin_unlock(&imx105_drv_lock);
 	
 	SENSORDB("[IMX105MIPI][Enter Fix_fps func] IMX105MIPI_Fix_Video_Frame_Rate = %d\n", framerate/10);
 
@@ -1304,8 +1651,11 @@ static void IMX105MIPI_Fix_Video_Frame_Rate(kal_uint16 framerate)
 	
     if (IMX105MIPI_Video_Max_Expourse_Time > IMX105MIPI_PV_FRAME_LENGTH_LINES/*IMX105MIPI_sensor.pv_frame_length*/)	
     	{
+    	    spin_lock(&imx105_drv_lock);
 	    	IMX105MIPI_sensor.pv_frame_length = IMX105MIPI_Video_Max_Expourse_Time;
 			IMX105MIPI_sensor.pv_dummy_lines = IMX105MIPI_sensor.pv_frame_length-IMX105MIPI_PV_FRAME_LENGTH_LINES;
+            spin_unlock(&imx105_drv_lock);
+			
 			SENSORDB("[IMX105MIPI]%s():frame_length=%d,dummy_lines=%d\n",__FUNCTION__,IMX105MIPI_sensor.pv_frame_length,IMX105MIPI_sensor.pv_dummy_lines);
 			IMX105MIPI_SetDummy(IMX105MIPI_sensor.pv_dummy_pixels,IMX105MIPI_sensor.pv_dummy_lines);
     	}
@@ -1315,8 +1665,11 @@ static void IMX105MIPI_Fix_Video_Frame_Rate(kal_uint16 framerate)
 UINT32 IMX105MIPISetVideoMode(UINT16 u2FrameRate)
 {
 	SENSORDB("[IMX105MIPI]%s():fix_frame_rate=%d\n",__FUNCTION__,u2FrameRate);
- 
+
+    spin_lock(&imx105_drv_lock);
+	IMX105MIPI_MPEG4_encode_mode = KAL_TRUE;
 	IMX105MIPI_sensor.video_current_frame_rate = u2FrameRate;
+	spin_unlock(&imx105_drv_lock);
 	
     if(u2FrameRate<=30)
 
@@ -1396,7 +1749,9 @@ UINT32 IMX105MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
         case SENSOR_FEATURE_SET_FLASHLIGHT:
             break;
         case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
+			spin_lock(&imx105_drv_lock);
             IMX105MIPI_isp_master_clock=*pFeatureData32;
+			spin_unlock(&imx105_drv_lock);
             break;
         case SENSOR_FEATURE_SET_REGISTER:
             IMX105MIPI_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
@@ -1406,11 +1761,13 @@ UINT32 IMX105MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             break;
         case SENSOR_FEATURE_SET_CCT_REGISTER:
             SensorRegNumber=FACTORY_END_ADDR;
+			spin_lock(&imx105_drv_lock);
             for (i=0;i<SensorRegNumber;i++)
             {
                 IMX105MIPISensorCCT[i].Addr=*pFeatureData32++;
                 IMX105MIPISensorCCT[i].Para=*pFeatureData32++;
             }
+			spin_unlock(&imx105_drv_lock);
             break;
         case SENSOR_FEATURE_GET_CCT_REGISTER:
             SensorRegNumber=FACTORY_END_ADDR;
@@ -1425,11 +1782,13 @@ UINT32 IMX105MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             break;
         case SENSOR_FEATURE_SET_ENG_REGISTER:
             SensorRegNumber=ENGINEER_END;
+			spin_lock(&imx105_drv_lock);
             for (i=0;i<SensorRegNumber;i++)
             {
                 IMX105MIPISensorReg[i].Addr=*pFeatureData32++;
                 IMX105MIPISensorReg[i].Para=*pFeatureData32++;
             }
+			spin_unlock(&imx105_drv_lock);
             break;
         case SENSOR_FEATURE_GET_ENG_REGISTER:
             SensorRegNumber=ENGINEER_END;
@@ -1507,7 +1866,10 @@ UINT32 IMX105MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
             break;
         case SENSOR_FEATURE_CHECK_SENSOR_ID:
             IMX105MIPIGetSensorID(pFeatureReturnPara32); 
-            break;             
+            break;            
+		case SENSOR_FEATURE_SET_AUTO_FLICKER_MODE:
+			IMX105MIPISetAutoFlickerMode((BOOL)*pFeatureData16, *(pFeatureData16+1));
+			break;
         default:
             break;
     }

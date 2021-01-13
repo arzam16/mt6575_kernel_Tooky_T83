@@ -1,5 +1,42 @@
+/*****************************************************************************
+*  Copyright Statement:
+*  --------------------
+*  This software is protected by Copyright and the information contained
+*  herein is confidential. The software may not be copied and the information
+*  contained herein may not be used or disclosed except with the written
+*  permission of MediaTek Inc. (C) 2009
+*
+*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
+*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
+*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
+*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
+*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
+*
+*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
+*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
+*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+*
+*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
+*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
+*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
+*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
+*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
+*
+*****************************************************************************/
 
-
+/*****************************************************************************
+*                E X T E R N A L      R E F E R E N C E S
+******************************************************************************
+*/
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -14,16 +51,28 @@
 #include <linux/miscdevice.h>
 #include <linux/wait.h>
 #include <linux/spinlock.h>
-#include <mach/mt6575_gpio.h>
 #include <linux/semaphore.h>
 #include <asm/uaccess.h>
-#include <mach/mt6575_typedefs.h>
 #include <linux/pmic6326_sw.h>
 #include <linux/delay.h>
-#include <mach/mt6575_clock_manager.h>
-#include <mach/mt6575_pmic_feature_api.h>
 #include "yusu_android_speaker.h"
 
+#if defined(MT6575)
+#include <mach/mt_gpio.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_clock_manager.h>
+#include <mach/mt_pmic_feature_api.h>
+#elif defined(MT6577)
+#include <mach/mt_gpio.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_clock_manager.h>
+#include <mach/mt_pmic_feature_api.h>
+#endif
+
+/*****************************************************************************
+*                C O M P I L E R      F L A G S
+******************************************************************************
+*/
 //#define CONFIG_DEBUG_MSG
 #ifdef CONFIG_DEBUG_MSG
 #define PRINTK(format, args...) printk( KERN_EMERG format,##args )
@@ -32,13 +81,24 @@
 #endif
 
 
+/*****************************************************************************
+*                          C O N S T A N T S
+******************************************************************************
+*/
 
-#define EXTERNAL_AMPLIFIER_GPIO (68)
 #define SPK_WARM_UP_TIME        (10) //unit is ms
+/*****************************************************************************
+*                         D A T A      T Y P E S
+******************************************************************************
+*/
 static int Speaker_Volume=0;
 static bool gsk_on=false; // speaker is open?
 static bool gsk_resume=false;
 static bool gsk_forceon=false;
+/*****************************************************************************
+*                  F U N C T I O N        D E F I N I T I O N
+******************************************************************************
+*/
 extern void Yusu_Sound_AMP_Switch(BOOL enable);
 
 bool Speaker_Init(void)
@@ -47,11 +107,21 @@ bool Speaker_Init(void)
    mt_set_gpio_mode(GPIO_SPEAKER_EN_PIN,GPIO_MODE_00);  // gpio mode
    mt_set_gpio_pull_enable(GPIO_SPEAKER_EN_PIN,GPIO_PULL_ENABLE);
    
-   mt_set_gpio_mode(EXTERNAL_AMPLIFIER_GPIO,GPIO_MODE_00);  // gpio mode
-   mt_set_gpio_pull_enable(EXTERNAL_AMPLIFIER_GPIO,GPIO_PULL_ENABLE);
+   mt_set_gpio_mode(GPIO_EXTERNAL_AMPLIFIER_PIN,GPIO_MODE_00);  // gpio mode
+   mt_set_gpio_pull_enable(GPIO_EXTERNAL_AMPLIFIER_PIN,GPIO_PULL_ENABLE);
 
    PRINTK("-Speaker_Init Success");
    return true;
+}
+
+bool Speaker_Register(void)
+{
+    return false;
+}
+
+int ExternalAmp(void)
+{
+	return 0;
 }
 
 bool Speaker_DeInit(void)
@@ -77,8 +147,8 @@ void Sound_Speaker_Turnon(int channel)
     mt_set_gpio_dir(GPIO_SPEAKER_EN_PIN,GPIO_DIR_OUT); // output
     mt_set_gpio_out(GPIO_SPEAKER_EN_PIN,GPIO_OUT_ONE); // high
 
-    mt_set_gpio_dir(EXTERNAL_AMPLIFIER_GPIO,GPIO_DIR_OUT); // output
-    mt_set_gpio_out(EXTERNAL_AMPLIFIER_GPIO,GPIO_OUT_ONE); // high
+    mt_set_gpio_dir(GPIO_EXTERNAL_AMPLIFIER_PIN,GPIO_DIR_OUT); // output
+    mt_set_gpio_out(GPIO_EXTERNAL_AMPLIFIER_PIN,GPIO_OUT_ONE); // high
     
     msleep(SPK_WARM_UP_TIME);
     gsk_on = true;
@@ -92,8 +162,8 @@ void Sound_Speaker_Turnoff(int channel)
     mt_set_gpio_dir(GPIO_SPEAKER_EN_PIN,GPIO_DIR_OUT); // output
     mt_set_gpio_out(GPIO_SPEAKER_EN_PIN,GPIO_OUT_ZERO); // high
 
-    mt_set_gpio_dir(EXTERNAL_AMPLIFIER_GPIO,GPIO_DIR_OUT); // output
-    mt_set_gpio_out(EXTERNAL_AMPLIFIER_GPIO,GPIO_OUT_ZERO); 
+    mt_set_gpio_dir(GPIO_EXTERNAL_AMPLIFIER_PIN,GPIO_DIR_OUT); // output
+    mt_set_gpio_out(GPIO_EXTERNAL_AMPLIFIER_PIN,GPIO_OUT_ZERO); 
     
 	gsk_on = false;
 }

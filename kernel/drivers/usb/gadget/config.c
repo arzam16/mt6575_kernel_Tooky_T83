@@ -7,15 +7,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/errno.h>
@@ -27,7 +18,7 @@
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
-#include "logger.h"
+
 
 /**
  * usb_descriptor_fillbuf - fill buffer with descriptors
@@ -46,8 +37,6 @@ usb_descriptor_fillbuf(void *buf, unsigned buflen,
 		const struct usb_descriptor_header **src)
 {
 	u8	*dest = buf;
-	struct usb_interface_descriptor *interface;
-	struct usb_endpoint_descriptor *ep;
 
 	if (!src)
 		return -EINVAL;
@@ -61,27 +50,6 @@ usb_descriptor_fillbuf(void *buf, unsigned buflen,
 		memcpy(dest, *src, len);
 		buflen -= len;
 		dest += len;
-
-		/* dump endpint descriptor to usb logger*/
-		switch (((*src)->bDescriptorType)) {
-		case USB_DT_INTERFACE:
-			interface = (struct usb_interface_descriptor *)*src;
-			USB_LOGGER(INTERFACE_DESCRIPTOR, USB_DESCRIPTOR_FILLBUF, interface->bLength, \
-					   interface->bDescriptorType, interface->bInterfaceNumber, \
-					   interface->bAlternateSetting, interface->bNumEndpoints,\
-					   interface->bInterfaceClass, interface->bInterfaceSubClass, \
-					   interface->bInterfaceProtocol, interface->iInterface);
-			break;
-		case USB_DT_ENDPOINT:
-			ep = (struct usb_endpoint_descriptor *)*src;
-			USB_LOGGER(ENDPOINT_DESCRIPTOR, USB_DESCRIPTOR_FILLBUF, ep->bLength, \
-					   ep->bDescriptorType, ep->bEndpointAddress, \
-					   ep->bmAttributes, ep->wMaxPacketSize, ep->bInterval);
-			break;
-		default:
-			USB_LOGGER(STRING, USB_DESCRIPTOR_FILLBUF, "type", (*src)->bDescriptorType);
-			break;
-		}
 	}
 	return dest - (u8 *)buf;
 }
@@ -188,28 +156,3 @@ usb_copy_descriptors(struct usb_descriptor_header **src)
 	return ret;
 }
 
-/**
- * usb_find_endpoint - find a copy of an endpoint descriptor
- * @src: original vector of descriptors
- * @copy: copy of @src
- * @match: endpoint descriptor found in @src
- *
- * This returns the copy of the @match descriptor made for @copy.  Its
- * intended use is to help remembering the endpoint descriptor to use
- * when enabling a given endpoint.
- */
-struct usb_endpoint_descriptor *
-usb_find_endpoint(
-	struct usb_descriptor_header **src,
-	struct usb_descriptor_header **copy,
-	struct usb_endpoint_descriptor *match
-)
-{
-	while (*src) {
-		if (*src == (void *) match)
-			return (void *)*copy;
-		src++;
-		copy++;
-	}
-	return NULL;
-}

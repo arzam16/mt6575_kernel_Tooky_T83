@@ -1,4 +1,17 @@
-
+/* drivers/i2c/chips/mma8453q.c - MMA8453Q motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -1023,6 +1036,13 @@ static int MMA8453Q_InitSelfTest(struct i2c_client *client)
 	u8  data;
 	u8 databuf[10]; 
     GSE_LOG("fwq init self test\n");
+/*
+	res = MMA8453Q_SetPowerMode(client,true);
+	if(res != MMA8453Q_SUCCESS ) //
+	{
+		return res;
+	}
+	*/
 	res = MMA8453Q_SetBWRate(client, MMA8453Q_BW_100HZ);
 	if(res != MMA8453Q_SUCCESS ) //
 	{
@@ -1318,6 +1338,12 @@ static ssize_t store_selftest_value(struct device_driver *ddri, char *buf, size_
 	/*initial setting for self test*/
 	MMA8453Q_InitSelfTest(client);
 	GSE_LOG("SELFTEST:\n");  
+/*
+	MMA8453Q_ReadData(client, nxt[0].raw);
+	GSE_LOG("nxt[0].raw[MMA8453Q_AXIS_X]: %d\n", nxt[0].raw[MMA8453Q_AXIS_X]);
+	GSE_LOG("nxt[0].raw[MMA8453Q_AXIS_Y]: %d\n", nxt[0].raw[MMA8453Q_AXIS_Y]);
+	GSE_LOG("nxt[0].raw[MMA8453Q_AXIS_Z]: %d\n", nxt[0].raw[MMA8453Q_AXIS_Z]);
+	*/
 	for(idx = 0; idx < num; idx++)
 	{
 		if(res = MMA8453Q_ReadData(client, nxt[idx].raw))
@@ -1669,6 +1695,9 @@ int mma8453q_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int mma8453q_open(struct inode *inode, struct file *file)
 {
 	file->private_data = mma8453q_i2c_client;

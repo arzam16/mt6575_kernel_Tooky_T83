@@ -1,4 +1,17 @@
-
+/* drivers/hwmon/mt6516/amit/stk2203.c - stk2203 ALS only driver
+ * 
+ * Author: MingHsien Hsieh <minghsien.hsieh@mediatek.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -44,6 +57,13 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 
 #ifdef MT6573
 extern void mt65xx_eint_unmask(unsigned int line);
@@ -58,6 +78,19 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #endif
 
 #ifdef MT6575
+extern void mt65xx_eint_unmask(unsigned int line);
+extern void mt65xx_eint_mask(unsigned int line);
+extern void mt65xx_eint_set_polarity(kal_uint8 eintno, kal_bool ACT_Polarity);
+extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
+extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
+extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
+                                     kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
+                                     kal_bool auto_umask);
+
+#endif
+
+
+#ifdef MT6577
 extern void mt65xx_eint_unmask(unsigned int line);
 extern void mt65xx_eint_mask(unsigned int line);
 extern void mt65xx_eint_set_polarity(kal_uint8 eintno, kal_bool ACT_Polarity);
@@ -82,13 +115,17 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
 
 /* TEMPLATE */
-#define GPIO_ALS_EINT_PIN         GPIO190
+//#define GPIO_ALS_EINT_PIN         GPIO190
 #define GPIO_ALS_EINT_PIN_M_GPIO  GPIO_MODE_00
 #define GPIO_ALS_EINT_PIN_M_EINT  GPIO_MODE_01
-#define GPIO_ALS_EINT_PIN_M_PWM  GPIO_MODE_04
-#define CUST_EINT_ALS_NUM              3
+//#define GPIO_ALS_EINT_PIN_M_PWM  GPIO_MODE_04
+//#define CUST_EINT_ALS_NUM              3
 #define CUST_EINT_ALS_DEBOUNCE_CN      0
 #define CUST_EINT_ALS_POLARITY         CUST_EINT_POLARITY_LOW
 #define CUST_EINT_ALS_SENSITIVE        CUST_EINT_LEVEL_SENSITIVE
@@ -96,6 +133,9 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 
 
 
+/******************************************************************************
+ * configuration
+*******************************************************************************/
 #define STK2203_NO_SUPPORT_PS
 
 /*----------------------------------------------------------------------------*/
@@ -106,6 +146,9 @@ extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
 #define APS_ERR(fmt, args...)    printk(KERN_ERR  APS_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
 #define APS_LOG(fmt, args...)    printk(KERN_INFO APS_TAG fmt, ##args)
 #define APS_DBG(fmt, args...)    printk(KERN_INFO fmt, ##args)                 
+/******************************************************************************
+ * extern functions
+*******************************************************************************/
 #ifdef MT6516
 extern void MT6516_EINTIRQUnmask(unsigned int line);
 extern void MT6516_EINTIRQMask(unsigned int line);
@@ -266,14 +309,30 @@ int stk2203_get_addr(struct alsps_hw *hw, struct stk2203_i2c_addr *addr)
 int stk2203_get_timing(void)
 {
 return 200;
+/*
+	u32 base = I2C2_BASE; 
+	return (__raw_readw(mt6516_I2C_HS) << 16) | (__raw_readw(mt6516_I2C_TIMING));
+*/
 }
 /*----------------------------------------------------------------------------*/
+/*
+int stk2203_config_timing(int sample_div, int step_div)
+{
+	u32 base = I2C2_BASE; 
+	unsigned long tmp;
+
+	tmp  = __raw_readw(mt6516_I2C_TIMING) & ~((0x7 << 8) | (0x1f << 0));
+	tmp  = (sample_div & 0x7) << 8 | (step_div & 0x1f) << 0 | tmp;
+
+	return (__raw_readw(mt6516_I2C_HS) << 16) | (tmp);
+}
+*/
 /*----------------------------------------------------------------------------*/
 int stk2203_master_recv(struct i2c_client *client, u16 addr, u8 *buf ,int count)
 {
 	struct stk2203_priv *obj = i2c_get_clientdata(client);        
-	struct i2c_adapter *adap = client->adapter;
-	struct i2c_msg msg;
+	//struct i2c_adapter *adap = client->adapter;
+	struct i2c_msg msg = {};
 	int ret = 0, retry = 0;
 	int trc = atomic_read(&obj->trace);
 	int max_try = atomic_read(&obj->i2c_retry);
@@ -309,8 +368,8 @@ int stk2203_master_send(struct i2c_client *client, u16 addr, u8 *buf ,int count)
 {
 	int ret = 0, retry = 0;
 	struct stk2203_priv *obj = i2c_get_clientdata(client);        
-	struct i2c_adapter *adap=client->adapter;
-	struct i2c_msg msg;
+	//struct i2c_adapter *adap=client->adapter;
+	struct i2c_msg msg = {};
 	int trc = atomic_read(&obj->trace);
 	int max_try = atomic_read(&obj->i2c_retry);
 
@@ -705,6 +764,9 @@ static void stk2203_eint_work(struct work_struct *work)
 	#ifdef MT6575
 	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);      
 	#endif
+	#ifdef MT6577
+	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);      
+	#endif
 
 }
 /*----------------------------------------------------------------------------*/
@@ -751,7 +813,16 @@ int stk2203_setup_eint(struct i2c_client *client)
 	mt65xx_eint_set_hw_debounce(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_CN);
 	mt65xx_eint_registration(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_EN, CUST_EINT_ALS_POLARITY, stk2203_eint_func, 0);
 	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);  
-#endif  
+#endif
+
+#ifdef MT6577
+	
+    mt65xx_eint_set_sens(CUST_EINT_ALS_NUM, CUST_EINT_ALS_SENSITIVE);
+	mt65xx_eint_set_polarity(CUST_EINT_ALS_NUM, CUST_EINT_ALS_POLARITY);
+	mt65xx_eint_set_hw_debounce(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_CN);
+	mt65xx_eint_registration(CUST_EINT_ALS_NUM, CUST_EINT_ALS_DEBOUNCE_EN, CUST_EINT_ALS_POLARITY, stk2203_eint_func, 0);
+	mt65xx_eint_unmask(CUST_EINT_ALS_NUM);  
+#endif 
 	
     return 0;
 	
@@ -800,6 +871,9 @@ static int stk2203_init_client(struct i2c_client *client)
 	}
 	return 0;
 }
+/******************************************************************************
+ * Sysfs attributes
+*******************************************************************************/
 static ssize_t stk2203_show_config(struct device_driver *ddri, char *buf)
 {
 	ssize_t res;
@@ -1025,11 +1099,63 @@ static ssize_t stk2203_show_status(struct device_driver *ddri, char *buf)
 /*----------------------------------------------------------------------------*/
 static ssize_t stk2203_show_i2c(struct device_driver *ddri, char *buf)
 {
+/*
+	ssize_t len = 0;
+	u32 base = I2C2_BASE;
+
+	if(!stk2203_obj)
+	{
+		APS_ERR("stk2203_obj is null!!\n");
+		return 0;
+	}
+	
+	len += snprintf(buf+len, PAGE_SIZE-len, "DATA_PORT      = 0x%08X\n", __raw_readl(mt6516_I2C_DATA_PORT    ));
+	len += snprintf(buf+len, PAGE_SIZE-len, "SLAVE_ADDR     = 0x%08X\n", __raw_readl(mt6516_I2C_SLAVE_ADDR));
+	len += snprintf(buf+len, PAGE_SIZE-len, "INTR_MASK      = 0x%08X\n", __raw_readl(mt6516_I2C_INTR_MASK));
+	len += snprintf(buf+len, PAGE_SIZE-len, "INTR_STAT      = 0x%08X\n", __raw_readl(mt6516_I2C_INTR_STAT));
+	len += snprintf(buf+len, PAGE_SIZE-len, "CONTROL        = 0x%08X\n", __raw_readl(mt6516_I2C_CONTROL));
+	len += snprintf(buf+len, PAGE_SIZE-len, "TRANSFER_LEN   = 0x%08X\n", __raw_readl(mt6516_I2C_TRANSFER_LEN));
+	len += snprintf(buf+len, PAGE_SIZE-len, "TRANSAC_LEN    = 0x%08X\n", __raw_readl(mt6516_I2C_TRANSAC_LEN));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DELAY_LEN      = 0x%08X\n", __raw_readl(mt6516_I2C_DELAY_LEN));
+	len += snprintf(buf+len, PAGE_SIZE-len, "TIMING         = 0x%08X\n", __raw_readl(mt6516_I2C_TIMING));
+	len += snprintf(buf+len, PAGE_SIZE-len, "START          = 0x%08X\n", __raw_readl(mt6516_I2C_START));
+	len += snprintf(buf+len, PAGE_SIZE-len, "FIFO_STAT      = 0x%08X\n", __raw_readl(mt6516_I2C_FIFO_STAT));
+	len += snprintf(buf+len, PAGE_SIZE-len, "FIFO_THRESH    = 0x%08X\n", __raw_readl(mt6516_I2C_FIFO_THRESH));
+	len += snprintf(buf+len, PAGE_SIZE-len, "FIFO_ADDR_CLR  = 0x%08X\n", __raw_readl(mt6516_I2C_FIFO_ADDR_CLR));
+	len += snprintf(buf+len, PAGE_SIZE-len, "IO_CONFIG      = 0x%08X\n", __raw_readl(mt6516_I2C_IO_CONFIG));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DEBUG          = 0x%08X\n", __raw_readl(mt6516_I2C_DEBUG));
+	len += snprintf(buf+len, PAGE_SIZE-len, "HS             = 0x%08X\n", __raw_readl(mt6516_I2C_HS));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DEBUGSTAT      = 0x%08X\n", __raw_readl(mt6516_I2C_DEBUGSTAT));
+	len += snprintf(buf+len, PAGE_SIZE-len, "DEBUGCTRL      = 0x%08X\n", __raw_readl(mt6516_I2C_DEBUGCTRL));    
+
+	return len;
+*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
 static ssize_t stk2203_store_i2c(struct device_driver *ddri, const char *buf, size_t count)
 {
+/*
+	int sample_div, step_div;
+	unsigned long tmp;
+	u32 base = I2C2_BASE;    
+
+	if(!stk2203_obj)
+	{
+		APS_ERR("stk2203_obj is null!!\n");
+		return 0;
+	}
+	else if(2 != sscanf(buf, "%d %d", &sample_div, &step_div))
+	{
+		APS_ERR("invalid format: '%s'\n", buf);
+		return 0;
+	}
+	tmp  = __raw_readw(mt6516_I2C_TIMING) & ~((0x7 << 8) | (0x1f << 0));
+	tmp  = (sample_div & 0x7) << 8 | (step_div & 0x1f) << 0 | tmp;
+	__raw_writew(tmp, mt6516_I2C_TIMING);        
+
+	return count; 
+*/
        return 0;
 }
 /*----------------------------------------------------------------------------*/
@@ -1199,6 +1325,9 @@ static int stk2203_create_attr(struct device_driver *driver)
 	
 	return err;
 }
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int stk2203_get_als_value(struct stk2203_priv *obj, u16 als)
 {
 	int idx;
@@ -1307,6 +1436,9 @@ static int stk2203_get_ps_value(struct stk2203_priv *obj, u16 ps)
 		return -1;
 	}	
 }
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int stk2203_open(struct inode *inode, struct file *file)
 {
 	file->private_data = stk2203_i2c_client;
@@ -1350,7 +1482,7 @@ static long stk2203_unlocked_ioctl(struct file *file, unsigned int cmd,
 			{
 				if((err = stk2203_enable_ps(obj->client, 1)))
 				{
-					APS_ERR("enable ps fail: %1d\n", err); 
+					APS_ERR("enable ps fail: %1ld\n", err); 
 					goto err_out;
 				}
 				
@@ -1360,7 +1492,7 @@ static long stk2203_unlocked_ioctl(struct file *file, unsigned int cmd,
 			{
 				if((err = stk2203_enable_ps(obj->client, 0)))
 				{
-					APS_ERR("disable ps fail: %1d\n", err); 
+					APS_ERR("disable ps fail: %1ld\n", err); 
 					goto err_out;
 				}
 				
@@ -1415,7 +1547,7 @@ static long stk2203_unlocked_ioctl(struct file *file, unsigned int cmd,
 			{
 				if((err = stk2203_enable_als(obj->client, 1)))
 				{
-					APS_ERR("enable als fail: %1d\n", err); 
+					APS_ERR("enable als fail: %1ld\n", err); 
 					goto err_out;
 				}
 				set_bit(STK_BIT_ALS, &obj->enable);
@@ -1424,7 +1556,7 @@ static long stk2203_unlocked_ioctl(struct file *file, unsigned int cmd,
 			{
 				if((err = stk2203_enable_als(obj->client, 0)))
 				{
-					APS_ERR("disable als fail: %d\n", err); 
+					APS_ERR("disable als fail: %ld\n", err); 
 					goto err_out;
 				}
 				clear_bit(STK_BIT_ALS, &obj->enable);
@@ -1496,6 +1628,32 @@ static int stk2203_i2c_suspend(struct i2c_client *client, pm_message_t msg)
 	//struct stk2203_priv *obj = i2c_get_clientdata(client);    
 	//int err;
 	APS_FUN();    
+/*
+	if(msg.event == PM_EVENT_SUSPEND)
+	{   
+		if(!obj)
+		{
+			APS_ERR("null pointer!!\n");
+			return -EINVAL;
+		}
+		
+		atomic_set(&obj->als_suspend, 1);
+		if((err = stk2203_enable_als(client, 0)))
+		{
+			APS_ERR("disable als: %d\n", err);
+			return err;
+		}
+
+		atomic_set(&obj->ps_suspend, 1);
+		if((err = stk2203_enable_ps(client, 0)))
+		{
+			APS_ERR("disable ps:  %d\n", err);
+			return err;
+		}
+		
+		stk2203_power(obj->hw, 0);
+	}
+*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
@@ -1504,6 +1662,36 @@ static int stk2203_i2c_resume(struct i2c_client *client)
 	//struct stk2203_priv *obj = i2c_get_clientdata(client);        
 	//int err;
 	APS_FUN();
+/*
+	if(!obj)
+	{
+		APS_ERR("null pointer!!\n");
+		return -EINVAL;
+	}
+
+	stk2203_power(obj->hw, 1);
+	if((err = stk2203_init_client(client)))
+	{
+		APS_ERR("initialize client fail!!\n");
+		return err;        
+	}
+	atomic_set(&obj->als_suspend, 0);
+	if(test_bit(STK_BIT_ALS, &obj->enable))
+	{
+		if((err = stk2203_enable_als(client, 1)))
+		{
+			APS_ERR("enable als fail: %d\n", err);        
+		}
+	}
+	atomic_set(&obj->ps_suspend, 0);
+	if(test_bit(STK_BIT_PS,  &obj->enable))
+	{
+		if((err = stk2203_enable_ps(client, 1)))
+		{
+			APS_ERR("enable ps fail: %d\n", err);                
+		}
+	}
+*/
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
@@ -1717,6 +1905,13 @@ int stk2203_als_operate(void* self, uint32_t command, void* buff_in, int size_in
 
 
 /*----------------------------------------------------------------------------*/
+/*
+static int stk2203_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
+{    
+	strcpy(info->type, STK2203_DEV_NAME);
+	return 0;
+}
+*/
 /*----------------------------------------------------------------------------*/
 static int stk2203_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -1753,9 +1948,10 @@ static int stk2203_i2c_probe(struct i2c_client *client, const struct i2c_device_
        atomic_set(&obj->ps_thd_val,  obj->hw->ps_threshold);
 	if(obj->hw->polling_mode == 0)
 	{
-         atomic_set(&obj->als_intr_val, THD01_ALS|PRST01_ALS|FLAG_ALS);  //THD : 0x00  Enablee INTR      
-	  atomic_add(&obj->ps_cmd_val,  0x02);
-	  APS_LOG("enable interrupt\n");
+        atomic_set(&obj->als_intr_val, THD01_ALS|PRST01_ALS|FLAG_ALS);  //THD : 0x00  Enablee INTR      
+        //atomic_add(&obj->ps_cmd_val, 0x02);
+        atomic_set(&obj->ps_cmd_val, 0x03);
+        APS_LOG("enable interrupt\n");
 	}
 	
 	obj->enable = 0;

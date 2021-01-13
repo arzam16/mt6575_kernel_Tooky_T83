@@ -1,4 +1,17 @@
-
+/* drivers/i2c/chips/mma8453q.c - MMA8453Q motion sensor driver
+ *
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -42,6 +55,13 @@
 #include <mach/mt6575_pm_ldo.h>
 #endif
 
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+
 #ifdef MT6516
 #define POWER_NONE_MACRO MT6516_POWER_NONE
 #endif
@@ -51,6 +71,10 @@
 #endif
 
 #ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+
+#ifdef MT6577
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 /*----------------------------------------------------------------------------*/
@@ -68,15 +92,16 @@
 #define MMA8453Q_DEV_NAME        "MMA8453Q"
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id mma8453q_i2c_id[] = {{MMA8453Q_DEV_NAME,0},{}};
+static const struct i2c_board_info __initdata i2c_MMA8453Q = {I2C_BOARD_INFO("MMA8453Q",(0x3A>>1))};
 /*the adapter id will be available in customization*/
-static unsigned short mma8453q_force[] = {0x00, MMA8453Q_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const mma8453q_forces[] = { mma8453q_force, NULL };
-static struct i2c_client_address_data mma8453q_addr_data = { .forces = mma8453q_forces,};
+//static unsigned short mma8453q_force[] = {0x00, MMA8453Q_I2C_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const mma8453q_forces[] = { mma8453q_force, NULL };
+//static struct i2c_client_address_data mma8453q_addr_data = { .forces = mma8453q_forces,};
 
 /*----------------------------------------------------------------------------*/
 static int mma8453q_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
 static int mma8453q_i2c_remove(struct i2c_client *client);
-static int mma8453q_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+//static int mma8453q_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
 
 /*----------------------------------------------------------------------------*/
 static int MMA8453Q_SetPowerMode(struct i2c_client *client, bool enable);
@@ -141,18 +166,18 @@ struct mma8453q_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver mma8453q_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+//        .owner          = THIS_MODULE,
         .name           = MMA8453Q_DEV_NAME,
     },
 	.probe      		= mma8453q_i2c_probe,
 	.remove    			= mma8453q_i2c_remove,
-	.detect				= mma8453q_i2c_detect,
+//	.detect				= mma8453q_i2c_detect,
 #if !defined(CONFIG_HAS_EARLYSUSPEND)    
     .suspend            = mma8453q_suspend,
     .resume             = mma8453q_resume,
 #endif
 	.id_table = mma8453q_i2c_id,
-	.address_data = &mma8453q_addr_data,
+//	.address_data = &mma8453q_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -1003,6 +1028,13 @@ static int MMA8453Q_InitSelfTest(struct i2c_client *client)
 	u8  data;
 	u8 databuf[10]; 
     GSE_LOG("fwq init self test\n");
+/*
+	res = MMA8453Q_SetPowerMode(client,true);
+	if(res != MMA8453Q_SUCCESS ) //
+	{
+		return res;
+	}
+	*/
 	res = MMA8453Q_SetBWRate(client, MMA8453Q_BW_100HZ);
 	if(res != MMA8453Q_SUCCESS ) //
 	{
@@ -1298,6 +1330,12 @@ static ssize_t store_selftest_value(struct device_driver *ddri, char *buf, size_
 	/*initial setting for self test*/
 	MMA8453Q_InitSelfTest(client);
 	GSE_LOG("SELFTEST:\n");  
+/*
+	MMA8453Q_ReadData(client, nxt[0].raw);
+	GSE_LOG("nxt[0].raw[MMA8453Q_AXIS_X]: %d\n", nxt[0].raw[MMA8453Q_AXIS_X]);
+	GSE_LOG("nxt[0].raw[MMA8453Q_AXIS_Y]: %d\n", nxt[0].raw[MMA8453Q_AXIS_Y]);
+	GSE_LOG("nxt[0].raw[MMA8453Q_AXIS_Z]: %d\n", nxt[0].raw[MMA8453Q_AXIS_Z]);
+	*/
 	for(idx = 0; idx < num; idx++)
 	{
 		if(res = MMA8453Q_ReadData(client, nxt[idx].raw))
@@ -1651,6 +1689,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int mma8453q_open(struct inode *inode, struct file *file)
 {
 	file->private_data = mma8453q_i2c_client;
@@ -1669,7 +1710,7 @@ static int mma8453q_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int mma8453q_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+static int mma8453q_unlocked_ioctl(struct file *file, unsigned int cmd,
        unsigned long arg)
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
@@ -1854,10 +1895,10 @@ static int mma8453q_ioctl(struct inode *inode, struct file *file, unsigned int c
 
 /*----------------------------------------------------------------------------*/
 static struct file_operations mma8453q_fops = {
-	.owner = THIS_MODULE,
+//	.owner = THIS_MODULE,
 	.open = mma8453q_open,
 	.release = mma8453q_release,
-	.ioctl = mma8453q_ioctl,
+	.unlocked_ioctl = mma8453q_unlocked_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice mma8453q_device = {
@@ -1978,12 +2019,13 @@ static void mma8453q_late_resume(struct early_suspend *h)
 /*----------------------------------------------------------------------------*/
 #endif /*CONFIG_HAS_EARLYSUSPEND*/
 /*----------------------------------------------------------------------------*/
+#if 0
 static int mma8453q_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) 
 {    
 	strcpy(info->type, MMA8453Q_DEV_NAME);
 	return 0;
 }
-
+#endif
 /*----------------------------------------------------------------------------*/
 static int mma8453q_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -2115,7 +2157,7 @@ static int mma8453q_probe(struct platform_device *pdev)
 	GSE_FUN();
 
 	MMA8453Q_power(hw, 1);
-	mma8453q_force[0] = hw->i2c_num;
+//	mma8453q_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&mma8453q_i2c_driver))
 	{
 		GSE_ERR("add driver error\n");
@@ -2139,7 +2181,7 @@ static struct platform_driver mma8453q_gsensor_driver = {
 	.remove     = mma8453q_remove,    
 	.driver     = {
 		.name  = "gsensor",
-		.owner = THIS_MODULE,
+//		.owner = THIS_MODULE,
 	}
 };
 
@@ -2147,6 +2189,7 @@ static struct platform_driver mma8453q_gsensor_driver = {
 static int __init mma8453q_init(void)
 {
 	GSE_FUN();
+	i2c_register_board_info(0,&i2c_MMA8453Q,1);
 	if(platform_driver_register(&mma8453q_gsensor_driver))
 	{
 		GSE_ERR("failed to register driver");

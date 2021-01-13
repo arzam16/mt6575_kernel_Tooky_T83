@@ -16,6 +16,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>
+#include <linux/export.h>
 #include <linux/wait.h>
 #include <linux/delay.h>
 
@@ -26,6 +27,11 @@
 #include <linux/mmc/sdio_func.h>
 
 #include "sdio_ops.h"
+
+extern u32 sdio_enable_tune;
+extern u32 sdio_tune_flag;
+
+
 
 static int process_sdio_pending_irqs(struct mmc_card *card)
 {
@@ -45,7 +51,7 @@ static int process_sdio_pending_irqs(struct mmc_card *card)
 
 	ret = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_INTx, 0, &pending);
 	if (ret) {
-		printk(KERN_DEBUG "%s: error %d reading SDIO_CCCR_INTx\n",
+		pr_debug("%s: error %d reading SDIO_CCCR_INTx\n",
 		       mmc_card_id(card), ret);
 		return ret;
 	}
@@ -55,7 +61,7 @@ static int process_sdio_pending_irqs(struct mmc_card *card)
 		if (pending & (1 << i)) {
 			func = card->sdio_func[i - 1];
 			if (!func) {
-				printk(KERN_WARNING "%s: pending IRQ for "
+				pr_warning("%s: pending IRQ for "
 					"non-existent function\n",
 					mmc_card_id(card));
 				ret = -EINVAL;
@@ -63,7 +69,7 @@ static int process_sdio_pending_irqs(struct mmc_card *card)
 				func->irq_handler(func);
 				count++;
 			} else {
-				printk(KERN_WARNING "%s: pending IRQ with no handler\n",
+				pr_warning("%s: pending IRQ with no handler\n",
 				       sdio_func_id(func));
 				ret = -EINVAL;
 			}
@@ -144,16 +150,31 @@ static int sdio_irq_thread(void *_host)
 			}
 		}
 
+		/* Add the CRC/Timeout handling for exit the sdio_irq_thread in Real WIFI ETT.
+		 *
+		 */	
+		if(unlikely(sdio_enable_tune) && unlikely(sdio_tune_flag)) {
+			printk(KERN_ERR"SDIO Error handling in sdio_irq_thread\n");
+			break;
+		}
+			
+
 		set_current_state(TASK_INTERRUPTIBLE);
-		if (host->caps & MMC_CAP_SDIO_IRQ)
+		if (host->caps & MMC_CAP_SDIO_IRQ) {
+			mmc_host_clk_hold(host);
 			host->ops->enable_sdio_irq(host, 1);
+			mmc_host_clk_release(host);
+		}
 		if (!kthread_should_stop())
 			schedule_timeout(period);
 		set_current_state(TASK_RUNNING);
 	} while (!kthread_should_stop());
 
-	if (host->caps & MMC_CAP_SDIO_IRQ)
+	if (host->caps & MMC_CAP_SDIO_IRQ) {
+		mmc_host_clk_hold(host);
 		host->ops->enable_sdio_irq(host, 0);
+		mmc_host_clk_release(host);
+	}
 
 	pr_debug("%s: IRQ thread exiting with code %d\n",
 		 mmc_hostname(host), ret);
@@ -191,6 +212,11 @@ static int sdio_card_irq_put(struct mmc_card *card)
 
 	if (!--host->sdio_irqs) {
 		atomic_set(&host->sdio_irq_thread_abort, 1);
+		
+		if(!host->sdio_irq_thread->real_cred) {
+			printk(KERN_ERR"SDIO ignore kthread_stop in sdio_release_irq\n");
+			return 0;
+		}
 		kthread_stop(host->sdio_irq_thread);
 	}
 

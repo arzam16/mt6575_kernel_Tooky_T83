@@ -1,4 +1,24 @@
-
+/* linux/drivers/hwmon/kxte9.c
+ *
+ * (C) Copyright 2008 
+ * MediaTek <www.mediatek.com>
+ *
+ * KXTE9 driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
@@ -34,6 +54,22 @@
 #include <mach/mt6573_pll.h>
 #endif
 
+#ifdef MT6575
+#include <mach/mt6575_devs.h>
+#include <mach/mt6575_typedefs.h>
+#include <mach/mt6575_gpio.h>
+#include <mach/mt6575_pm_ldo.h>
+#endif
+
+#ifdef MT6577
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
+#endif
+/******************************************************************************
+ * structure/enumeration
+*******************************************************************************/
 struct kxte9_object{
 	struct i2c_client	    client;
     struct acc_hw *hw;
@@ -62,6 +98,12 @@ struct kxte9_object{
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
 
+#ifdef MT6575
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
+#ifdef MT6577
+#define POWER_NONE_MACRO MT65XX_POWER_NONE
+#endif
 /*----------------------------------------------------------------------------*/
 #define KXTE9_TRC_GET_DATA  0x0001
 
@@ -107,10 +149,11 @@ static struct hwmsen_reg kxte9_regs[] = {
 #define KXTE9_DEV_NAME        "KXTE9"
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id kxte9_i2c_id[] = {{KXTE9_DEV_NAME,0},{}};
+static struct i2c_board_info __initdata i2c_kxte9={ I2C_BOARD_INFO(KXTE9_DEV_NAME, (KXTE9_WR_SLAVE_ADDR>>1))};
 /*the adapter id will be available in customization*/
-static unsigned short kxte9_force[] = {0x00, KXTE9_WR_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
-static const unsigned short *const kxte9_forces[] = { kxte9_force, NULL };
-static struct i2c_client_address_data kxte9_addr_data = { .forces = kxte9_forces,};
+//static unsigned short kxte9_force[] = {0x00, KXTE9_WR_SLAVE_ADDR, I2C_CLIENT_END, I2C_CLIENT_END};
+//static const unsigned short *const kxte9_forces[] = { kxte9_force, NULL };
+//static struct i2c_client_address_data kxte9_addr_data = { .forces = kxte9_forces,};
 
 /*----------------------------------------------------------------------------*/
 static int kxte9_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id); 
@@ -167,7 +210,7 @@ struct kxte9_i2c_data {
 /*----------------------------------------------------------------------------*/
 static struct i2c_driver kxte9_i2c_driver = {
     .driver = {
-        .owner          = THIS_MODULE,
+//      .owner          = THIS_MODULE,
         .name           = KXTE9_DEV_NAME,
     },
 	.probe      		= kxte9_i2c_probe,
@@ -178,7 +221,7 @@ static struct i2c_driver kxte9_i2c_driver = {
     .resume             = kxte9_resume,
 #endif
 	.id_table = kxte9_i2c_id,
-	.address_data = &kxte9_addr_data,
+//	.address_data = &kxte9_addr_data,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -481,6 +524,9 @@ static int kxte9_read_data(struct i2c_client *client, u8 data[KXTE9_AXES_NUM])
 }
 
 
+/******************************************************************************
+ * Functions 
+******************************************************************************/
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -852,6 +898,9 @@ int gsensor_operate(void* self, uint32_t command, void* buff_in, int size_in,
 	return err;
 }
 
+/****************************************************************************** 
+ * Function Configuration
+******************************************************************************/
 static int kxte9_open(struct inode *inode, struct file *file)
 {
 	file->private_data = kxte9_i2c_client;
@@ -870,7 +919,9 @@ static int kxte9_release(struct inode *inode, struct file *file)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static int kxte9_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+//static int kxte9_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+//       unsigned long arg)
+static long kxte9_unlocked_ioctl(struct file *file, unsigned int cmd,
        unsigned long arg)
 {
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
@@ -878,7 +929,7 @@ static int kxte9_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	char strbuf[KXTE9_BUFSIZE];
 	void __user *data;
 	SENSOR_DATA sensor_data;
-	int err = 0;
+	long err = 0;
 	int cali[3];
 
 	//GSE_FUN(f);
@@ -1049,7 +1100,8 @@ static struct file_operations kxte9_fops = {
 	.owner = THIS_MODULE,
 	.open = kxte9_open,
 	.release = kxte9_release,
-	.ioctl = kxte9_ioctl,
+	.unlocked_ioctl = kxte9_unlocked_ioctl,
+	//.ioctl = kxte9_ioctl,
 };
 /*----------------------------------------------------------------------------*/
 static struct miscdevice kxte9_device = {
@@ -1275,7 +1327,7 @@ static int kxte9_probe(struct platform_device *pdev)
 	GSE_FUN();
 
 	KXTE9_power(hw, 1);
-	kxte9_force[0] = hw->i2c_num;
+	//kxte9_force[0] = hw->i2c_num;
 	if(i2c_add_driver(&kxte9_i2c_driver))
 	{
 		GSE_ERR("add driver error\n");
@@ -1307,6 +1359,7 @@ static struct platform_driver kxte9_gsensor_driver = {
 static int __init kxte9_init(void)
 {
 	GSE_FUN();
+	i2c_register_board_info(0, &i2c_kxte9, 1);
 	if(platform_driver_register(&kxte9_gsensor_driver))
 	{
 		GSE_ERR("failed to register driver");

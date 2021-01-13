@@ -40,8 +40,8 @@ ENTRY(__memzero)
 	cmp	r1, #16			@ 1 we can skip this chunk if we
 	blt	4f			@ 1 have < 16 bytes
 
-//#if ! CALGN(1)+0
-#if 0
+#if ! CALGN(1)+0
+
 /*
  * We need an extra register for this loop - save the return address and
  * use the LR

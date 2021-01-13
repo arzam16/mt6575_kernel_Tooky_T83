@@ -1,4 +1,3 @@
-
 #ifndef __MATV_H__
 #define __MATV_H__
 
@@ -46,6 +45,15 @@
 #define MATV_SET_STRAP          _IOW(MATV_IOC_MAGIC, 0x05, unsigned int)
 #define MATV_SLEEP              _IOW(MATV_IOC_MAGIC, 0x06, unsigned int)
 #define MATV_SET_TP_MODE        _IOW(MATV_IOC_MAGIC, 0x07, unsigned int)
+
+typedef struct matv_i2s_info
+{
+    int status;
+    int mode;
+    int rate;
+} matv_i2s_info_t;
+
+#define MATV_QUERY_I2S_INFO     _IOW(MATV_IOC_MAGIC, 0x08,  struct matv_i2s_info*)
 
 
 #endif //__MATV_H__

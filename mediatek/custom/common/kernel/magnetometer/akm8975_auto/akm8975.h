@@ -1,4 +1,6 @@
-
+/*
+ * Definitions for akm8975 compass chip.
+ */
 #ifndef AKM8975_H
 #define AKM8975_H
 
@@ -12,6 +14,9 @@ extern struct mag_hw* akm8975_get_cust_mag_hw(void);
 #define AKM8975_I2C_ADDRESS 	0x18	// CAD0 = 0, CAD1 =0
 #define AKM8975_BUFSIZE		0x20
 
+/*! \name AK8975 operation mode
+ \anchor AK8975_Mode
+ Defines an operation mode of the AK8975.*/
 /*! @{*/
 #define AK8975_MODE_SNG_MEASURE	0x01
 #define	AK8975_MODE_SELF_TEST	0x08
@@ -24,6 +29,9 @@ extern struct mag_hw* akm8975_get_cust_mag_hw(void);
 #define CALIBRATION_DATA_SIZE	12
 
 
+/*! \name AK8975 register address
+\anchor AK8975_REG
+Defines a register address of the AK8975.*/
 /*! @{*/
 #define AK8975_REG_WIA		0x00
 #define AK8975_REG_INFO		0x01
@@ -43,6 +51,9 @@ extern struct mag_hw* akm8975_get_cust_mag_hw(void);
 #define AK8975_REG_I2CDIS	0x0F
 /*! @}*/
 
+/*! \name AK8975 fuse-rom address
+\anchor AK8975_FUSE
+Defines a read-only address of the fuse ROM of the AK8975.*/
 /*! @{*/
 #define AK8975_FUSE_ASAX	0x10
 #define AK8975_FUSE_ASAY	0x11

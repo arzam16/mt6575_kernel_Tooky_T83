@@ -20,6 +20,16 @@
 
 #define raw_smp_processor_id() (current_thread_info()->cpu)
 
+enum ipi_msg_type {
+	IPI_CPU_START = 1,
+	IPI_TIMER = 2,
+	IPI_RESCHEDULE,
+	IPI_CALL_FUNC,
+	IPI_CALL_FUNC_SINGLE,
+	IPI_CPU_STOP,
+	IPI_CPU_BACKTRACE,
+};
+
 struct seq_file;
 
 /*
@@ -31,6 +41,11 @@ extern void show_ipi_list(struct seq_file *, int);
  * Called from assembly code, this handles an IPI.
  */
 asmlinkage void do_IPI(int ipinr, struct pt_regs *regs);
+
+/*
+ * Called from C code, this handles an IPI.
+ */
+void handle_IPI(int ipinr, struct pt_regs *regs);
 
 /*
  * Setup the set of possible CPUs (via set_cpu_possible)
@@ -87,11 +102,6 @@ extern void platform_cpu_enable(unsigned int cpu);
 
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
-
-/*
- * show local interrupt info
- */
-extern void show_local_irqs(struct seq_file *, int);
 
 extern void smp_send_all_cpu_backtrace(void);
 
