@@ -49,6 +49,9 @@ struct msdc_host* emmc_otp_get_host(void)
 }
 
 
+/******************************************************************************
+ * EMMC OTP operations
+ * ***************************************************************************/
 unsigned int emmc_get_wp_size(void)
 {
     unsigned char l_ext_csd[512];
@@ -561,12 +564,6 @@ static long mt_otp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         printk("OTP IOCTL: The Length is %d\n", otpctl.QLength);
         break;
     case EMMC_OTP_READ:
-
-        if(10==otpctl.Offset)
-		{
-			otpctl.Offset=0x20;
-		}
-
         printk("OTP IOCTL: EMMC_OTP_READ Offset(0x%x), Length(0x%x) \n", otpctl.Offset, otpctl.Length);
         memset(pbuf, 0xff, sizeof(char)*otpctl.Length);
 
@@ -579,12 +576,6 @@ static long mt_otp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         }
         break;
     case EMMC_OTP_WRITE:
-
-        if(10==otpctl.Offset)
-		{
-			otpctl.Offset=0x20;
-		}
-
         printk("OTP IOCTL: EMMC_OTP_WRITE Offset(0x%x), Length(0x%x) \n", otpctl.Offset, otpctl.Length);
         if (copy_from_user(pbuf, otpctl.BufferPtr, (sizeof(char)*otpctl.Length)))
         {
@@ -658,7 +649,10 @@ static int __init emmc_otp_init(void)
     g_emmc_otp_func.read         = emmc_otp_read;
     g_emmc_otp_func.write        = emmc_otp_write;
 
-    entry = create_proc_entry(PROCNAME, 0666, NULL);
+//<2012/12/06-18319-stevenchen, [Common] Fix ASSET issue. Modify permission of otp from 0666 to 0660.
+    //entry = create_proc_entry(PROCNAME, 0666, NULL);
+    entry = create_proc_entry(PROCNAME, 0660, NULL);
+//>2012/12/06-18319-stevenchen    
     if (entry == NULL) 
     {
         printk("emmc OTP: unable to create /proc entry\n");

@@ -1,4 +1,3 @@
-
 #ifndef __LCD_REG_H__
 #define __LCD_REG_H__
 
@@ -262,6 +261,14 @@ typedef struct {
     unsigned THROTTLE_PERIOD    : 16;
 } LCD_REG_GMCCON;
 
+/*
+typedef struct {
+    unsigned x      : 11;
+    unsigned rsv_11 : 5;
+    unsigned y      : 11;
+    unsigned rsv_27 : 5;
+} LCD_REG_W2M_OFFSET;
+*/
 typedef struct
 {
     unsigned W2LCM      : 1;

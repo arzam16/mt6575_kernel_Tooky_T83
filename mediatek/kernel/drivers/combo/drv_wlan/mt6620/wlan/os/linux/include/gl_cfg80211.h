@@ -50,6 +50,47 @@
 *                             D A T A   T Y P E S
 ********************************************************************************
 */
+typedef enum _ENUM_TESTMODE_STA_STATISTICS_ATTR{
+	NL80211_TESTMODE_STA_STATISTICS_INVALID = 0,
+	NL80211_TESTMODE_STA_STATISTICS_VERSION,
+	NL80211_TESTMODE_STA_STATISTICS_MAC,
+	NL80211_TESTMODE_STA_STATISTICS_LINK_SCORE,
+	NL80211_TESTMODE_STA_STATISTICS_FLAG,
+
+	NL80211_TESTMODE_STA_STATISTICS_PER,
+	NL80211_TESTMODE_STA_STATISTICS_RSSI,
+	NL80211_TESTMODE_STA_STATISTICS_PHY_MODE,
+	NL80211_TESTMODE_STA_STATISTICS_TX_RATE,
+	
+	NL80211_TESTMODE_STA_STATISTICS_TOTAL_CNT,
+	NL80211_TESTMODE_STA_STATISTICS_THRESHOLD_CNT,
+	NL80211_TESTMODE_STA_STATISTICS_AVG_PROCESS_TIME,
+	
+	NL80211_TESTMODE_STA_STATISTICS_FAIL_CNT,
+	NL80211_TESTMODE_STA_STATISTICS_TIMEOUT_CNT,
+	NL80211_TESTMODE_STA_STATISTICS_AVG_AIR_TIME,
+
+	NL80211_TESTMODE_STA_STATISTICS_TC_EMPTY_CNT_ARRAY,
+	NL80211_TESTMODE_STA_STATISTICS_TC_QUE_LEN_ARRAY,
+
+	NL80211_TESTMODE_STA_STATISTICS_TC_AVG_QUE_LEN_ARRAY,
+	NL80211_TESTMODE_STA_STATISTICS_TC_CUR_QUE_LEN_ARRAY,
+
+	NL80211_TESTMODE_STA_STATISTICS_RESERVED_ARRAY,
+	
+	NL80211_TESTMODE_STA_STATISTICS_NUM
+}ENUM_TESTMODE_STA_STATISTICS_ATTR;
+
+typedef enum _ENUM_TESTMODE_LINK_DETECTION_ATTR{
+	NL80211_TESTMODE_LINK_INVALID = 0,
+	NL80211_TESTMODE_LINK_TX_FAIL_CNT,
+	NL80211_TESTMODE_LINK_TX_RETRY_CNT,
+	NL80211_TESTMODE_LINK_TX_MULTI_RETRY_CNT,
+	NL80211_TESTMODE_LINK_ACK_FAIL_CNT,
+	NL80211_TESTMODE_LINK_FCS_ERR_CNT,
+	
+	NL80211_TESTMODE_LINK_DETECT_NUM,
+}ENUM_TESTMODE_LINK_DETECTION_ATTR;
 
 /*******************************************************************************
 *                            P U B L I C   D A T A
@@ -136,7 +177,9 @@ mtk_cfg80211_get_station (
 int 
 mtk_cfg80211_scan (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#endif
     struct cfg80211_scan_request *request
     );
 
@@ -207,7 +250,11 @@ mtk_cfg80211_flush_pmksa (
 int 
 mtk_cfg80211_remain_on_channel (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     struct ieee80211_channel *chan,
     enum nl80211_channel_type channel_type,
     unsigned int duration,
@@ -218,7 +265,11 @@ mtk_cfg80211_remain_on_channel (
 int
 mtk_cfg80211_cancel_remain_on_channel (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     u64 cookie
     );
 
@@ -226,11 +277,17 @@ mtk_cfg80211_cancel_remain_on_channel (
 int
 mtk_cfg80211_mgmt_tx (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     struct ieee80211_channel *channel,
     bool offscan,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
     enum nl80211_channel_type channel_type,
     bool channel_type_valid,
+#endif
     unsigned int wait,
     const u8 *buf,
     size_t len,
@@ -243,7 +300,11 @@ mtk_cfg80211_mgmt_tx (
 int
 mtk_cfg80211_mgmt_tx_cancel_wait (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     u64 cookie
     );
 

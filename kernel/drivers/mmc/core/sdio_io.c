@@ -15,9 +15,6 @@
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/sdio_func.h>
 
-#include <linux/sched.h>
-#include <asm/div64.h>
-
 #include "sdio_ops.h"
 
 /**
@@ -27,14 +24,12 @@
  *	Claim a bus for a set of operations. The SDIO function given
  *	is used to figure out which bus is relevant.
  */
-static unsigned long long dt_claim_host;
 void sdio_claim_host(struct sdio_func *func)
 {
 	BUG_ON(!func);
 	BUG_ON(!func->card);
 
 	mmc_claim_host(func->card->host);
-	dt_claim_host = sched_clock();
 }
 EXPORT_SYMBOL_GPL(sdio_claim_host);
 
@@ -47,17 +42,8 @@ EXPORT_SYMBOL_GPL(sdio_claim_host);
  */
 void sdio_release_host(struct sdio_func *func)
 {
-	unsigned long long dt;
 	BUG_ON(!func);
 	BUG_ON(!func->card);
-
-	dt = sched_clock();
-	dt -= dt_claim_host;
-	do_div(dt,1000000L);
-	if (dt>10000) { // >10s
-		printk(KERN_ERR"SDIO Too long for keeping SDIO host : %llu\n",dt);
-		WARN_ON(1);
-	}
 
 	mmc_release_host(func->card->host);
 }

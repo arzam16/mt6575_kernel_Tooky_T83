@@ -1,38 +1,3 @@
-/* Copyright Statement:
- *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
- */
-/* MediaTek Inc. (C) 2010. All rights reserved.
- *
- * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
- * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
- */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -53,6 +18,18 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 #include "kd_camera_hw.h"
+
+//<2014/05/16-Yuting Shih-jessicatseng. [Hawk40] Integrate flashlight LED from JB.
+#if defined( ARIMA_PROJECT_HAWK40 )
+#include <linux/ctype.h>
+#include <linux/i2c.h>
+#endif /* End.. (ARIMA_PROJECT_HAWK40) */
+
+#if defined( ARIMA_PROJECT_HAWK40 )
+extern struct i2c_client *flashlight_i2c_client;
+#endif /* End.. (ARIMA_PROJECT_HAWK40) */
+//>2014/05/16-Yuting Shih-jessicatseng.
+
 /******************************************************************************
  * Definition
 ******************************************************************************/
@@ -130,7 +107,8 @@ struct strobe_data
 ******************************************************************************/
 static struct work_struct g_tExpEndWorkQ;   /* --- Work queue ---*/
 static struct work_struct g_tTimeOutWorkQ;  /* --- Work queue ---*/
-static GPT_CONFIG strobeGPTConfig;          /*cotta : Interrupt Config, modified for high current solution */
+static GPT_CONFIG g_strobeGPTConfig;          /*cotta : Interrupt Config, modified for high current solution */
+ 
 
 #if 0
 static struct class *strobe_class = NULL;
@@ -139,7 +117,9 @@ static dev_t strobe_devno;
 static struct cdev strobe_cdev;
 #endif
 
-static struct strobe_data strobe_private;
+/* static struct strobe_data strobe_private;*/
+
+static DEFINE_SPINLOCK(g_strobeSMPLock); /* cotta-- SMP proection */
 
 static u32 strobe_Res = 0;
 static u32 strobe_Timeus = 0;
@@ -161,20 +141,44 @@ static MUINT32 g_CaptureDelayFrame = 0;                     /* cotta-- added  fo
      therefore, level 13-32 must use carafully and with strobe protection mechanism
      on the other hand, level 1-12 can use freely 
 */
-static const MUINT32 strobeLevelLUT[32] = {1,2,3,4,5,6,7,8,9,10,11,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12};  
+static const MUINT32 strobeLevelLUT[32] = {1,2,3,4,5,6,7,8,9,10,11,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12}; 
 
 /*****************************************************************************
 Functions
 *****************************************************************************/
-#if 0
-#define GPIO_CAMERA_FLASH_MODE GPIO95
-#define GPIO_CAMERA_FLASH_MODE_M_GPIO  GPIO_MODE_00
-    /*CAMERA-FLASH-T/F
-           H:flash mode
-           L:torch mode*/
-#define GPIO_CAMERA_FLASH_EN GPIO46
-#define GPIO_CAMERA_FLASH_EN_M_GPIO  GPIO_MODE_00
-    /*CAMERA-FLASH-EN */
+#if defined( ARIMA_PROJECT_HAWK40 ) //#if 1
+//<2014/05/16-Yuting Shih-jessicatseng. [Hawk40] modify strobe and torch mode are controlled by I2C from JB.
+/****************************************************
+** CAMERA-FLASH-T/F (TX/TORCH pin)
+**    H:flash mode
+**    L:torch mode
+*****************************************************/
+//#if defined( GPIO_CAMERA_FLASH_MODE_PIN )
+//  #define   GPIO_CAMERA_FLASH_MODE          (GPIO_CAMERA_FLASH_MODE_PIN)
+//#else
+  #define   GPIO_CAMERA_FLASH_MODE          (GPIO229)
+//#endif
+
+//#if defined( GPIO_CAMERA_FLASH_MODE_PIN_M_GPIO )
+//  #define   GPIO_CAMERA_FLASH_MODE_M_GPIO   (GPIO_CAMERA_FLASH_MODE_PIN_M_GPIO)
+//#else
+  #define   GPIO_CAMERA_FLASH_MODE_M_GPIO   (GPIO_MODE_00)
+//#endif
+
+/****************************************************
+** CAMERA-FLASH-EN (STROBE pin)
+*****************************************************/
+//#if defined( GPIO_CAMERA_FLASH_EN_PIN )
+//  #define   GPIO_CAMERA_FLASH_EN            (GPIO_CAMERA_FLASH_EN_PIN)
+//#else
+  #define   GPIO_CAMERA_FLASH_EN            (GPIO230)
+//#endif
+
+//#if defined( GPIO_CAMERA_FLASH_EN_PIN_M_GPIO )
+//  #define   GPIO_CAMERA_FLASH_EN_M_GPIO     (GPIO_CAMERA_FLASH_EN_PIN_M_GPIO)
+//#else
+  #define   GPIO_CAMERA_FLASH_EN_M_GPIO     (GPIO_MODE_00)
+//#endif
 
 
 ssize_t gpio_FL_Init(void)
@@ -184,7 +188,7 @@ ssize_t gpio_FL_Init(void)
     if(mt_set_gpio_dir(GPIO_CAMERA_FLASH_MODE,GPIO_DIR_OUT)){PK_DBG("[constant_flashlight] set gpio dir failed!! \n");}
     if(mt_set_gpio_out(GPIO_CAMERA_FLASH_MODE,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
     /*Init. to disable*/
-    if(mt_set_gpio_mode(GPIO_CAMERA_FLASH_EN,GPIO_CAMERA_FLASH_MODE_M_GPIO)){PK_DBG("[constant_flashlight] set gpio mode failed!! \n");}
+    if(mt_set_gpio_mode(GPIO_CAMERA_FLASH_EN,GPIO_CAMERA_FLASH_EN_M_GPIO)){PK_DBG("[constant_flashlight] set gpio mode failed!! \n");}
     if(mt_set_gpio_dir(GPIO_CAMERA_FLASH_EN,GPIO_DIR_OUT)){PK_DBG("[constant_flashlight] set gpio dir failed!! \n");}
     if(mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
     return 0;
@@ -193,7 +197,7 @@ ssize_t gpio_FL_Init(void)
 ssize_t gpio_FL_Uninit(void)
 {
     /*Uninit. to disable*/
-    if(mt_set_gpio_mode(GPIO_CAMERA_FLASH_EN,GPIO_CAMERA_FLASH_MODE_M_GPIO)){PK_DBG("[constant_flashlight] set gpio mode failed!! \n");}
+    if(mt_set_gpio_mode(GPIO_CAMERA_FLASH_EN,GPIO_CAMERA_FLASH_EN_M_GPIO)){PK_DBG("[constant_flashlight] set gpio mode failed!! \n");}
     if(mt_set_gpio_dir(GPIO_CAMERA_FLASH_EN,GPIO_DIR_OUT)){PK_DBG("[constant_flashlight] set gpio dir failed!! \n");}
     if(mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
     return 0;
@@ -201,15 +205,73 @@ ssize_t gpio_FL_Uninit(void)
 
 ssize_t gpio_FL_Enable(void)
 {
-    /*Enable*/
-    if(mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ONE)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
+	u8 databuf[2];
+	int ret = 0;	
+
+    PK_DBG("[constant_flashlight] gpio_FL_Enable strobe_width=%d\n",strobe_width);	
+	
+    if(KD_STROBE_HIGH_CURRENT_WIDTH==strobe_width) /* switch to flash mode */
+    {
+    		//if(mt_set_gpio_out(GPIO_CAMERA_FLASH_MODE,GPIO_OUT_ONE))
+    		//{
+				//		PK_DBG("[constant_flashlight] set gpio flash_mode failed!! \n");
+    		//}
+		
+    	databuf[0] = 0x0A;
+    	databuf[1] = 0x03;
+    	ret = i2c_master_send(flashlight_i2c_client, (const char*)&databuf, 2);
+
+    	//mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ONE);
+    }
+    else /* switch to torch mode */
+    {
+    	//if(mt_set_gpio_out(GPIO_CAMERA_FLASH_MODE,GPIO_OUT_ZERO))
+    	//{
+			//		PK_DBG("[constant_flashlight] set gpio flash_mode failed!! \n");
+    	//}
+
+//<2012/10/29-15870-jessicatseng, [Hawk40] Modify flashlight current 937.5mA and torch current 93.74mA
+    	databuf[0] = 0x09;
+    	databuf[1] = 0x19;
+    	i2c_master_send(flashlight_i2c_client, (const char*)&databuf, 2);
+//>2012/10/29-15870-jessicatseng
+
+//<2012/12/07-18438-jessicatseng, [Hawk40] Turn off torch mode in power-on sequence
+    	databuf[0] = 0x0A;
+    	databuf[1] = 0x12;//0x02;
+    	ret = i2c_master_send(flashlight_i2c_client, (const char*)&databuf, 2);
+
+    	mt_set_gpio_mode(GPIO_CAMERA_FLASH_MODE,GPIO_CAMERA_FLASH_MODE_M_GPIO);
+    	mt_set_gpio_dir(GPIO_CAMERA_FLASH_MODE,GPIO_DIR_OUT);
+    	mt_set_gpio_out(GPIO_CAMERA_FLASH_MODE,GPIO_OUT_ONE);
+//>2012/12/07-18438-jessicatseng
+    }
+
+ 	/*Enable*/
+    //if(mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ONE)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
     return 0;
 }
 
 ssize_t gpio_FL_Disable(void)
 {
+	u8 databuf[2];
+	int ret = 0;	
+
+    PK_DBG("[gpio_flash] gpio_FL_Disable\n");	
+
+//<2013/01/31-ClarkLin-remove I2C command to reduce the camera switch time
+    //databuf[0] = 0x0A;
+    //databuf[1] = 0x00;
+    //ret = i2c_master_send(flashlight_i2c_client, (const char*)&databuf, 2);
+//>2013/01/31-ClarkLin
+
+//<2012/12/07-18438-jessicatseng, [Hawk40] Turn off torch mode in power-on sequence
+    mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ZERO);
+    mt_set_gpio_out(GPIO_CAMERA_FLASH_MODE,GPIO_OUT_ZERO);
+//>2012/12/07-18438-jessicatseng
+
     /*Enable*/
-    if(mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
+    //if(mt_set_gpio_out(GPIO_CAMERA_FLASH_EN,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!! \n");}
     return 0;
 }
 
@@ -220,14 +282,28 @@ ssize_t gpio_FL_dim_duty(kal_uint8 duty)
     return 0;
 }
 
+int FL_HighCurrent_Setting(void)  /*  high current setting fuction*/
+{    
+	u8 databuf[2];
+
+	/* set strobe current level */
+    databuf[0] = 0x09;
+//<2012/10/29-15870-jessicatseng, [Hawk40] Modify flashlight current 937.5mA and torch current 93.74mA
+    databuf[1] = 0x19;//0x03;
+//>2012/10/29-15870-jessicatseng
+    i2c_master_send(flashlight_i2c_client, (const char*)&databuf, 2);
+
+    return 0;
+}
+
 /* abstract interface */
-#define FL_Init gpio_FL_Init
-#define FL_Uninit gpio_FL_Uninit
-#define FL_Enable gpio_FL_Enable
-#define FL_Disable gpio_FL_Disable
+#define FL_Init     gpio_FL_Init
+#define FL_Uninit   gpio_FL_Uninit
+#define FL_Enable   gpio_FL_Enable
+#define FL_Disable  gpio_FL_Disable
 #define FL_dim_duty gpio_FL_dim_duty
 
-#elif 1
+#elif 0
 extern void hwBacklightFlashlightTuning(kal_uint32 duty, kal_uint32 mode);
 extern void hwBacklightFlashlightTurnOn(void);
 extern void hwBacklightFlashlightTurnOff(void);
@@ -240,16 +316,20 @@ extern void upmu_flash_dim_duty(kal_uint32 val);
 /*  cotta-- modified for high current solution */
 int FL_Init(void)   /* Low current setting fuction*/
 {
-    upmu_flash_dim_duty(12);
+    upmu_flash_dim_duty(12); 
+    
+    spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
     
     g_WDTTimeout_ms = FLASH_LIGHT_WDT_DISABLE;  /* disable WDT */
-  
+    
+    spin_unlock(&g_strobeSMPLock);
+    
     PK_DBG(" Low current mode\n");
     return 0;
 }
 
 int FL_Uninit(void)
-{
+{    
     return 0;
 }
 
@@ -282,9 +362,12 @@ int FL_HighCurrent_Setting(void)  /*  high current setting fuction*/
 {    
     upmu_flash_step_sel(7);      /* max current */
     upmu_flash_dim_duty(0x1F);   /* max duty */   
-
+    spin_lock(&g_strobeSMPLock);        /* cotta-- SMP proection */
+    
     g_WDTTimeout_ms = FLASH_LIGHT_WDT_TIMEOUT_MS;   /* enable WDT */
     
+    spin_unlock(&g_strobeSMPLock);
+
     PK_DBG(" High current mode\n");
 
     /* upmu_flash_mode_select(1);    register mode */
@@ -319,7 +402,6 @@ unsigned int u4MS;
 /*****************************************************************************
 User interface
 *****************************************************************************/
-
 static void strobe_xgptIsr(UINT16 a_input)
 {
 	schedule_work(&g_tTimeOutWorkQ);
@@ -327,18 +409,22 @@ static void strobe_xgptIsr(UINT16 a_input)
 
 /* cotta : modified to GPT usage */
 static int strobe_WDTConfig(void)
-{  
+{
+    spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+    
     /* --- Config Interrupt --- */
-    strobeGPTConfig.num         = GPT3;             /* GPT3 is assigned to strobe */
-    strobeGPTConfig.mode        = GPT_ONE_SHOT;     /* trigger ones responed ones */
-    strobeGPTConfig.clkSrc      = GPT_CLK_SRC_RTC;  /* clock source 32K */
-    strobeGPTConfig.clkDiv      = GPT_CLK_DIV_11;   /* divided to 3.2k */
-    strobeGPTConfig.bIrqEnable  = TRUE;             /* enable interrupt */
-    strobeGPTConfig.u4CompareL  = ((g_WDTTimeout_ms * 3200) + 500) / 1000; /* 960 -> 300ms , 3200 -> 1000ms */
-    strobeGPTConfig.u4CompareH  = 0;
+    g_strobeGPTConfig.num         = GPT3;             /* GPT3 is assigned to strobe */
+    g_strobeGPTConfig.mode        = GPT_ONE_SHOT;     /* trigger ones responed ones */
+    g_strobeGPTConfig.clkSrc      = GPT_CLK_SRC_RTC;  /* clock source 32K */
+    g_strobeGPTConfig.clkDiv      = GPT_CLK_DIV_11;   /* divided to 3.2k */
+    g_strobeGPTConfig.bIrqEnable  = TRUE;             /* enable interrupt */
+    g_strobeGPTConfig.u4CompareL  = ((g_WDTTimeout_ms * 3200) + 500) / 1000; /* 960 -> 300ms , 3200 -> 1000ms */
+    g_strobeGPTConfig.u4CompareH  = 0;
 
-    /*
-    if (GPT_IsStart(strobeGPTConfig.num))
+    spin_unlock(&g_strobeSMPLock);
+    
+     /*
+    if (GPT_IsStart(g_strobeGPTConfig.num))
     {
         PK_ERR("GPT_ISR is busy now\n");
         return -EBUSY;
@@ -347,15 +433,15 @@ static int strobe_WDTConfig(void)
 
     GPT_Reset(GPT3);
     
-    if(GPT_Config(strobeGPTConfig) == FALSE)
+    if(GPT_Config(g_strobeGPTConfig) == FALSE)
     {
         PK_ERR("GPT_ISR Config Fail\n");
         return -EPERM;
     }   
     
-    GPT_Init(strobeGPTConfig.num, strobe_xgptIsr);      
+    GPT_Init(g_strobeGPTConfig.num, strobe_xgptIsr);      
 
-    PK_DBG("[GPT_ISR Config OK] strobeGPTConfig.u4CompareL = %u, WDT_timeout = %d\n",strobeGPTConfig.u4CompareL,FLASH_LIGHT_WDT_TIMEOUT_MS);
+    PK_DBG("[GPT_ISR Config OK] g_strobeGPTConfig.u4CompareL = %u, WDT_timeout = %d\n",g_strobeGPTConfig.u4CompareL,FLASH_LIGHT_WDT_TIMEOUT_MS);
     
 #if 0
     XGPT_IsStart(g_tStrobeXGPTConfig.num);
@@ -369,15 +455,16 @@ static int strobe_WDTConfig(void)
 
 static void strobe_WDTStart(void)
 {
-    GPT_Start(strobeGPTConfig.num);
+    GPT_Start(g_strobeGPTConfig.num);
     PK_DBG(" WDT start\n");
 }
 
 static void strobe_WDTStop(void)
 {
-    GPT_Stop(strobeGPTConfig.num);
+    GPT_Stop(g_strobeGPTConfig.num);
     PK_DBG(" WDT stop\n");
 }
+
 
 static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
 {
@@ -388,11 +475,11 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
     PK_DBG(" start: %u, %u, %d, %d\n",cmd,arg,strobe_width,g_strobe_On);
 
     /* when ON state , only disable command is permitted */
-    if( (TRUE == g_strobe_On) && !((FLASHLIGHTIOC_T_ENABLE == cmd) && (0 == arg)) )
+    if((TRUE == g_strobe_On) && !((FLASHLIGHTIOC_T_ENABLE == cmd) && (0 == arg)))
     {
         PK_DBG(" is already ON OR check parameters!\n");
         
-        /* goto strobe_ioctl_error */
+        /* goto strobe_ioctl_error; */
         return i4RetValue;
     }
 
@@ -400,15 +487,19 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
     {
     	case FLASHLIGHTIOC_T_ENABLE :
             if (arg && strobe_width)
-            {
+            {                
                 if( (FLASHLIGHTDRV_STATE_PREVIEW == strobe_eState) || \
                     (FLASHLIGHTDRV_STATE_STILL == strobe_eState && KD_STROBE_HIGH_CURRENT_WIDTH != strobe_width) )
-                {
+                {                
                     /* turn on strobe */
                     FL_Enable();
+                    
+                    spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
 
                     g_strobe_On = TRUE;
 
+                    spin_unlock(&g_strobeSMPLock);
+                    
                     do_gettimeofday(&now);  /* cotta--log */
                     PK_DBG(" flashlight_IOCTL_Enable: %lu\n",now.tv_sec * 1000000 + now.tv_usec);
                 }
@@ -418,17 +509,21 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
                 } 
             }
             else
-            {               
+            {                      
                 if(FL_Disable())
                 {
                     PK_ERR(" FL_Disable fail!\n");
                     goto strobe_ioctl_error;
                 }
 
-                g_strobe_On = FALSE;
+                spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+                
+                g_strobe_On = FALSE;                
+
+                spin_unlock(&g_strobeSMPLock);
 
                 if (g_WDTTimeout_ms != FLASH_LIGHT_WDT_DISABLE)
-                {
+                {                    
                     strobe_WDTStop();   /* disable strobe watchDog timer */ 
                     FL_Init();  /* confirm everytime start from low current mode */
                 }                
@@ -438,16 +533,19 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
             }
     		break;
         case FLASHLIGHTIOC_T_LEVEL:
-            PK_DBG(" user level:%u \n",(int)arg);
+            PK_DBG(" user level:%u \n",arg);
 
             if (KD_STROBE_HIGH_CURRENT_WIDTH == arg)   /* high current mode */
-            {                
-                strobe_width = KD_STROBE_HIGH_CURRENT_WIDTH;   /* set to high current mode */
+            {
+                spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+                
+                strobe_width = KD_STROBE_HIGH_CURRENT_WIDTH;
 
+                spin_unlock(&g_strobeSMPLock);
                 FL_HighCurrent_Setting();                
             }
             else    /* low current mode */
-            { 
+            {            
                 /* cotta-- added for level mapping */
 
                 if(arg > 32)
@@ -464,7 +562,11 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
 
                 /* --cotta */
             
-                strobe_width = arg;     
+                spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+                
+                strobe_width = arg;                
+
+                spin_unlock(&g_strobeSMPLock);
 
                 if (arg > 0)
                 {
@@ -483,15 +585,27 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
             }
             break;
         case FLASHLIGHTIOC_T_FLASHTIME:
+            spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+            
             strobe_Timeus = (u32)arg;
+            
+            spin_unlock(&g_strobeSMPLock);
             PK_DBG(" strobe_Timeus:%u \n",strobe_Timeus);
             break;
         case FLASHLIGHTIOC_T_STATE:
+            spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+             
             strobe_eState = (eFlashlightState)arg;
+
+            spin_unlock(&g_strobeSMPLock);
             PK_DBG(" strobe_state:%u\n",arg);
             break;
         case FLASHLIGHTIOC_G_FLASHTYPE:
+            spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+
             iFlashType = FLASHLIGHT_LED_CONSTANT;
+
+            spin_unlock(&g_strobeSMPLock);
             if(copy_to_user((void __user *) arg , (void*)&iFlashType , _IOC_SIZE(cmd)))
             {
                 PK_DBG(" ioctl copy to user failed\n");
@@ -500,14 +614,16 @@ static int constant_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
             break;
         case FLASHLIGHTIOC_T_DELAY : /* cotta-- added for auto-set sensor capture delay mechanism*/
             if(arg >= 0)
-            { 
-                sensorCaptureDelay = arg;
+            {                
+                spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+                
+                sensorCaptureDelay = arg;                
                 g_CaptureDelayFrame = sensorCaptureDelay;
-              
+
+                spin_unlock(&g_strobeSMPLock);
                 PK_DBG("capture delay = %u, count down value = %u\n",sensorCaptureDelay,g_CaptureDelayFrame);
             }
-            break;
-            
+            break;                  
     	default :
     		PK_DBG(" No such command \n");
     		i4RetValue = -EPERM;
@@ -529,11 +645,13 @@ static void strobe_expEndWork(struct work_struct *work)
     constant_flashlight_ioctl(FLASHLIGHTIOC_T_ENABLE, 0);
 }
 
+
 static void strobe_timeOutWork(struct work_struct *work)
 {
     PK_DBG(" Force OFF LED\n");
     constant_flashlight_ioctl(FLASHLIGHTIOC_T_ENABLE, 0);
 }
+
 
 static int constant_flashlight_open(void *pArg)
 {
@@ -555,12 +673,16 @@ static int constant_flashlight_open(void *pArg)
         /* --- WorkQueue --- */
         INIT_WORK(&g_tExpEndWorkQ,strobe_expEndWork);
         INIT_WORK(&g_tTimeOutWorkQ,strobe_timeOutWork);
-       
-        g_strobe_On = FALSE;    /* LED On Status */       
+
+        spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+        
+        g_strobe_On = FALSE;
+        
+        spin_unlock(&g_strobeSMPLock);
     }
-
-    spin_lock_irq(&strobe_private.lock);
-
+    
+    spin_lock_irq(&g_strobeSMPLock);
+    
     if(strobe_Res)
     {
         PK_ERR(" busy!\n");
@@ -569,9 +691,9 @@ static int constant_flashlight_open(void *pArg)
     else
     {
         strobe_Res += 1;
-    }    
+    }
 
-    spin_unlock_irq(&strobe_private.lock);
+    spin_unlock_irq(&g_strobeSMPLock);
 
     PK_DBG(" Done\n");
 
@@ -579,13 +701,14 @@ static int constant_flashlight_open(void *pArg)
 
 }
 
+
 static int constant_flashlight_release(void *pArg)
-{
+{    
     PK_DBG(" start\n");
 
     if (strobe_Res)
     {
-        spin_lock_irq(&strobe_private.lock);
+        spin_lock_irq(&g_strobeSMPLock);
 
         strobe_Res = 0;
         strobe_Timeus = 0;
@@ -593,17 +716,17 @@ static int constant_flashlight_release(void *pArg)
         /* LED On Status */
         g_strobe_On = FALSE;
 
-        spin_unlock_irq(&strobe_private.lock);
+        spin_unlock_irq(&g_strobeSMPLock);
 
     	/* uninit HW here if necessary */
         if(FL_dim_duty(0))
         {
             PK_ERR(" FL_dim_duty fail!\n");
-        }
-
+        }        
+        
     	FL_Uninit();
-    	
-        GPT_Stop(strobeGPTConfig.num);
+
+        GPT_Stop(g_strobeGPTConfig.num);       
     }
 
     PK_DBG(" Done\n");
@@ -620,9 +743,10 @@ FLASHLIGHT_FUNCTION_STRUCT	constantFlashlightFunc=
 	constant_flashlight_ioctl
 };
 
+
 MUINT32 constantFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc)
 { 
-    if (pfFunc!=NULL)
+    if (pfFunc != NULL)
     {
         *pfFunc = &constantFlashlightFunc;
     }
@@ -630,9 +754,10 @@ MUINT32 constantFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc)
 }
 
 
+
 /* LED flash control for high current capture mode*/
 ssize_t strobe_VDIrq(void)
-{
+{    
     struct timeval now; /* cotta--log */
     
     if ((strobe_width == KD_STROBE_HIGH_CURRENT_WIDTH) && (strobe_eState == FLASHLIGHTDRV_STATE_STILL))
@@ -644,7 +769,11 @@ ssize_t strobe_VDIrq(void)
             /* confirm WDT config value is correct */
             if(g_WDTTimeout_ms == FLASH_LIGHT_WDT_DISABLE)
             {
-                g_WDTTimeout_ms = FLASH_LIGHT_WDT_TIMEOUT_MS;   /* enable WDT */  
+                spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+                
+                g_WDTTimeout_ms = FLASH_LIGHT_WDT_TIMEOUT_MS;   /* enable WDT */             
+
+                spin_unlock(&g_strobeSMPLock); 
             }
             
             /* enable strobe watchDog timer */
@@ -661,20 +790,29 @@ ssize_t strobe_VDIrq(void)
             do_gettimeofday(&now);  /* cotta--log */
             PK_DBG(" strobe_VDIrq_Enable: %lu\n",now.tv_sec * 1000000 + now.tv_usec);
 
+            spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+
             g_strobe_On = TRUE;
 
             /* cotta-- modified for auto-set sensor capture delay mechanism*/
-            g_CaptureDelayFrame = sensorCaptureDelay;                      
+            g_CaptureDelayFrame = sensorCaptureDelay;                 
             
-            strobe_eState = FLASHLIGHTDRV_STATE_PREVIEW;     
-       
+            strobe_eState = FLASHLIGHTDRV_STATE_PREVIEW;            
+            
+            spin_unlock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+
             PK_DBG(" g_CaptureDelayFrame : %u\n",g_CaptureDelayFrame);
         }
         else
-        {           
-            --g_CaptureDelayFrame;    
+        {
+            spin_lock(&g_strobeSMPLock);    /* cotta-- SMP proection */
+            
+            --g_CaptureDelayFrame;           
+
+            spin_unlock(&g_strobeSMPLock);    /* cotta-- SMP proection */
         }
     }
+    
     return 0;
 }
 

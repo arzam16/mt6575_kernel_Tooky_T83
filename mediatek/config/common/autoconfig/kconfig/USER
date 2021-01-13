@@ -8,7 +8,28 @@
 # CONFIG_MTPROF_APPLAUNCH is not set
 # CONFIG_MTPROF_IRQ_DURATION is not set
 # CONFIG_MTPROF_KMEM is not set
+
+# CONFIG_FIQ_DEBUGGER is not set
+# CONFIG_FIQ_DEBUGGER_CONSOLE is not set
+# CONFIG_FIQ_DEBUGGER_CONSOLE_DEFAULT_ENABLE is not set
+
+# MT scheduling enhancement
 # CONFIG_MT_LOAD_BALANCE_PROFILER is not set
+# CONFIG_MT_SCHED_DEBUG_ONLY is not set
+
+# MT RT scheduling enhancement for big.little
+# CONFIG_MT_RT_SCHED_LOG is not set
+# CONFIG_MT_RT_SCHED_NOTICE is not set
+# CONFIG_MT_RT_SCHED_INFO is not set
+# CONFIG_MT_RT_SCHED_DEBUG is not set
+
+# CONFIG_DEBUG_PAGEALLOC is not set
+# CONFIG_MTK_MEMCFG is not set
+# CONFIG_MTK_ION_DEBUG is not set
+# CONFIG_MTK_PAGERECORDER is not set
+# CONFIG_MT_PRIO_TRACER is not set
+# CONFIG_ZRAM_DEBUG is not set
+
 
 #
 # kdb/kgdb
@@ -29,8 +50,9 @@ CONFIG_HAVE_ARCH_KGDB=y
 #
 # Kernel .config support
 #
-CONFIG_IKCONFIG=y
+# CONFIG_IKCONFIG is not set
 
+CONFIG_PANIC_TIMEOUT=1
 
 #
 # OProfile
@@ -43,7 +65,8 @@ CONFIG_IKCONFIG=y
 # CONFIG_DEVMEM is not set
 # CONFIG_DEVKMEM is not set
 
-# CONFIG_CMDLINE="console=ttyMT3,921600n1 loglevel=6"
+#CONFIG_CMDLINE="console=ttyMT3,921600n1 vmalloc=520M slub_max_order=0 slub_debug=0 no_console_suspend resume=swap:/dev/block/mmcblk0p2:0x8000"
+CONFIG_CMDLINE="console=ttyMT3,921600n1 vmalloc=520M slub_max_order=0 slub_debug=0"
 # CONFIG_CFG80211_DEBUGFS is not set
 # CONFIG_LIB80211_DEBUG is not set
 # CONFIG_DM_DEBUG is not set
@@ -52,6 +75,7 @@ CONFIG_IKCONFIG=y
 # CONFIG_USB_MTK_DEBUG_FS is not set
 # CONFIG_USB_MTK_DEBUG is not set
 # CONFIG_JBD_DEBUG is not set
+# CONFIG_EXT4_DEBUG is not set
 
 #
 # Kernel hacking
@@ -66,6 +90,7 @@ CONFIG_IKCONFIG=y
 # CONFIG_GENERIC_TRACER is not set
 # CONFIG_TRACING is not set
 # CONFIG_FTRACE is not set
+# CONFIG_ENABLE_DEFAULT_TRACERS is not set
 # CONFIG_TRACEPOINTS is not set
 # CONFIG_DEBUG_MEMORY_INIT is not set
 
@@ -73,9 +98,9 @@ CONFIG_IKCONFIG=y
 # CONFIG_NAMESPACES is not set
 # CONFIG_BLK_DEV_RAM is not set
 # CONFIG_KALLSYMS_EXTRA_PASS is not set
-# CONFIG_KALLSYMS is not set
 # CONFIG_KALLSYMS_ALL is not set
 
+# CONFIG_MTK_EXTMEM is not set
 # Performance Monitor
 # CONFIG_PREEMPT_MONITOR is not set
 # CONFIG_ISR_MONITOR is not set
@@ -90,11 +115,18 @@ CONFIG_IKCONFIG=y
 # CONFIG_MT_CHRDEV_REG is not set
 # CONFIG_MT_ENG_BUILD is not set
 
+#
+# Kernel Net Logging
+#
+# CONFIG_MTK_NET_LOGGING is not set
 # Kernel Performance Events And Counters
 # CONFIG_PERF_EVENTS is not set
 # CONFIG_HW_PERF_EVENTS is not set
+# Kernel memory debugging
 # CONFIG_SLUB_DEBUG is not set
 # CONFIG_SLUB_DEBUG_ON is not set
+# CONFIG_DEBUG_RODATA is not set
+# CONFIG_DEBUG_RODATA_TEST is not set
 
 
 # Kernel Features
@@ -102,8 +134,28 @@ CONFIG_IKCONFIG=y
 
 
 # Prove Locking
+# CONFIG_DEBUG_SPINLOCK is not set
 # CONFIG_DEBUG_MUTEXES is not set
 # CONFIG_DEBUG_LOCK_ALLOC is not set
 # CONFIG_PROVE_LOCKING is not set
 # CONFIG_LOCKDEP is not set
 # CONFIG_DEBUG_LOCKDEP is not set
+# MET
+# CONFIG_MTK_MET is not set
+# CONFIG_MTK_MET_PLF is not set
+
+# AEE
+# CONFIG_MTK_AEE_MRDUMP is not set
+
+# WQ
+# CONFIG_MTK_WQ_DEBUG is not set
+# storage pid logger
+# CONFIG_MTK_STORAGE_PID_LOGGER is not set
+
+# CONFIG_GATOR_DRIVER is not set
+
+# MMP
+# CONFIG_MMPROFILE is not set
+
+# MTK printk controller
+# CONFIG_MT_PRINTK_UART_CONSOLE is not set

@@ -47,6 +47,7 @@ struct logger_entry {
 	__s32		tid;		/* generating process's tid */
 	__s32		sec;		/* seconds since Epoch */
 	__s32		nsec;		/* nanoseconds */
+    __s32       tz;         /* timezone*/
 	uid_t		euid;		/* effective UID of logger */
 	char		msg[0];		/* the entry's payload */
 };
@@ -75,11 +76,17 @@ struct logger_entry {
 #else
 /* mingjian, 20101208: define buffer size based on different products {*/
 #ifndef __MAIN_BUF_SIZE
-#define __MAIN_BUF_SIZE 256*1024
+//<2014/05/06-samhuang, Enlarged the logcat ring buffer per customer's request
+//#define __MAIN_BUF_SIZE 256*1024
+#define __MAIN_BUF_SIZE 1024*1024
+//>2014/05/06-samhaung
 #endif
 
 #ifndef __EVENTS_BUF_SIZE
-#define __EVENTS_BUF_SIZE 256*1024 
+//<2014/05/06-samhuang, Enlarged the logcat ring buffer per customer's request
+//#define __EVENTS_BUF_SIZE 256*1024
+#define __EVENTS_BUF_SIZE 512*1024
+//>2014/05/06-samhaung
 #endif
 
 #ifndef __RADIO_BUF_SIZE
@@ -105,5 +112,6 @@ struct logger_entry {
 #define LOGGER_FLUSH_LOG		_IO(__LOGGERIO, 4) /* flush log */
 #define LOGGER_GET_VERSION		_IO(__LOGGERIO, 5) /* abi version */
 #define LOGGER_SET_VERSION		_IO(__LOGGERIO, 6) /* abi version */
-
+#define LOGGER_SET_INTERVAL     _IO(__LOGGERIO, 101)    /* wake up interval */
+#define LOGGER_SET_TIMER        _IO(__LOGGERIO, 102)    /* trigger timer*/
 #endif /* _LINUX_LOGGER_H */

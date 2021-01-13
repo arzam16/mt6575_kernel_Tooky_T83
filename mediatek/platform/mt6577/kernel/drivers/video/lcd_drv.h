@@ -1,4 +1,3 @@
-
 #ifndef __LCD_DRV_H__
 #define __LCD_DRV_H__
 
@@ -78,6 +77,16 @@ typedef enum
     LCD_IF_PARALLEL_CLK_DIV_4,
 } LCD_IF_PARALLEL_CLK_DIV;
 
+/*
+typedef enum
+{
+    LCD_IF_SERIAL_CLK_DIV_1 = 0,
+    LCD_IF_SERIAL_CLK_DIV_2,
+    LCD_IF_SERIAL_CLK_DIV_4,
+    LCD_IF_SERIAL_CLK_DIV_8,
+    LCD_IF_SERIAL_CLK_DIV_16,
+} LCD_IF_SERIAL_CLK_DIV;
+*/
 
 typedef enum
 {
@@ -114,6 +123,13 @@ typedef enum
 	LCD_IF_WIDTH_32_BITS = 5,
 } LCD_IF_WIDTH;
 
+/*
+typedef enum
+{
+    LCD_CMDQ_0 = 0,
+    LCD_CMDQ_1 = 1,
+} LCD_CMDQ_ID;
+*/
 
 typedef enum
 {
@@ -283,6 +299,10 @@ LCD_STATUS LCD_PowerOff(void);
 LCD_STATUS LCD_M4UPowerOn(void);
 LCD_STATUS LCD_M4UPowerOff(void);
 LCD_STATUS LCD_WaitForNotBusy(void);
+LCD_STATUS LCD_WaitForFinish(void);
+
+
+
 
 LCD_STATUS LCD_EnableInterrupt(DISP_INTERRUPT_EVENTS eventID);
 LCD_STATUS LCD_SetInterruptCallback(void (*pCB)(DISP_INTERRUPT_EVENTS eventID));
@@ -362,6 +382,7 @@ LCD_STATUS LCD_LayerEnableByteSwap(LCD_LAYER_ID id, BOOL enable);
 LCD_STATUS LCD_LayerSetRotation(LCD_LAYER_ID id, LCD_LAYER_ROTATION rotation);
 LCD_STATUS LCD_LayerSetAlphaBlending(LCD_LAYER_ID id, BOOL enable, UINT8 alpha);
 LCD_STATUS LCD_LayerSetSourceColorKey(LCD_LAYER_ID id, BOOL enable, UINT32 colorKey);
+LCD_STATUS LCD_LayerSetByteSwap(LCD_LAYER_ID id, unsigned int swap);
 
 // HW Trigger Configurations
 LCD_STATUS LCD_LayerSetTriggerMode(LCD_LAYER_ID id, LCD_LAYER_TRIGGER_MODE mode);

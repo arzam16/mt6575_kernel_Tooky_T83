@@ -24,10 +24,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * 03 15 2011 koli.lin
  * [ALPS00034474] [Need Patch] [Volunteer Patch]
@@ -13522,10 +13518,6 @@ UINT32 OV5642YUVGetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolut
     pSensorResolution->SensorPreviewWidth=IMAGE_SENSOR_PV_WIDTH - 2*OV5642_IMAGE_SENSOR_PV_STARTX;
     pSensorResolution->SensorPreviewHeight=IMAGE_SENSOR_PV_HEIGHT - 2*OV5642_IMAGE_SENSOR_PV_STARTY;
 
-    pSensorResolution->SensorFullWidth=pSensorResolution->SensorPreviewWidth;
-    pSensorResolution->SensorFullHeight=pSensorResolution->SensorPreviewHeight;    
-
-
     return ERROR_NONE;
 }   /* OV5642YUVGetResolution() */
 UINT32 OV5642YUVGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
@@ -13543,6 +13535,7 @@ UINT32 OV5642YUVGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     pSensorInfo->SensorWebCamCaptureFrameRate=15;
     pSensorInfo->SensorResetActiveHigh=FALSE;
     pSensorInfo->SensorResetDelayCount=5;
+//    pSensorInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_YUYV;
     pSensorInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_UYVY;
 	
     pSensorInfo->SensorClockPolarity=SENSOR_CLOCK_POLARITY_LOW; /*??? */
@@ -13552,30 +13545,6 @@ UINT32 OV5642YUVGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     pSensorInfo->SensorInterruptDelayLines = 1;
     pSensorInfo->SensroInterfaceType=SENSOR_INTERFACE_TYPE_PARALLEL;
 
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].ISOSupported=TRUE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].ISOSupported=TRUE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxWidth=CAM_SIZE_05M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxHeight=CAM_SIZE_1M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].BinningEnable=TRUE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxWidth=CAM_SIZE_05M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxHeight=CAM_SIZE_05M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].BinningEnable=TRUE;
 
     //pSensorInfo->CaptureDelayFrame = 1; 
     pSensorInfo->CaptureDelayFrame = 2; 
@@ -13593,7 +13562,7 @@ UINT32 OV5642YUVGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
         case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
+        //case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
             pSensorInfo->SensorClockFreq=26;
             pSensorInfo->SensorClockDividCount=	3;
             pSensorInfo->SensorClockRisingCount= 0;
@@ -13604,7 +13573,7 @@ UINT32 OV5642YUVGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
             pSensorInfo->SensorGrabStartY = OV5642_IMAGE_SENSOR_PV_STARTY;             
             break;
         case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
+        //case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
             pSensorInfo->SensorClockFreq=26;
             pSensorInfo->SensorClockDividCount=	3;
             pSensorInfo->SensorClockRisingCount= 0;
@@ -13640,16 +13609,13 @@ UINT32 OV5642YUVControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_W
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
         case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
-            SENSORDB("OV5642YUVControl MSDK_SCENARIO_ID_CAMERA_PREVIEW!\n");
+        //case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
             OV5642YUVPreview(pImageWindow, pSensorConfigData);
             break;
         case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
-            //OV5642YUVCapture(pImageWindow, pSensorConfigData);
-            SENSORDB("OV5642YUVControl MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG changed!\n");
-            OV5642YUVPreview(pImageWindow, pSensorConfigData);
-
+        //case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
+            OV5642YUVCapture(pImageWindow, pSensorConfigData);
+            break;
             //s_porting add
             //s_porting add
             //s_porting add

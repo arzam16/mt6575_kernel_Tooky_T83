@@ -11,15 +11,17 @@ obj-$(CONFIG_MTK_CCCI_DRIVER) += ccci_plat.o
 ccci_plat-y :=src/ccci_platform.o
 
 include $(MASP_CORE_DRIVER_DIR)/Makefile.core
-ccci_plat-y += $(core_obj)
-
 ifeq ($(CUSTOM_SEC_AUTH_SUPPORT),yes)
-CCCI_CUSTOM_DRIVER_DIR := $(call my-dir)$(call to-root,$(obj))mediatek/custom/out/$(call lc,$(MTK_PROJECT))/kernel/ccci
+CCCI_CUSTOM_DRIVER_DIR := $(MTK_PATH_CUSTOM)/$(call lc,$(MTK_PROJECT))/kernel/ccci
 ccci_plat-y += $(CCCI_CUSTOM_DRIVER_DIR)/cust_auth.o
 else
 include $(MASP_CORE_DRIVER_DIR)/Makefile.crypto
-ccci_plat-y += $(crypto_obj)
-ccci_plat-y += auth/sec_wrapper.o
+sec_obj := $(crypto_obj)
+sec_obj += auth/sec_wrapper.o
+endif
+
+ifeq ($(CONFIG_MTK_CCCI_DRIVER),m)
+ccci_plat-y += $(core_obj) $(sec_obj)
 endif
 
 #ldflags-y += --whole-archive $(ext-libs)  --no-whole-archive

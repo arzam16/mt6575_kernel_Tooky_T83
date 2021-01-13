@@ -1,4 +1,3 @@
-
 #include <mach/mt_typedefs.h>
 #include <mach/mt_reg_base.h>
 #include <mach/mt_clock_manager.h>
@@ -29,10 +28,6 @@
 #if defined(MTK_TVOUT_SUPPORT)
 #define ENABLE_TVROT_INTERRUPT (1)
 #define MTK_TVOUT_USE_SYSRAM_API
-
-#if defined(MTK_M4U_SUPPORT)
-extern M4U_EXPORT_FUNCTION_STRUCT  _m4u_tvout_func;
-#endif
 
 
 PTVR_REGS const TVR_REG = (PTVR_REGS)(TV_ROT_BASE);
@@ -876,56 +871,40 @@ TVR_STATUS TVR_Wait_Done(void)
 
 TVR_STATUS TVR_AllocMva(unsigned int va, unsigned int size, unsigned int* mva)
 {
-#if defined(MTK_M4U_SUPPORT)
     int ret;
     unsigned int mva_tvr;
 
-    if (!_m4u_tvout_func.isInit)
-	{
-		TV_ERROR("M4U has not init func for TV-out");
-		return TVR_STATUS_ERROR;
-	}
-
     //Config TVC&M4U
-	ret = _m4u_tvout_func.m4u_alloc_mva(M4U_CLNTMOD_TVROT, va, size, &mva_tvr);
+	ret = m4u_alloc_mva(M4U_CLNTMOD_TVROT, va, size, &mva_tvr);
 	if (ret != 0)
     {
         TV_ERROR("m4u_alloc_mva");
         return TVR_STATUS_ERROR;
     }
 
-    _m4u_tvout_func.m4u_insert_tlb_range(M4U_CLNTMOD_TVROT,
+    m4u_insert_tlb_range(M4U_CLNTMOD_TVROT,
                                          (unsigned int)mva_tvr,
                                          (unsigned int)(mva_tvr + size - 1),
                                          SEQ_RANGE_LOW_PRIORITY,
                                          1);
 
     *mva = mva_tvr;
-#endif
     return TVR_STATUS_OK;
 }
 
 TVR_STATUS TVR_DeallocMva(unsigned int va, unsigned int size, unsigned int mva)
 {
 
-#if defined(MTK_M4U_SUPPORT)
-	if (!_m4u_tvout_func.isInit)
-	{
-		TV_ERROR("M4U has not init func for TV-out");
-		return TVR_STATUS_ERROR;
-	}
 
-
-    _m4u_tvout_func.m4u_invalid_tlb_range(M4U_CLNTMOD_TVROT,
+    m4u_invalid_tlb_range(M4U_CLNTMOD_TVROT,
                                   		 (unsigned int)mva,
                       					 (unsigned int)(mva + size - 1));
 
-    if (0 != _m4u_tvout_func.m4u_dealloc_mva(M4U_CLNTMOD_TVROT, va, size, mva))
+    if (0 != m4u_dealloc_mva(M4U_CLNTMOD_TVROT, va, size, mva))
     {
         TV_ERROR("Dealocate MVA FAIL");
         return TVR_STATUS_ERROR;
     }
-#endif
     return TVR_STATUS_OK;
 }
 

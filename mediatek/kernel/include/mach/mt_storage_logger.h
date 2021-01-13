@@ -106,6 +106,9 @@ enum Storage_Logger_MsgID
     THRML_LOGGER_MSG_TRIP_POINT,  
     THRML_LOGGER_MSG_BATTERY_INFO,
     THRML_LOGGER_MSG_CPU_INFO,
+    THRML_LOGGER_MSG_CPU_INFO_EX,
+    THRML_LOGGER_MSG_MISC_INFO,
+    THRML_LOGGER_MSG_MISC_EX_INFO,
     THRML_LOGGER_MSG_LAST_ONE,   
     
 	LOGGER_MSG_ID_MAX = THRML_LOGGER_MSG_LAST_ONE// THE WHOLE ENUM LAST ONE
@@ -177,6 +180,9 @@ enum thermal_func_string_index
     THRML_FID_get_battery_info,
     THRML_FID_get_cpu_info,
     THRML_FID_get_real_time,
+    THRML_FID_get_cpu_info_ex,  ///< JB only, ICS not support
+    THRML_FID_get_misc_info,    ///< JB only, ICS not support 
+    THRML_FID_get_misc_ex_info,    ///< JB only, ICS not support 
     THRML_FID_MAX
 };
 /*========================*/
@@ -192,13 +198,18 @@ enum logger_type
 
 #ifndef USER_BUILD_KERNEL//engineering mode
 
-#define CREATE_PROC_ENTRY(proc,x,y,z) proc = create_proc_entry(x,y,z)
+#define CREATE_PROC_ENTRY(proc,x,y,z,o) proc = proc_create(x,y,z,o)
 
 #else
 
-#define CREATE_PROC_ENTRY(proc,x,y,z)
+#define CREATE_PROC_ENTRY(proc,x,y,z,o)
 
 #endif
+
+/*
+ * add the api to disable the storage logger
+ */
+extern void storage_logger_switch( bool enabled);
 
 extern void add_trace(enum logger_type type, unsigned int msg_id,
 			unsigned int line_cnt, unsigned int func_id, ...);

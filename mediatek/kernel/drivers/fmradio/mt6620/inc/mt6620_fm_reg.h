@@ -33,8 +33,12 @@ enum MT6620_REG{
 	FM_MAIN_PGSEL = 0x9F,
 	FM_ADDR_PAMD = 0xE9,
 	FM_RDS_BDGRP_ABD_CTRL_REG = 0xB6,
-	FM_RDS_POINTER = 0xF0,   
+	FM_RDS_POINTER = 0xF0,	 
+	FM_MR_IND = 0xF2,	 
 };
+#define FM_TXSCAN_RSSI_TH	(-250)
+#define FM_TXSCAN_PAMD_TH	(-20)
+#define FM_TXSCAN_MR_TH		(-38)
 
 //RDS_BDGRP_ABD_CTRL_REG
 enum{
@@ -44,11 +48,12 @@ enum{
 #define FM_DAC_CON1 0x83
 #define FM_DAC_CON2 0x84
 #define FM_FT_CON0 0x86
+#define FM_I2S_CON0 0x90
+#define FM_STEROMONO_CTR (0xE0)
 enum{
 	FT_EN = 0x0001
 };
 	   
-#define FM_I2S_CON0 0x90
 enum{
 	I2S_EN = 0x0001,
 	FORMAT = 0x0002,
@@ -79,6 +84,14 @@ enum{
 
 enum{
 	ANTENNA_TYPE = 0x0010,
+};
+//FM reg page
+enum FM_PAGE{
+    FM_PG0 = 0,
+    FM_PG1,
+    FM_PG2,
+    FM_PG3,
+    FM_PGMAX
 };
 
 #endif //__MT6620_FM_REG_H__

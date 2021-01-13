@@ -38,36 +38,10 @@
 #include <mach/mtk_rtc.h>
 #include <cust_gpio_usage.h>
 #include <cust_eint.h>
-/* MT6573 header files 
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_eint.h>
-#include <mach/mt6573_boot.h>
-#include <mach/mt6573_pll.h>
-#include <mach/mt6573_devs.h>
-*/
-
 #include <mach/eint.h>
 #include <mach/mtk_rtc.h>
 #include <mach/mt_gpio.h>
 #include <cust_gpio_usage.h>
-#include <mach/mt_boot.h>
-
-#if 0
-/* MT6575 header files */
-#if defined(CONFIG_ARCH_MT6575)
-#include <mach/eint.h>
-#include <mach/mtk_rtc.h>
-#include <mach/mt_gpio.h>
-#include <cust_gpio_usage.h>
-#include <mach/mt_boot.h>
-#elif defined(CONFIG_ARCH_MT6577)
-#include <mach/eint.h>
-#include <mach/mtk_rtc.h>
-#include <mach/mt_gpio.h>
-#include <cust_gpio_usage.h>
-#include <mach/mt_boot.h>
-#endif
-#endif 
 
 /* ALPS and COMBO header files */
 #include <mach/mtk_wcn_cmb_stub.h>
@@ -96,7 +70,6 @@
 ********************************************************************************
 */
 
-static VOID wmt_plat_func_ctrl (UINT32 type, UINT32 on);
 static VOID wmt_plat_bgf_eirq_cb (VOID);
 
 static INT32 wmt_plat_ldo_ctrl (ENUM_PIN_STATE state);
@@ -112,8 +85,10 @@ static INT32 wmt_plat_i2s_ctrl (ENUM_PIN_STATE state);
 static INT32 wmt_plat_sdio_pin_ctrl (ENUM_PIN_STATE state);
 static INT32 wmt_plat_gps_sync_ctrl (ENUM_PIN_STATE state);
 static INT32 wmt_plat_gps_lna_ctrl (ENUM_PIN_STATE state);
+static INT32 wmt_plat_uart_rx_ctrl (ENUM_PIN_STATE state);
 
 static INT32 wmt_plat_dump_pin_conf (VOID);
+extern int board_sdio_ctrl (unsigned int sdio_port_num, unsigned int on);
 
 
 
@@ -121,6 +96,10 @@ static INT32 wmt_plat_dump_pin_conf (VOID);
 *                            P U B L I C   D A T A
 ********************************************************************************
 */
+UINT32 gWmtDbgLvl = WMT_LOG_INFO;
+INT32 gWmtMergeIfSupport = 0;
+static ENUM_STP_TX_IF_TYPE gCommIfType = STP_MAX_IF_TX;
+
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A
@@ -134,6 +113,13 @@ static INT32 wmt_plat_dump_pin_conf (VOID);
 static OSAL_SLEEPABLE_LOCK gOsSLock;
 static struct wake_lock wmtWakeLock;
 #endif
+
+
+
+irq_cb wmt_plat_bgf_irq_cb = NULL;
+device_audio_if_cb wmt_plat_audio_if_cb = NULL;
+
+
 
 const static fp_set_pin gfp_set_pin_table[] =
 {
@@ -150,8 +136,30 @@ const static fp_set_pin gfp_set_pin_table[] =
     [PIN_SDIO_GRP] = wmt_plat_sdio_pin_ctrl,
     [PIN_GPS_SYNC] = wmt_plat_gps_sync_ctrl,
     [PIN_GPS_LNA] = wmt_plat_gps_lna_ctrl,
+    [PIN_UART_RX] = wmt_plat_uart_rx_ctrl,
     
 };
+
+//<2014/04/07-samhuang, use old Name for old dct file
+#if !defined(GPIO_COMBO_UTXD_PIN)
+#define GPIO_COMBO_UTXD_PIN GPIO_UART_UTXD3_PIN
+#endif
+#if !defined(GPIO_COMBO_UTXD_PIN_M_GPIO)
+#define GPIO_COMBO_UTXD_PIN_M_GPIO GPIO_UART_UTXD3_PIN_M_GPIO
+#endif
+#if !defined(GPIO_COMBO_UTXD_PIN_M_UTXD)
+#define GPIO_COMBO_UTXD_PIN_M_UTXD GPIO_UART_UTXD3_PIN_M_UTXD
+#endif
+#if !defined(GPIO_COMBO_URXD_PIN)
+#define GPIO_COMBO_URXD_PIN GPIO_UART_URXD3_PIN
+#endif
+#if !defined(GPIO_COMBO_URXD_PIN_M_GPIO)
+#define GPIO_COMBO_URXD_PIN_M_GPIO GPIO_UART_URXD3_PIN_M_GPIO
+#endif
+#if !defined(GPIO_COMBO_URXD_PIN_M_URXD)
+#define GPIO_COMBO_URXD_PIN_M_URXD GPIO_UART_URXD3_PIN_M_URXD
+#endif
+//>2014/04/07-samhuang
 
 /*******************************************************************************
 *                              F U N C T I O N S
@@ -172,25 +180,16 @@ const static fp_set_pin gfp_set_pin_table[] =
  */
 INT32 wmt_plat_audio_ctrl (CMB_STUB_AIF_X state, CMB_STUB_AIF_CTRL ctrl)
 {
-    INT32 iRet;
-    UINT32 pinShare;
+    INT32 iRet = 0;
+	UINT32 pinShare = 0;
+	UINT32 mergeIfSupport = 0;
 
     /* input sanity check */
     if ( (CMB_STUB_AIF_MAX <= state)
         || (CMB_STUB_AIF_CTRL_MAX <= ctrl) ) {
         return -1;
     }
-
-    if (get_chip_eco_ver() == CHIP_E1) {
-        // TODO: [FixMe][GeorgeKuo] how about MT6575? The following is applied to MT6573E1 only!!
-        pinShare = 1;
-        WMT_INFO_FUNC( "ALPS MT6573 CHIP_E1 PCM/I2S pin share\n");
-    }
-    else{ //E1 later
-        pinShare = 0;
-        WMT_INFO_FUNC( "PCM/I2S pin seperate\n");
-    }
-
+	
     iRet = 0;
 
     /* set host side first */
@@ -202,8 +201,8 @@ INT32 wmt_plat_audio_ctrl (CMB_STUB_AIF_X state, CMB_STUB_AIF_CTRL ctrl)
         break;
 
     case CMB_STUB_AIF_1:
-        iRet += wmt_plat_gpio_ctrl(PIN_PCM_GRP, PIN_STA_INIT);
         iRet += wmt_plat_gpio_ctrl(PIN_I2S_GRP, PIN_STA_DEINIT);
+        iRet += wmt_plat_gpio_ctrl(PIN_PCM_GRP, PIN_STA_INIT);
         break;
 
     case CMB_STUB_AIF_2:
@@ -222,59 +221,89 @@ INT32 wmt_plat_audio_ctrl (CMB_STUB_AIF_X state, CMB_STUB_AIF_CTRL ctrl)
         return -1;
         break;
     }
+    if (0 != wmt_plat_merge_if_flag_get())
+    {
 
-    if (CMB_STUB_AIF_CTRL_EN == ctrl) {
-        WMT_INFO_FUNC("call chip aif setting \n");
-        /* need to control chip side GPIO */
-        iRet += wmt_lib_set_aif(state, (pinShare) ? MTK_WCN_BOOL_TRUE : MTK_WCN_BOOL_FALSE);
+#if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+        WMT_INFO_FUNC("[MT6628]<Merge IF> no need to ctrl combo chip side GPIO \n");
+#else
+        mergeIfSupport = 1;
+#endif
     }
-    else {
-        WMT_INFO_FUNC("skip chip aif setting \n");
+	else
+	{
+	    mergeIfSupport = 1;
+	}
+	
+    if (0 != mergeIfSupport)
+    {
+	    if (CMB_STUB_AIF_CTRL_EN == ctrl) {
+	        WMT_INFO_FUNC("call chip aif setting \n");
+	        /* need to control chip side GPIO */
+			if (NULL != wmt_plat_audio_if_cb)
+			{
+			    iRet += (*wmt_plat_audio_if_cb)(state, (pinShare) ? MTK_WCN_BOOL_TRUE : MTK_WCN_BOOL_FALSE);
+			}
+			else
+			{
+			    WMT_WARN_FUNC("wmt_plat_audio_if_cb is not registered \n");
+			    iRet -= 1;
+			}
+	        
+			
+	    }
+	    else {
+	        WMT_INFO_FUNC("skip chip aif setting \n");
+	    }
     }
-
     return iRet;
 
 }
 
-static VOID wmt_plat_func_ctrl (UINT32 type, UINT32 on)
-{
-    if (on) {
-        mtk_wcn_wmt_func_on((ENUM_WMTDRV_TYPE_T)type);
-    }
-    else {
-        mtk_wcn_wmt_func_off((ENUM_WMTDRV_TYPE_T)type);
-    }
-    return;
-}
 
 static VOID
 wmt_plat_bgf_eirq_cb (VOID)
 {
 #if CFG_WMT_PS_SUPPORT
-    /**/
 //#error "need to disable EINT here"
-    wmt_lib_ps_irq_cb();
-
+    //wmt_lib_ps_irq_cb();
+    if (NULL != wmt_plat_bgf_irq_cb)
+    {
+        (*(wmt_plat_bgf_irq_cb))();
+    }
+	else
+	{
+	    WMT_WARN_FUNC("WMT-PLAT: wmt_plat_bgf_irq_cb not registered\n");
+	}
 #else
     return;
 #endif
 
 }
 
+
+
+VOID wmt_lib_plat_irq_cb_reg (irq_cb bgf_irq_cb)
+{
+    wmt_plat_bgf_irq_cb = bgf_irq_cb;
+}
+
+VOID wmt_lib_plat_aif_cb_reg (device_audio_if_cb aif_ctrl_cb)
+{
+    wmt_plat_audio_if_cb = aif_ctrl_cb;
+}
+
+
+
+
+
+
 INT32
 wmt_plat_init (P_PWR_SEQ_TIME pPwrSeqTime)
 {
-    CMB_STUB_CB stub_cb;
+
     /*PWR_SEQ_TIME pwr_seq_time;*/
-    INT32 iret;
-
-    stub_cb.aif_ctrl_cb = wmt_plat_audio_ctrl;
-    stub_cb.func_ctrl_cb = wmt_plat_func_ctrl;
-    stub_cb.size = sizeof(stub_cb);
-
-    /* register to cmb_stub */
-    iret = mtk_wcn_cmb_stub_reg(&stub_cb);
-
+    INT32 iret = -1;
     /* init cmb_hw */
     iret += mtk_wcn_cmb_hw_init(pPwrSeqTime);
 
@@ -437,7 +466,7 @@ wmt_plat_dump_pin_conf (VOID)
     #else
                 WMT_INFO_FUNC( "GPS_LNA(not defined)\n");
     #endif
-    WMT_INFO_FUNC( "[WMT-PLAT]=>dump wmt pin configuration ends<=\n");
+    WMT_INFO_FUNC( "[WMT-PLAT]=>dump wmt pin configuration emds<=\n");
     return 0;
 }
 
@@ -501,25 +530,25 @@ wmt_plat_eirq_ctrl (
     case PIN_BGF_EINT:
 #ifdef GPIO_COMBO_BGF_EINT_PIN
         if (PIN_STA_INIT == state) {
-            mt65xx_eint_set_sens(CUST_EINT_COMBO_BGF_NUM, CUST_EINT_COMBO_BGF_SENSITIVE);
-            mt65xx_eint_set_hw_debounce(CUST_EINT_COMBO_BGF_NUM, CUST_EINT_COMBO_BGF_DEBOUNCE_CN);
+            mt_eint_set_sens(CUST_EINT_COMBO_BGF_NUM, CUST_EINT_COMBO_BGF_SENSITIVE);
+            mt_eint_set_hw_debounce(CUST_EINT_COMBO_BGF_NUM, CUST_EINT_COMBO_BGF_DEBOUNCE_CN);
             mt65xx_eint_registration(CUST_EINT_COMBO_BGF_NUM,
                 CUST_EINT_COMBO_BGF_DEBOUNCE_EN,
                 CUST_EINT_COMBO_BGF_POLARITY,
                 wmt_plat_bgf_eirq_cb,
                 0);
-            mt65xx_eint_mask(CUST_EINT_COMBO_BGF_NUM); /*2*/
+            mt_eint_mask(CUST_EINT_COMBO_BGF_NUM); /*2*/
         }
         else if (PIN_STA_EINT_EN == state) {
-             mt65xx_eint_unmask(CUST_EINT_COMBO_BGF_NUM);
+             mt_eint_unmask(CUST_EINT_COMBO_BGF_NUM);
              WMT_DBG_FUNC("WMT-PLAT:BGFInt (en) \n");
         }
         else if (PIN_STA_EINT_DIS == state) {
-            mt65xx_eint_mask(CUST_EINT_COMBO_BGF_NUM);
+            mt_eint_mask(CUST_EINT_COMBO_BGF_NUM);
             WMT_DBG_FUNC("WMT-PLAT:BGFInt (dis) \n");
         }
         else {
-            mt65xx_eint_mask(CUST_EINT_COMBO_BGF_NUM);
+            mt_eint_mask(CUST_EINT_COMBO_BGF_NUM);
             /* de-init: nothing to do in ALPS, such as un-registration... */
         }
 #else
@@ -532,27 +561,27 @@ wmt_plat_eirq_ctrl (
 #ifdef GPIO_COMBO_ALL_EINT_PIN
         if (PIN_STA_INIT == state) {
             #if 0
-            mt65xx_eint_set_sens(CUST_EINT_COMBO_ALL_NUM, CUST_EINT_COMBO_ALL_SENSITIVE);
-            mt65xx_eint_set_hw_debounce(CUST_EINT_COMBO_ALL_NUM, CUST_EINT_COMBO_ALL_DEBOUNCE_CN);
-            mt65xx_eint_registration(CUST_EINT_COMBO_ALL_NUM,
-                CUST_EINT_COMBO_ALL_DEBOUNCE_EN,
-                CUST_EINT_COMBO_ALL_POLARITY,
+            #if CUST_EINT_COMBO_ALL_DEBOUNCE_EN
+            mt_eint_set_hw_debounce(CUST_EINT_COMBO_ALL_NUM, CUST_EINT_COMBO_ALL_DEBOUNCE_CN);
+            #endif
+            mt_eint_registration(CUST_EINT_COMBO_ALL_NUM,
+                CUST_EINT_COMBO_ALL_TYPE,
                 combo_bgf_eirq_handler,
                 0);
             #endif
-            mt65xx_eint_mask(CUST_EINT_COMBO_ALL_NUM); /*2*/
+            mt_eint_mask(CUST_EINT_COMBO_ALL_NUM); /*2*/
             WMT_DBG_FUNC("WMT-PLAT:ALLInt (INIT but not used yet) \n");
         }
         else if (PIN_STA_EINT_EN == state) {
-             /*mt65xx_eint_unmask(CUST_EINT_COMBO_ALL_NUM);*/
+             /*mt_eint_unmask(CUST_EINT_COMBO_ALL_NUM);*/
              WMT_DBG_FUNC("WMT-PLAT:ALLInt (EN but not used yet) \n");
         }
         else if (PIN_STA_EINT_DIS == state) {
-            mt65xx_eint_mask(CUST_EINT_COMBO_ALL_NUM);
+            mt_eint_mask(CUST_EINT_COMBO_ALL_NUM);
             WMT_DBG_FUNC("WMT-PLAT:ALLInt (DIS but not used yet) \n");
         }
         else {
-            mt65xx_eint_mask(CUST_EINT_COMBO_ALL_NUM);
+            mt_eint_mask(CUST_EINT_COMBO_ALL_NUM);
             WMT_DBG_FUNC("WMT-PLAT:ALLInt (DEINIT but not used yet) \n");
             /* de-init: nothing to do in ALPS, such as un-registration... */
         }
@@ -719,7 +748,12 @@ wmt_plat_rtc_ctrl (
         rtc_gpio_enable_32k(RTC_GPIO_USER_GPS);
         WMT_DBG_FUNC("WMT-PLAT:RTC init \n");
         break;
-
+    case PIN_STA_SHOW:
+        WMT_INFO_FUNC("WMT-PLAT:RTC PIN_STA_SHOW start\n");
+        //TakMan: Temp. solution for building pass. Hongcheng Xia should check with vend_ownen.chen
+        //WMT_INFO_FUNC("WMT-PLAT:RTC Status(%d)\n", rtc_gpio_32k_status());
+        WMT_INFO_FUNC("WMT-PLAT:RTC PIN_STA_SHOW end\n");
+        break;
     default:
         WMT_WARN_FUNC("WMT-PLAT:Warnning, invalid state(%d) on RTC\n", state);
         break;
@@ -846,10 +880,10 @@ INT32 wmt_plat_wifi_eint_ctrl(ENUM_PIN_STATE state)
 
             break;
         case PIN_STA_EINT_EN:
-            mt65xx_eint_unmask(CUST_EINT_WIFI_NUM);
+            mt_eint_unmask(CUST_EINT_WIFI_NUM);
             break;
         case PIN_STA_EINT_DIS:
-            mt65xx_eint_mask(CUST_EINT_WIFI_NUM);
+            mt_eint_mask(CUST_EINT_WIFI_NUM);
             break;
         case PIN_STA_IN_L:
         case PIN_STA_DEINIT:
@@ -918,32 +952,28 @@ INT32 wmt_plat_uart_ctrl(ENUM_PIN_STATE state)
     {
     case PIN_STA_MUX:
     case PIN_STA_INIT:
-        
-        #ifdef GPIO_COMBO_URXD_PIN
         mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_URXD);
-        #endif
-        
-        #ifdef GPIO_COMBO_UTXD_PIN
         mt_set_gpio_mode(GPIO_COMBO_UTXD_PIN, GPIO_COMBO_UTXD_PIN_M_UTXD);
-        #endif
         WMT_DBG_FUNC("WMT-PLAT:UART init (mode_01, uart) \n");
         break;
     case PIN_STA_IN_L:
     case PIN_STA_DEINIT:
-        
-        #ifdef GPIO_COMBO_URXD_PIN
         mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_GPIO);
         mt_set_gpio_dir(GPIO_COMBO_URXD_PIN, GPIO_DIR_OUT);
         mt_set_gpio_out(GPIO_COMBO_URXD_PIN, GPIO_OUT_ZERO);
-        #endif
-        #ifdef GPIO_COMBO_UTXD_PIN
+
         mt_set_gpio_mode(GPIO_COMBO_UTXD_PIN, GPIO_COMBO_UTXD_PIN_M_GPIO);
         mt_set_gpio_dir(GPIO_COMBO_UTXD_PIN, GPIO_DIR_OUT);
         mt_set_gpio_out(GPIO_COMBO_UTXD_PIN, GPIO_OUT_ZERO);
-        #endif
         WMT_DBG_FUNC("WMT-PLAT:UART deinit (out 0) \n");
         break;
-
+	case PIN_STA_IN_PU:
+		mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_GPIO);
+		mt_set_gpio_dir(GPIO_COMBO_URXD_PIN, GPIO_DIR_IN);
+		mt_set_gpio_pull_enable(GPIO_COMBO_URXD_PIN, GPIO_PULL_ENABLE);
+        mt_set_gpio_pull_select(GPIO_COMBO_URXD_PIN, GPIO_PULL_UP);
+        
+		
     default:
         WMT_WARN_FUNC("WMT-PLAT:Warnning, invalid state(%d) on UART Group\n", state);
         break;
@@ -955,42 +985,103 @@ INT32 wmt_plat_uart_ctrl(ENUM_PIN_STATE state)
 
 INT32 wmt_plat_pcm_ctrl(ENUM_PIN_STATE state)
 {
+    UINT32 normalPCMFlag = 0;
 
-    switch(state)
+    /*check if combo chip support merge if or not*/
+    if (0 != wmt_plat_merge_if_flag_get())
     {
-    case PIN_STA_MUX:
-    case PIN_STA_INIT:
-        mt_set_gpio_mode(GPIO_PCM_DAICLK_PIN, GPIO_PCM_DAICLK_PIN_M_CLK);
-        mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_M_DAIPCMOUT);
-        mt_set_gpio_mode(GPIO_PCM_DAIPCMIN_PIN, GPIO_PCM_DAIPCMIN_PIN_M_DAIPCMIN);
-        mt_set_gpio_mode(GPIO_PCM_DAISYNC_PIN, GPIO_PCM_DAISYNC_PIN_M_BTSYNC);
-        WMT_DBG_FUNC("WMT-PLAT:PCM init (pcm) \n");
-        break;
+    #if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+    //Hardware support Merge IF function
+        WMT_DBG_FUNC("WMT-PLAT:<Merge IF>set to Merge PCM function\n");
+		/*merge PCM function define*/
+		switch(state)
+		{
+		case PIN_STA_MUX:
+		case PIN_STA_INIT:
+			mt_set_gpio_mode(GPIO_PCM_DAICLK_PIN, GPIO_PCM_DAICLK_PIN_PINMUX_MODE);
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_PINMUX_MODE);
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMIN_PIN, GPIO_PCM_DAIPCMIN_PIN_PINMUX_MODE);
+			mt_set_gpio_mode(GPIO_PCM_DAISYNC_PIN, GPIO_PCM_DAISYNC_PIN_PINMUX_MODE);
+			WMT_DBG_FUNC("WMT-PLAT:<Merge IF>PCM init (pcm) \n");
+			break;
 
-    case PIN_STA_IN_L:
-    case PIN_STA_DEINIT:
-        mt_set_gpio_mode(GPIO_PCM_DAICLK_PIN, GPIO_PCM_DAICLK_PIN_M_GPIO);
-        mt_set_gpio_dir(GPIO_PCM_DAICLK_PIN, GPIO_DIR_OUT);
-        mt_set_gpio_out(GPIO_PCM_DAICLK_PIN, GPIO_OUT_ZERO);
+		case PIN_STA_IN_L:
+		case PIN_STA_DEINIT:
+			mt_set_gpio_mode(GPIO_PCM_DAICLK_PIN, GPIO_PCM_DAICLK_PIN_PINMUX_MODE);//GPIO_PCM_DAICLK_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAICLK_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAICLK_PIN, GPIO_OUT_ZERO);
 
-        mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_M_GPIO);
-        mt_set_gpio_dir(GPIO_PCM_DAIPCMOUT_PIN, GPIO_DIR_OUT);
-        mt_set_gpio_out(GPIO_PCM_DAIPCMOUT_PIN, GPIO_OUT_ZERO);
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_PINMUX_MODE);//GPIO_PCM_DAIPCMOUT_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAIPCMOUT_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAIPCMOUT_PIN, GPIO_OUT_ZERO);
 
-        mt_set_gpio_mode(GPIO_PCM_DAIPCMIN_PIN, GPIO_PCM_DAIPCMIN_PIN_M_GPIO);
-        mt_set_gpio_dir(GPIO_PCM_DAIPCMIN_PIN, GPIO_DIR_OUT);
-        mt_set_gpio_out(GPIO_PCM_DAIPCMIN_PIN, GPIO_OUT_ZERO);
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMIN_PIN, GPIO_PCM_DAIPCMIN_PIN_PINMUX_MODE);//GPIO_PCM_DAIPCMIN_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAIPCMIN_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAIPCMIN_PIN, GPIO_OUT_ZERO);
 
-        mt_set_gpio_mode(GPIO_PCM_DAISYNC_PIN, GPIO_PCM_DAISYNC_PIN_M_GPIO);
-        mt_set_gpio_dir(GPIO_PCM_DAISYNC_PIN, GPIO_DIR_OUT);
-        mt_set_gpio_out(GPIO_PCM_DAISYNC_PIN, GPIO_OUT_ZERO);
-        WMT_DBG_FUNC("WMT-PLAT:PCM deinit (out 0) \n");
-        break;
+			mt_set_gpio_mode(GPIO_PCM_DAISYNC_PIN, GPIO_PCM_DAISYNC_PIN_PINMUX_MODE);//GPIO_PCM_DAISYNC_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAISYNC_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAISYNC_PIN, GPIO_OUT_ZERO);
+			WMT_DBG_FUNC("WMT-PLAT:<Merge IF>PCM deinit (out 0) \n");
+			break;
 
-    default:
-        WMT_WARN_FUNC("WMT-PLAT:Warnning, invalid state(%d) on PCM Group\n", state);
-        break;
+		default:
+			WMT_WARN_FUNC("WMT-PLAT:<Merge IF>Warnning, invalid state(%d) on PCM Group\n", state);
+			break;
+		}
+
+    #else
+	//Hardware does not support Merge IF function
+	    normalPCMFlag = 1;
+	    WMT_DBG_FUNC("WMT-PLAT:set to normal PCM function\n");
+    #endif
+
     }
+	else
+	{
+	    normalPCMFlag = 1;
+	}
+	
+	if (0 != normalPCMFlag)
+	{
+		/*normal PCM function define*/
+		switch(state)
+		{
+		case PIN_STA_MUX:
+		case PIN_STA_INIT:
+			mt_set_gpio_mode(GPIO_PCM_DAICLK_PIN, GPIO_PCM_DAICLK_PIN_PCMONLY_MODE);
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_PCMONLY_MODE);
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMIN_PIN, GPIO_PCM_DAIPCMIN_PIN_PCMONLY_MODE);
+			mt_set_gpio_mode(GPIO_PCM_DAISYNC_PIN, GPIO_PCM_DAISYNC_PIN_PCMONLY_MODE);
+			WMT_DBG_FUNC("WMT-PLAT:MT6589 PCM init (pcm) \n");
+			break;
+	
+		case PIN_STA_IN_L:
+		case PIN_STA_DEINIT:
+			mt_set_gpio_mode(GPIO_PCM_DAICLK_PIN, GPIO_PCM_DAICLK_PIN_PCMONLY_MODE);//GPIO_PCM_DAICLK_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAICLK_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAICLK_PIN, GPIO_OUT_ZERO);
+	
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_PCMONLY_MODE);//GPIO_PCM_DAIPCMOUT_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAIPCMOUT_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAIPCMOUT_PIN, GPIO_OUT_ZERO);
+	
+			mt_set_gpio_mode(GPIO_PCM_DAIPCMIN_PIN, GPIO_PCM_DAIPCMIN_PIN_PCMONLY_MODE);//GPIO_PCM_DAIPCMIN_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAIPCMIN_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAIPCMIN_PIN, GPIO_OUT_ZERO);
+	
+			mt_set_gpio_mode(GPIO_PCM_DAISYNC_PIN, GPIO_PCM_DAISYNC_PIN_PCMONLY_MODE);//GPIO_PCM_DAISYNC_PIN_M_GPIO);
+			//mt_set_gpio_dir(GPIO_PCM_DAISYNC_PIN, GPIO_DIR_OUT);
+			//mt_set_gpio_out(GPIO_PCM_DAISYNC_PIN, GPIO_OUT_ZERO);
+			WMT_DBG_FUNC("WMT-PLAT:MT6589 PCM deinit (out 0) \n");
+			break;
+	
+		default:
+			WMT_WARN_FUNC("WMT-PLAT:MT6589 Warnning, invalid state(%d) on PCM Group\n", state);
+			break;
+		}
+	}
+	
     return 0;
 }
 
@@ -999,43 +1090,100 @@ INT32 wmt_plat_i2s_ctrl(ENUM_PIN_STATE state)
 {
     // TODO: [NewFeature][GeorgeKuo]: GPIO_I2Sx is changed according to different project.
     // TODO: provide a translation table in board_custom.h for different ALPS project customization.
-#if defined(FM_DIGITAL_INPUT) || defined(FM_DIGITAL_OUTPUT)
-    #if defined (GPIO_COMBO_I2S_CK_PIN)
-    switch(state)
+
+    UINT32 normalI2SFlag = 0;
+
+    /*check if combo chip support merge if or not*/
+    if (0 != wmt_plat_merge_if_flag_get())
     {
-    case PIN_STA_INIT:
-    case PIN_STA_MUX:
-            mt_set_gpio_mode(GPIO_COMBO_I2S_CK_PIN, GPIO_COMBO_I2S_CK_PIN_M_I2S0_CK);
-            mt_set_gpio_mode(GPIO_COMBO_I2S_WS_PIN, GPIO_COMBO_I2S_WS_PIN_M_I2S0_WS);
-            mt_set_gpio_mode(GPIO_COMBO_I2S_DAT_PIN, GPIO_COMBO_I2S_DAT_PIN_M_I2S0_DAT);
-            WMT_DBG_FUNC("WMT-PLAT:I2S init (I2S0 system) \n");
-        break;
-    case PIN_STA_IN_L:
-    case PIN_STA_DEINIT:
-            mt_set_gpio_mode(GPIO_COMBO_I2S_CK_PIN, GPIO_COMBO_I2S_CK_PIN_M_GPIO);
-            mt_set_gpio_dir(GPIO_COMBO_I2S_CK_PIN, GPIO_DIR_OUT);
-            mt_set_gpio_out(GPIO_COMBO_I2S_CK_PIN, GPIO_OUT_ZERO);
+    #if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+    //Hardware support Merge IF function
+        #if defined(FM_DIGITAL_INPUT) || defined(FM_DIGITAL_OUTPUT)
+	        #if defined (GPIO_COMBO_I2S_CK_PIN)
+			    switch(state)
+			    {
+			    case PIN_STA_INIT:
+			    case PIN_STA_MUX:
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_CK_PIN, GPIO_COMBO_I2S_CK_PIN_PINMUX_MODE);
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_WS_PIN, GPIO_COMBO_I2S_WS_PIN_PINMUX_MODE);
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_DAT_PIN, GPIO_COMBO_I2S_DAT_PIN_PINMUX_MODE);
+			            mt_set_gpio_mode(GPIO_PCM_DAIPCMOUT_PIN, GPIO_PCM_DAIPCMOUT_PIN_PINMUX_MODE);
+			            WMT_DBG_FUNC("WMT-PLAT:<Merge IF>I2S init (I2S0 system) \n");
+			        break;
+			    case PIN_STA_IN_L:
+			    case PIN_STA_DEINIT:
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_CK_PIN, GPIO_COMBO_I2S_CK_PIN_M_GPIO);
+			            mt_set_gpio_dir(GPIO_COMBO_I2S_CK_PIN, GPIO_DIR_OUT);
+			            mt_set_gpio_out(GPIO_COMBO_I2S_CK_PIN, GPIO_OUT_ZERO);
 
-            mt_set_gpio_mode(GPIO_COMBO_I2S_WS_PIN, GPIO_COMBO_I2S_WS_PIN_M_GPIO);
-            mt_set_gpio_dir(GPIO_COMBO_I2S_WS_PIN, GPIO_DIR_OUT);
-            mt_set_gpio_out(GPIO_COMBO_I2S_WS_PIN, GPIO_OUT_ZERO);
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_WS_PIN, GPIO_COMBO_I2S_WS_PIN_M_GPIO);
+			            mt_set_gpio_dir(GPIO_COMBO_I2S_WS_PIN, GPIO_DIR_OUT);
+			            mt_set_gpio_out(GPIO_COMBO_I2S_WS_PIN, GPIO_OUT_ZERO);
 
-            mt_set_gpio_mode(GPIO_COMBO_I2S_DAT_PIN, GPIO_COMBO_I2S_DAT_PIN_M_GPIO);
-            mt_set_gpio_dir(GPIO_COMBO_I2S_DAT_PIN, GPIO_DIR_OUT);
-            mt_set_gpio_out(GPIO_COMBO_I2S_DAT_PIN, GPIO_OUT_ZERO);
-            WMT_DBG_FUNC("WMT-PLAT:I2S deinit (out 0) \n");
-        break;
-    default:
-        WMT_WARN_FUNC("WMT-PLAT:Warnning, invalid state(%d) on I2S Group\n", state);
-        break;
-    }
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_DAT_PIN, GPIO_COMBO_I2S_DAT_PIN_M_GPIO);
+			            mt_set_gpio_dir(GPIO_COMBO_I2S_DAT_PIN, GPIO_DIR_OUT);
+			            mt_set_gpio_out(GPIO_COMBO_I2S_DAT_PIN, GPIO_OUT_ZERO);
+			            WMT_DBG_FUNC("WMT-PLAT:<Merge IF>I2S deinit (out 0) \n");
+			        break;
+			    default:
+			        WMT_WARN_FUNC("WMT-PLAT:<Merge IF>Warnning, invalid state(%d) on I2S Group\n", state);
+			        break;
+			    }
+	        #else
+                WMT_ERR_FUNC( "[MT662x]<Merge IF>Error:FM digital mode set, but no I2S GPIOs defined\n");
+            #endif
+        #else
+            WMT_INFO_FUNC( "[MT662x]<Merge IF>warnning:FM digital mode is not set, no I2S GPIO settings should be modified by combo driver\n");
+		#endif
     #else
-    WMT_ERR_FUNC( "[MT6620]Error:FM digital mode set, but no I2S GPIOs defined\n");
-    #endif
-#else
-        WMT_INFO_FUNC( "[MT6620]warnning:FM digital mode is not set, no I2S GPIO settings should be modified by combo driver\n");
-#endif
+	//Hardware does support Merge IF function
+	    normalI2SFlag = 1;
+	#endif
+    }
+	else
+	{
+	    normalI2SFlag = 1;
+	}
+    if (0 != normalI2SFlag)
+    {
+	    #if defined(FM_DIGITAL_INPUT) || defined(FM_DIGITAL_OUTPUT)
+	        #if defined (GPIO_COMBO_I2S_CK_PIN)
+			    switch(state)
+			    {
+			    case PIN_STA_INIT:
+			    case PIN_STA_MUX:
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_CK_PIN, GPIO_COMBO_I2S_CK_PIN_I2SONLY_MODE);
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_WS_PIN, GPIO_COMBO_I2S_WS_PIN_I2SONLY_MODE);
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_DAT_PIN, GPIO_COMBO_I2S_DAT_PIN_I2SONLY_MODE);
+			            WMT_DBG_FUNC("WMT-PLAT:<I2S IF>I2S init (I2S0 system) \n");
+			        break;
+			    case PIN_STA_IN_L:
+			    case PIN_STA_DEINIT:
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_CK_PIN, GPIO_COMBO_I2S_CK_PIN_M_GPIO);
+			            mt_set_gpio_dir(GPIO_COMBO_I2S_CK_PIN, GPIO_DIR_OUT);
+			            mt_set_gpio_out(GPIO_COMBO_I2S_CK_PIN, GPIO_OUT_ZERO);
 
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_WS_PIN, GPIO_COMBO_I2S_WS_PIN_M_GPIO);
+			            mt_set_gpio_dir(GPIO_COMBO_I2S_WS_PIN, GPIO_DIR_OUT);
+			            mt_set_gpio_out(GPIO_COMBO_I2S_WS_PIN, GPIO_OUT_ZERO);
+
+			            mt_set_gpio_mode(GPIO_COMBO_I2S_DAT_PIN, GPIO_COMBO_I2S_DAT_PIN_M_GPIO);
+			            mt_set_gpio_dir(GPIO_COMBO_I2S_DAT_PIN, GPIO_DIR_OUT);
+			            mt_set_gpio_out(GPIO_COMBO_I2S_DAT_PIN, GPIO_OUT_ZERO);
+			            WMT_DBG_FUNC("WMT-PLAT:<I2S IF>I2S deinit (out 0) \n");
+			        break;
+			    default:
+			        WMT_WARN_FUNC("WMT-PLAT:<I2S IF>Warnning, invalid state(%d) on I2S Group\n", state);
+			        break;
+			    }
+	        #else
+                WMT_ERR_FUNC( "[MT662x]<I2S IF>Error:FM digital mode set, but no I2S GPIOs defined\n");
+          #endif
+    #else
+            WMT_INFO_FUNC( "[MT662x]<I2S IF>warnning:FM digital mode is not set, no I2S GPIO settings should be modified by combo driver\n");
+		#endif
+    }
+	
     return 0;
 }
 
@@ -1051,7 +1199,7 @@ wmt_plat_sdio_pin_ctrl (
 #if defined(CONFIG_MTK_WCN_CMB_SDIO_SLOT)
     #if (CONFIG_MTK_WCN_CMB_SDIO_SLOT == 1)
         // TODO: [FixMe][GeorgeKuo]: below are used for MT6573 only! Find a better way to do ALPS customization for different platform.
-        //WMT_INFO_FUNC( "[mt6620] pull up sd1 bus(gpio62~68)\n");
+        //WMT_INFO_FUNC( "[mt662x] pull up sd1 bus(gpio62~68)\n");
         mt_set_gpio_pull_enable(GPIO62, GPIO_PULL_ENABLE);
         mt_set_gpio_pull_select(GPIO62, GPIO_PULL_UP);
         mt_set_gpio_pull_enable(GPIO63, GPIO_PULL_ENABLE);
@@ -1080,7 +1228,7 @@ wmt_plat_sdio_pin_ctrl (
 #if defined(CONFIG_MTK_WCN_CMB_SDIO_SLOT)
     #if (CONFIG_MTK_WCN_CMB_SDIO_SLOT == 1)
         // TODO: [FixMe][GeorgeKuo]: below are used for MT6573 only! Find a better way to do ALPS customization for different platform.
-        //WMT_INFO_FUNC( "[mt6620] pull down sd1 bus(gpio62~68)\n");
+        //WMT_INFO_FUNC( "[mt662x] pull down sd1 bus(gpio62~68)\n");
         mt_set_gpio_pull_select(GPIO62, GPIO_PULL_DOWN);
         mt_set_gpio_pull_enable(GPIO62, GPIO_PULL_ENABLE);
         mt_set_gpio_pull_select(GPIO63, GPIO_PULL_DOWN);
@@ -1118,6 +1266,19 @@ wmt_plat_gps_sync_ctrl (
     )
 {
 #ifdef GPIO_GPS_SYNC_PIN
+#ifndef GPIO_GPS_SYNC_PIN_M_GPS_SYNC
+	#ifdef GPIO_GPS_SYNC_PIN_M_MD1_GPS_SYNC
+		#define GPIO_GPS_SYNC_PIN_M_GPS_SYNC GPIO_GPS_SYNC_PIN_M_MD1_GPS_SYNC
+	#elif defined (GPIO_GPS_SYNC_PIN_M_MD2_GPS_SYNC)
+		#ifdef GPIO_GPS_SYNC_PIN_M_MD2_GPS_SYNC
+		    #define GPIO_GPS_SYNC_PIN_M_GPS_SYNC GPIO_GPS_SYNC_PIN_M_MD2_GPS_SYNC
+		#endif
+	#elif defined (GPIO_GPS_SYNC_PIN_M_GPS_FRAME_SYNC)
+		#ifdef GPIO_GPS_SYNC_PIN_M_GPS_FRAME_SYNC
+		    #define GPIO_GPS_SYNC_PIN_M_GPS_SYNC GPIO_GPS_SYNC_PIN_M_GPS_FRAME_SYNC
+		#endif	
+	#endif
+#endif
     switch (state) {
     case PIN_STA_INIT:
     case PIN_STA_DEINIT:
@@ -1171,14 +1332,57 @@ wmt_plat_gps_lna_ctrl (
 }
 
 
+static INT32 wmt_plat_uart_rx_ctrl (ENUM_PIN_STATE state)
+{
+    switch(state)
+    {
+    case PIN_STA_MUX:
+    case PIN_STA_INIT:
+        mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_URXD);
+        WMT_DBG_FUNC("WMT-PLAT:UART Rx init\n");
+        break;
+    case PIN_STA_IN_L:
+    case PIN_STA_DEINIT:
+        mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_GPIO);
+        mt_set_gpio_dir(GPIO_COMBO_URXD_PIN, GPIO_DIR_OUT);
+        mt_set_gpio_out(GPIO_COMBO_URXD_PIN, GPIO_OUT_ZERO);
+
+        WMT_DBG_FUNC("WMT-PLAT:UART Rx deinit (out 0) \n");
+        break;
+	case PIN_STA_IN_NP:
+		mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_GPIO);
+		mt_set_gpio_dir(GPIO_COMBO_URXD_PIN, GPIO_DIR_IN);
+		mt_set_gpio_pull_enable(GPIO_COMBO_URXD_PIN, GPIO_PULL_DISABLE);
+		WMT_DBG_FUNC("WMT-PLAT:UART Rx input pull none\n");
+		break;
+	case PIN_STA_OUT_H:
+		mt_set_gpio_mode(GPIO_COMBO_URXD_PIN, GPIO_COMBO_URXD_PIN_M_GPIO);
+        mt_set_gpio_dir(GPIO_COMBO_URXD_PIN, GPIO_DIR_OUT);
+        mt_set_gpio_out(GPIO_COMBO_URXD_PIN, GPIO_OUT_ONE);
+		WMT_DBG_FUNC("WMT-PLAT:UART Rx output high\n", state);
+		break;
+    default:
+        WMT_WARN_FUNC("WMT-PLAT:Warnning, invalid state(%d) on UART Rx\n", state);
+        break;
+    }
+
+    return 0;	
+}
+
 
 INT32 wmt_plat_wake_lock_ctrl(ENUM_WL_OP opId)
 {
 #ifdef CFG_WMT_WAKELOCK_SUPPORT
     static INT32 counter = 0;
+    INT32 ret = 0;
+ 
     
+    ret = osal_lock_sleepable_lock( &gOsSLock);
+    if (ret) {
+        WMT_ERR_FUNC("--->lock gOsSLock failed, ret=%d\n", ret);
+        return ret;
+    }
     
-    osal_lock_sleepable_lock( &gOsSLock);
     if (WL_OP_GET == opId)
     {
         ++counter;
@@ -1209,4 +1413,46 @@ INT32 wmt_plat_wake_lock_ctrl(ENUM_WL_OP opId)
 
 #endif
 }
+
+
+INT32
+wmt_plat_merge_if_flag_ctrl (UINT32 enable)
+{
+    if (enable)
+    {
+    #if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+		gWmtMergeIfSupport = 1;	
+	#else
+	    gWmtMergeIfSupport = 0;
+        WMT_WARN_FUNC("neither MT6589, MTK_MERGE_INTERFACE_SUPPORT nor MT6628 is not set to true, so set gWmtMergeIfSupport to %d\n", gWmtMergeIfSupport);
+	#endif
+    }
+	else
+	{
+	    gWmtMergeIfSupport = 0;
+	}
+	
+	WMT_INFO_FUNC("set gWmtMergeIfSupport to %d\n", gWmtMergeIfSupport);
+    return gWmtMergeIfSupport;
+}
+
+INT32
+wmt_plat_merge_if_flag_get (VOID)
+{
+    return gWmtMergeIfSupport;
+}
+
+INT32
+wmt_plat_set_comm_if_type (ENUM_STP_TX_IF_TYPE type)
+{
+    gCommIfType = type;
+	return 0;
+}
+
+
+ENUM_STP_TX_IF_TYPE wmt_plat_get_comm_if_type (VOID)
+{
+	return gCommIfType;
+}
+
 

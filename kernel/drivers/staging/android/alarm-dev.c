@@ -384,7 +384,9 @@ static void devalarm_triggered(struct devalarm *alarm)
 	unsigned long flags;
 	uint32_t alarm_type_mask = 1U << alarm->type;
 
-	pr_alarm(INT, "devalarm_triggered type %d\n", alarm->type);
+	//pr_alarm(INT, "devalarm_triggered type %d\n", alarm->type);
+	xlog_printk(ANDROID_LOG_DEBUG, "Power/Alarm", "devalarm_triggered type %d\n", alarm->type);
+	
 	spin_lock_irqsave(&alarm_slock, flags);
 	if (alarm_enabled & alarm_type_mask) {
 		wake_lock_timeout(&alarm_wake_lock, 5 * HZ);
@@ -400,7 +402,9 @@ static enum hrtimer_restart devalarm_hrthandler(struct hrtimer *hrt)
 {
 	struct devalarm *devalrm = container_of(hrt, struct devalarm, u.hrt);
 
-	pr_alarm(INT, "devalarm_hrthandler\n");
+	//pr_alarm(INT, "devalarm_hrthandler\n");
+	xlog_printk(ANDROID_LOG_DEBUG, "Power/Alarm", "devalarm_hrthandler\n");
+	
 	devalarm_triggered(devalrm);
 	return HRTIMER_NORESTART;
 }
@@ -410,7 +414,9 @@ static enum alarmtimer_restart devalarm_alarmhandler(struct alarm *alrm,
 {
 	struct devalarm *devalrm = container_of(alrm, struct devalarm, u.alrm);
 
-	pr_alarm(INT, "devalarm_alarmhandler\n");
+	//pr_alarm(INT, "devalarm_alarmhandler\n");
+	xlog_printk(ANDROID_LOG_DEBUG, "Power/Alarm", "devalarm_alarmhandler\n");
+	
 	devalarm_triggered(devalrm);
 	return ALARMTIMER_NORESTART;
 }

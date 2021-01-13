@@ -52,7 +52,7 @@
 #define L2X0_R_PREFETCH_CTRL 24 /* offsetof(struct l2x0_regs, prefetch_ctrl)	@ */
 #define L2X0_R_PWR_CTRL 28 /* offsetof(struct l2x0_regs, pwr_ctrl)	@ */
 
-#define MM_CONTEXT_ID 340 /* offsetof(struct mm_struct, context.id)	@ */
+#define MM_CONTEXT_ID 344 /* offsetof(struct mm_struct, context.id)	@ */
 
 #define VMA_VM_MM 0 /* offsetof(struct vm_area_struct, vm_mm)	@ */
 #define VMA_VM_FLAGS 24 /* offsetof(struct vm_area_struct, vm_flags)	@ */
@@ -77,5 +77,8 @@
 #define DMA_BIDIRECTIONAL 0 /* DMA_BIDIRECTIONAL	@ */
 #define DMA_TO_DEVICE 1 /* DMA_TO_DEVICE	@ */
 #define DMA_FROM_DEVICE 2 /* DMA_FROM_DEVICE	@ */
+#define PBE_ADDRESS 0 /* offsetof(struct pbe, address)	@ */
+#define PBE_ORIG_ADDRESS 4 /* offsetof(struct pbe, orig_address)	@ */
+#define PBE_NEXT 8 /* offsetof(struct pbe, next)	@ */
 
 #endif

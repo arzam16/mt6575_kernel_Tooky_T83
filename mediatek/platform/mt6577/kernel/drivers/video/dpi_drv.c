@@ -1,4 +1,3 @@
-
 #ifdef BUILD_UBOOT
 #define ENABLE_DPI_INTERRUPT        0
 #define ENABLE_DPI_REFRESH_RATE_LOG 0
@@ -185,7 +184,7 @@ void DPI_EnableIrq(void)
 {
 #if ENABLE_DPI_INTERRUPT
 		DPI_REG_INTERRUPT enInt = DPI_REG->INT_ENABLE;
-		enInt.FIFO_EMPTY = 0;
+		enInt.FIFO_EMPTY = 1;
 		enInt.FIFO_FULL = 0;
 		enInt.OUT_EMPTY = 0;
 		enInt.CNT_OVERFLOW = 0;
@@ -193,6 +192,58 @@ void DPI_EnableIrq(void)
 		enInt.VSYNC = 1;
 		OUTREG32(&DPI_REG->INT_ENABLE, AS_UINT32(&enInt));
 #endif
+}
+
+unsigned int auto_sync_reset_switch = 1;
+static unsigned int auto_sync_reset_count = 0;
+static unsigned long long last_fifo_empty_stamp = 0;
+
+#define FIFO_EMPTY_MONITOR_SLIDING_WINDOW 10
+static unsigned int _fifo_empty_monitor_period[FIFO_EMPTY_MONITOR_SLIDING_WINDOW];
+static unsigned int _fifo_empty_monitor_count = 0;
+static unsigned int _fifo_empty_monitor_cursor = 0;
+
+int _fifo_empty_monitor_init(void)
+{
+	printk("%s\n", __func__);
+	_fifo_empty_monitor_count = 0;
+	_fifo_empty_monitor_cursor = 0;
+	memset(&_fifo_empty_monitor_period, 0, FIFO_EMPTY_MONITOR_SLIDING_WINDOW);
+	return 0;
+}
+
+int _fifo_empty_monitor_insert(unsigned int latest_period)
+{
+	int i = 0;
+	int temp = 0;
+	//printk("%s\n", __func__);
+	
+	_fifo_empty_monitor_period[_fifo_empty_monitor_cursor] = latest_period/1000;	// us is enough
+	_fifo_empty_monitor_cursor = (_fifo_empty_monitor_cursor+1)%FIFO_EMPTY_MONITOR_SLIDING_WINDOW;
+	_fifo_empty_monitor_count++;
+
+	if(_fifo_empty_monitor_count > FIFO_EMPTY_MONITOR_SLIDING_WINDOW) 
+		_fifo_empty_monitor_count = FIFO_EMPTY_MONITOR_SLIDING_WINDOW;
+	
+	for(i = 0;i< _fifo_empty_monitor_count;i++)
+	{
+		temp += _fifo_empty_monitor_period[i];
+		//printk("%d ", _fifo_empty_monitor_period[i]);
+	}
+	
+	//printk("[%d][%d]\n", _fifo_empty_monitor_cursor , temp/_fifo_empty_monitor_count);
+
+	if(_fifo_empty_monitor_count)
+	{
+		if((temp/_fifo_empty_monitor_count) < 15000)
+			return 1;
+		else 
+			return 0;
+	}
+	else
+	{
+		return 0;
+	}
 }
 
 #if ENABLE_DPI_INTERRUPT
@@ -226,9 +277,66 @@ static irqreturn_t _DPI_InterruptHandler(int irq, void *dev_id)
 
 	 if (status.FIFO_EMPTY)
 	 {	 		
-		DSI_handle_esd_recovery();
-	 }
+	 	int need_reset = 0;
+	 	unsigned long long temp = sched_clock();
 
+		unsigned int debug_while_loop_cnt = 0;
+		volatile unsigned int dsi_state = INREG32(DSI_BASE+0x154);
+		if((dsi_state & 0x1ff) == 0x80)
+		{
+			auto_sync_reset_count++;
+			if(auto_sync_reset_count == 10)
+			{
+				auto_sync_reset_count = 0;
+				need_reset = 2;
+			}
+		}
+		else
+		{
+			auto_sync_reset_count = 0;
+		}
+		
+		//printk("gmce,0x%08x, %d\n",(INREG32(DSI_BASE+0x154))&0x1ff, (unsigned int)(temp - last_fifo_empty_stamp));
+		if(_fifo_empty_monitor_insert((unsigned int)(temp - last_fifo_empty_stamp)))
+		{
+			need_reset = 1;
+		}
+		
+		last_fifo_empty_stamp = temp;
+		if(need_reset)
+		{
+			unsigned int mode, suspend;
+
+			mode = DSI_GetMode();
+			suspend = DISP_GetSuspendMode();
+			if ((mode != CMD_MODE) && !suspend)
+			{      	
+			DPI_DisableClk();
+			#if 0
+			while(1)
+			{
+				debug_while_loop_cnt++;
+				dsi_state = INREG32(DSI_BASE+0x154);
+				if((dsi_state &0x1ff) == 0x100) break;
+				if(debug_while_loop_cnt > 0x1000000) 
+				{
+					printk("FATAL Error!! dsi in vact when dpi fifo empty, and can't into vfp until 0x100000 loops!!\n");
+				}
+	 }
+			#endif
+
+			DSI_clk_HS_mode(0);
+			DSI_SetMode(CMD_MODE);
+			DSI_Reset();
+			DSI_SetMode(SYNC_PULSE_VDO_MODE);
+			DSI_clk_HS_mode(1);
+			DPI_EnableClk();
+			DSI_EnableClk();
+			}
+			printk("[DSI/DPI]reset[%d] mode[%d], suspend[%d]\n", need_reset, mode, suspend);
+			need_reset = 0;
+		}		
+	}
     _DPI_LogRefreshRate(status);
 	OUTREG32(&DPI_REG->INT_STATUS, 0);
     return IRQ_HANDLED;
@@ -319,8 +427,8 @@ DPI_STATUS DPI_Init(BOOL isDpiPoweredOn)
     {
         DPI_REG_FIFO_TH th = DPI_REG->FIFO_TH;
 
-        th.LOW = 400;
-        th.HIGH = 496;
+        th.LOW = 512;
+        th.HIGH = 512;
 
         OUTREG32(&DPI_REG->FIFO_TH, AS_UINT32(&th));
         DPI_REG->FIFO_INC.FIFO_TH_INC = 8;
@@ -337,7 +445,7 @@ DPI_STATUS DPI_Init(BOOL isDpiPoweredOn)
 //    init_waitqueue_head(&_vsync_wait_queue_dpi);
     {
         DPI_REG_INTERRUPT enInt = DPI_REG->INT_ENABLE;
-        enInt.FIFO_EMPTY = 0;
+        enInt.FIFO_EMPTY = 1;
 		enInt.FIFO_FULL = 0;
         enInt.OUT_EMPTY = 0;
 		enInt.CNT_OVERFLOW = 0;
@@ -487,6 +595,8 @@ DPI_STATUS DPI_PowerOn()
 #endif        
         _RestoreDPIRegisters();
         s_isDpiPowerOn = TRUE;
+
+	_fifo_empty_monitor_init();
     }
 #endif
     return DPI_STATUS_OK;

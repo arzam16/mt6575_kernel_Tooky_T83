@@ -445,8 +445,8 @@
 
 #define CFG_TX_STOP_NETIF_QUEUE_THRESHOLD   256 /* packets */
 
-#define CFG_TX_STOP_NETIF_PER_QUEUE_THRESHOLD   64  /* packets */
-#define CFG_TX_START_NETIF_PER_QUEUE_THRESHOLD  32  /* packets */
+#define CFG_TX_STOP_NETIF_PER_QUEUE_THRESHOLD   512  /* packets */
+#define CFG_TX_START_NETIF_PER_QUEUE_THRESHOLD  128  /* packets */
 
 
 #define ETH_P_1X                            0x888E
@@ -561,6 +561,7 @@
 
 #include <linux/random.h>
 
+#include <linux/lockdep.h>
 
 #include <asm/io.h>             /* readw and writew */
 

@@ -6,9 +6,9 @@
 #ifdef MTK_M4U_SUPPORT
 
 
-#if defined(CONFIG_ARCH_MT6577)
+//#if defined(CONFIG_ARCH_MT6577)
     #define MTK_G2D_ENABLE_M4U
-#endif
+//#endif
 #define MTK_DEBUG_ENABLE_M4U
 #define MTK_TVOUT_ENABLE_M4U
 #define MTK_LCDC_ENABLE_M4U
@@ -144,7 +144,7 @@ typedef enum
 #define M4U_CLNTMOD_SZ_RGB_ROT2    200 * 0x00100000
 #define M4U_CLNTMOD_SZ_OVL         8  * 0x00100000
 #define M4U_CLNTMOD_SZ_LCDC        64 * 0x00100000
-#define M4U_CLNTMOD_SZ_LCDC_UI     24 * 0x00100000 // 32
+#define M4U_CLNTMOD_SZ_LCDC_UI     32 * 0x00100000
 #define M4U_CLNTMOD_SZ_RDMA1       200 * 0x00100000
 #define M4U_CLNTMOD_SZ_TVC         32 * 0x00100000
 #define M4U_CLNTMOD_SZ_SPI         16 * 0x00100000
@@ -309,67 +309,6 @@ typedef struct _M4U_CACHE
 
 #define MTK_M4U_T_PUT_TSK_STRUCT     _IOW(MTK_M4U_MAGICNO, 25, int)
 
-// Function pointer for kernel user
-// M4U is .ko module, can not export function to .o module
-// So kernel user should export functin pointer, M4U will 
-// fill those pointers as callback for kernel user
-// TVR, TVC, LCDC, DPI
-typedef struct
-{
-  bool isInit;
-  int (*m4u_dump_reg)(M4U_MODULE_ID_ENUM eModuleID);
-  int (*m4u_dump_info)(M4U_MODULE_ID_ENUM eModuleID);
-  int (*m4u_power_on)(M4U_MODULE_ID_ENUM eModuleID);
-  int (*m4u_power_off)(M4U_MODULE_ID_ENUM eModuleID);
-
-  int (*m4u_alloc_mva)(M4U_MODULE_ID_ENUM eModuleID, 
-                  const unsigned int BufAddr, 
-                  const unsigned int BufSize, 
-                  unsigned int *pRetMVABuf);
-  
-  int (*m4u_dealloc_mva)(M4U_MODULE_ID_ENUM eModuleID, 
-                  const unsigned int BufAddr, 
-                  const unsigned int BufSize,
-                  const unsigned int MVA);		
-                  							
-  int (*m4u_insert_tlb_range)(M4U_MODULE_ID_ENUM eModuleID, 
-                  unsigned int MVAStart, 
-                  const unsigned int MVAEnd, 
-                  M4U_RANGE_PRIORITY_ENUM ePriority,
-                  unsigned int entryCount);
-                        
-  int (*m4u_invalid_tlb_range)(M4U_MODULE_ID_ENUM eModuleID, 
-                  unsigned int MVAStart, 
-                  unsigned int MVAEnd);     
-             
-  int (*m4u_invalid_tlb_all)(M4U_MODULE_ID_ENUM eModuleID);  
-  int (*m4u_manual_insert_entry)(M4U_MODULE_ID_ENUM eModuleID,
-                  unsigned int EntryMVA, 
-                  bool Lock); 
-  
-  int (*m4u_config_port)(M4U_PORT_STRUCT* pM4uPort); //native
-  int (*m4u_monitor_start)(M4U_PORT_ID_ENUM PortID);
-  int (*m4u_monitor_stop)(M4U_PORT_ID_ENUM PortID);
-  
-  #ifdef ENABLE_GET_PAGES_TUNNING
-  int (*m4u_dma_cache_maint)(M4U_MODULE_ID_ENUM eModuleID, const void *start, size_t size, int direction);
-  #endif
-  int (*m4u_reg_backup)(M4U_MODULE_ID_ENUM eModuleID); 
-  int (*m4u_reg_restore)(M4U_MODULE_ID_ENUM eModuleID); 
-  
-} M4U_EXPORT_FUNCTION_STRUCT;
-
-typedef struct
-{
-	bool isInit;
-  int (*m4u_perf_timer_on)(void);
-  int (*m4u_perf_timer_off)(void);
-  int (*m4u_log_on)(void);
-  int (*m4u_log_off)(void);
-  int (*m4u_mau_check_pagetable)(unsigned int start_addr, unsigned int end_addr);
-  int (*m4u_mau_get_physical_port)(unsigned int* engineMask);
-  int (*m4u_debug_command)(unsigned int command);
-} M4U_DEBUG_FUNCTION_STRUCT;
 
 // for kernel direct call --------------------------------------------
 int m4u_dump_reg(M4U_MODULE_ID_ENUM eModuleID);
@@ -443,6 +382,11 @@ int m4u_query_mva(M4U_MODULE_ID_ENUM eModuleID,
 								  unsigned int *pRetMVABuf,
 								  struct file * a_pstFile) ;
 								  
+int m4u_perf_timer_on(void);
+int m4u_perf_timer_off(void);
+int m4u_log_on(void);
+int m4u_log_off(void);
+int m4u_debug_command(unsigned int command);
 // m4u driver internal use ---------------------------------------------------
 //
 

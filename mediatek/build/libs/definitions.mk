@@ -40,7 +40,10 @@ $(strip \
     $(call emit-line.mtk,$(wordlist 4401,4600,$(1)),$(2)) \
     $(call emit-line.mtk,$(wordlist 4601,4800,$(1)),$(2)) \
     $(call emit-line.mtk,$(wordlist 4801,5000,$(1)),$(2)) \
-    $(if $(wordlist 5001,5002,$(1)),$(error Too many words ($(words $(1))))) \
+    $(call emit-line.mtk,$(wordlist 5001,5200,$(1)),$(2)) \
+    $(call emit-line.mtk,$(wordlist 5201,5400,$(1)),$(2)) \
+    $(call emit-line.mtk,$(wordlist 5401,5600,$(1)),$(2)) \
+    $(if $(wordlist 5601,5602,$(1)),$(error Too many words ($(words $(1))))) \
  )
 endef
 

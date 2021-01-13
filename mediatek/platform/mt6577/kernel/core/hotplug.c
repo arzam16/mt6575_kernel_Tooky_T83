@@ -6,12 +6,8 @@
 #include <linux/spinlock.h>
 #include <asm/cacheflush.h>
 #include <mach/hotplug.h>
+#include <mach/wd_api.h>
 
-
-#ifdef CONFIG_LOCAL_WDT	
-extern void mpcore_wk_wdt_stop(void);
-extern void wk_stop_kick_cpu(int cpu);
-#endif
 
 #ifdef CONFIG_MT65XX_TRACER
 extern void pmu_regs_save(void);
@@ -200,17 +196,16 @@ int platform_cpu_kill(unsigned int cpu)
 void platform_cpu_die(unsigned int cpu)
 {
     int spurious = 0;
+    struct wd_api *wd_api = NULL;
     
     HOTPLUG_INFO("platform_cpu_die, cpu: %d\n", cpu);
-
+    
+    get_wd_api(&wd_api);
+    if (wd_api)
+        wd_api->wd_cpu_hot_plug_off_notify(cpu);
+    
 #ifdef CONFIG_MT65XX_TRACER
     pmu_regs_save();
-#endif
-
-#ifdef CONFIG_LOCAL_WDT
-    /* disable local watchdog */
-    mpcore_wk_wdt_stop();
-    wk_stop_kick_cpu(cpu);
 #endif
 
     /*

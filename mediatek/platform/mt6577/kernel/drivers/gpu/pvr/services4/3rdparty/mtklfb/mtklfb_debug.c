@@ -32,7 +32,7 @@ PVRSRV_ERROR MTKInsertDebugInfoKM(const char* szInfo)
 	strncpy(g_szDebugInfo[g_iIndex], szInfo, iLen);
 	g_szDebugInfo[g_iIndex][iLen]='\0';
 	g_iIndex = (g_iIndex + 1)%MAX_COUNT;
-	sprintf(g_szDebugInfo[g_iIndex], "---");
+	snprintf(g_szDebugInfo[g_iIndex], MAX_LENGTH, "---");
 	spin_unlock(&g_kLock);
 	return PVRSRV_OK;
 }
@@ -58,8 +58,8 @@ static void do_command(const char *input)
 	}
 	else
 	{
-        xlog_printk(ANDROID_LOG_ERROR, DRIVER_PREFIX, DRIVER_PREFIX ": invalid debug command...\n");
-    }
+    xlog_printk(ANDROID_LOG_ERROR, DRIVER_PREFIX, DRIVER_PREFIX ": invalid debug command...\n");
+}
 }
 
 static void process_commands(char *input)

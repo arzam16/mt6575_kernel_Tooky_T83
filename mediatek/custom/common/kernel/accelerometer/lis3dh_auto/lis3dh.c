@@ -27,7 +27,6 @@
 #include <linux/platform_device.h>
 #include <asm/atomic.h>
 
-
 #include <cust_acc.h>
 #include <linux/hwmsensor.h>
 #include <linux/hwmsen_dev.h>
@@ -39,6 +38,7 @@
 #include <mach/mt_typedefs.h>
 #include <mach/mt_gpio.h>
 #include <mach/mt_pm_ldo.h>
+
 
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 
@@ -1023,7 +1023,7 @@ static ssize_t store_firlen_value(struct device_driver *ddri, const char *buf, s
 	else
 	{ 
 		atomic_set(&obj->firlen, firlen);
-		if(NULL == &firlen)//yucong fix build warning
+		if(0 == firlen)//yucong fix build warning
 		{
 			atomic_set(&obj->fir_en, 0);
 		}

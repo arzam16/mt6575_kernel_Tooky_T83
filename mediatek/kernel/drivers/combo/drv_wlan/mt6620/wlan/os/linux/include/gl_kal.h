@@ -1208,9 +1208,9 @@ typedef UINT_32             KAL_WAKE_LOCK_T, *P_KAL_WAKE_LOCK_T;
 #define SAA_LOUD_LOGDUMP8(x, y)
 #define SAA_TEMP_LOGDUMP8(x, y)
 
-#define P2P_ERROR_LOGFUNC(_Fmt...)
-#define P2P_WARN_LOGFUNC(_Fmt...)
-#define P2P_INFO_LOGFUNC(_Fmt...)
+#define P2P_ERROR_LOGFUNC(_Fmt...) xlog_printk(ANDROID_LOG_ERROR, XLOG_TAG, _Fmt) 
+#define P2P_WARN_LOGFUNC(_Fmt...)  xlog_printk(ANDROID_LOG_WARN, XLOG_TAG, _Fmt) 
+#define P2P_INFO_LOGFUNC(_Fmt...)  xlog_printk(ANDROID_LOG_INFO, XLOG_TAG, _Fmt) 
 #define P2P_STATE_LOGFUNC(_Fmt...)
 #define P2P_EVENT_LOGFUNC(_Fmt...)
 #define P2P_TRACE_LOGFUNC(_Fmt...)
@@ -1856,7 +1856,7 @@ kalQoSFrameClassifierAndPacketInfo (
     OUT PUINT_8 pucNetworkType
 );
 
-inline VOID
+VOID
 kalOidComplete (
     IN P_GLUE_INFO_T prGlueInfo,
     IN BOOLEAN fgSetQuery,

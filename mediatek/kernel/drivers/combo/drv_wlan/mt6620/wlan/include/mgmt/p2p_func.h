@@ -190,6 +190,16 @@ p2pFuncGetStationInfo(
     OUT P_P2P_STATION_INFO_T prStaInfo
     );
 
+BOOLEAN
+p2pFuncGetAttriList(
+    IN P_ADAPTER_T prAdapter,
+    IN UINT_8 ucOuiType,
+    IN PUINT_8 pucIE,
+    IN UINT_16 u2IELength,
+    OUT PPUINT_8 ppucAttriList,
+    OUT PUINT_16 pu2AttriListLen
+    );
+
 P_MSDU_INFO_T
 p2pFuncProcessP2pProbeRsp(
     IN P_ADAPTER_T prAdapter,
@@ -255,6 +265,21 @@ p2pFuncGenerateP2p_IEForAssocRsp(
 
 
 UINT_32
+p2pFuncCalculateWSC_IELenForAssocRsp(
+    IN P_ADAPTER_T prAdapter,
+    IN ENUM_NETWORK_TYPE_INDEX_T eNetTypeIndex,
+    IN P_STA_RECORD_T prStaRec
+    );
+
+VOID
+p2pFuncGenerateWSC_IEForAssocRsp(
+    IN P_ADAPTER_T prAdapter,
+    IN P_MSDU_INFO_T prMsduInfo
+    );
+
+
+
+UINT_32
 p2pFuncCalculateP2P_IELen(
     IN P_ADAPTER_T prAdapter,
     IN ENUM_NETWORK_TYPE_INDEX_T eNetTypeIndex,
@@ -312,13 +337,14 @@ p2pFuncGetSpecIE(
     IN PBOOLEAN pfgIsMore
     );
 
+
 P_ATTRIBUTE_HDR_T
 p2pFuncGetSpecAttri(
     IN P_ADAPTER_T prAdapter,
     IN UINT_8 ucOuiType,
     IN PUINT_8 pucIEBuf,
     IN UINT_16 u2BufferLen,
-    IN UINT_8 ucAttriID
+    IN UINT_16 u2AttriID
     );
 
 #endif

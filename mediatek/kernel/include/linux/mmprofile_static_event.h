@@ -7,7 +7,7 @@ typedef enum
     MMP_InvalidEvent = 0,
     MMP_RootEvent = 1,
     // User defined static events begin
-
+    MMP_TouchPanelEvent,
     // User defined static events end.
     MMP_MaxStaticEvent
 } MMP_StaticEvents;
@@ -23,6 +23,7 @@ typedef struct
 static MMP_StaticEvent_t MMProfileStaticEvents[] = 
 {
     {MMP_RootEvent,         "Root_Event",           MMP_InvalidEvent},
+    {MMP_TouchPanelEvent,   "TouchPanel_Event",     MMP_RootEvent},
 };
 
 #endif

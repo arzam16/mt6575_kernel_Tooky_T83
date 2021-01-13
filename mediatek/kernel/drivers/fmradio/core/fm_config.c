@@ -1,3 +1,25 @@
+/* fm_config.c
+ *
+ * (C) Copyright 2011
+ * MediaTek <www.MediaTek.com>
+ * hongcheng <hongcheng.xia@MediaTek.com>
+ *
+ * FM Radio Driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include <linux/string.h>
 #include <linux/slab.h>
 
@@ -8,9 +30,10 @@
 #include "fm_stdlib.h"
 #include "fm_patch.h"
 #include "fm_config.h"
+#if (!defined(MT6628_FM)&&!defined(MT6620_FM)&&!defined(MT6627_FM)&&!defined(MT6630_FM))
 #include "fm_cust_cfg.h"
-
-static struct fm_cust_cfg fm_config;
+#endif
+static fm_cust_cfg fm_config;
 static fm_s32 fm_index = 0;
 
 #if 0
@@ -28,7 +51,7 @@ static fm_s32 to_upper(fm_s8 *str)
 }
 #endif
 
-static fm_s32 to_upper_n(fm_s8 *str, fm_s32 len)
+fm_s32 to_upper_n(fm_s8 *str, fm_s32 len)
 {
     fm_s32 i = 0;
 
@@ -41,7 +64,7 @@ static fm_s32 to_upper_n(fm_s8 *str, fm_s32 len)
     return 0;
 }
 
-static fm_s32 check_hex_str(fm_s8 *str, fm_s32 len)
+fm_s32 check_hex_str(fm_s8 *str, fm_s32 len)
 {
     fm_s32 i = 0;
 
@@ -56,7 +79,7 @@ static fm_s32 check_hex_str(fm_s8 *str, fm_s32 len)
     return 0;
 }
 
-static fm_s32 check_dec_str(fm_s8 *str, fm_s32 len)
+fm_s32 check_dec_str(fm_s8 *str, fm_s32 len)
 {
     fm_s32 i = 0;
 
@@ -71,7 +94,7 @@ static fm_s32 check_dec_str(fm_s8 *str, fm_s32 len)
     return 0;
 }
 
-static fm_s32 ascii_to_hex(fm_s8 *in_ascii, fm_u16 *out_hex)
+fm_s32 ascii_to_hex(fm_s8 *in_ascii, fm_u16 *out_hex)
 {
     fm_s32 len = (fm_s32)strlen(in_ascii);
     int    i = 0;
@@ -99,7 +122,7 @@ static fm_s32 ascii_to_hex(fm_s8 *in_ascii, fm_u16 *out_hex)
     return 0;
 }
 
-static fm_s32 ascii_to_dec(fm_s8 *in_ascii, fm_s32 *out_dec)
+fm_s32 ascii_to_dec(fm_s8 *in_ascii, fm_s32 *out_dec)
 {
     fm_s32 len = (fm_s32)strlen(in_ascii);
     int i = 0;
@@ -132,7 +155,7 @@ static fm_s32 ascii_to_dec(fm_s8 *in_ascii, fm_s32 *out_dec)
     return 0;
 }
 
-static fm_s32 trim_string(fm_s8 **start)
+fm_s32 trim_string(fm_s8 **start)
 {
     fm_s8 *end = *start;
 
@@ -156,7 +179,7 @@ static fm_s32 trim_string(fm_s8 **start)
     return (end - *start);
 }
 
-static fm_s32 trim_path(fm_s8 **start)
+fm_s32 trim_path(fm_s8 **start)
 {
     fm_s8 *end = *start;
 
@@ -176,7 +199,7 @@ static fm_s32 trim_path(fm_s8 **start)
     return (end - *start);
 }
 
-static fm_s32 cfg_parser(fm_s8 *buffer, CFG_HANDLER handler, struct fm_cust_cfg *cfg)
+fm_s32 cfg_parser(fm_s8 *buffer, CFG_HANDLER handler, fm_cust_cfg *cfg)
 {
     fm_s32 ret = 0;
     fm_s8 *p = buffer;
@@ -214,7 +237,7 @@ static fm_s32 cfg_parser(fm_s8 *buffer, CFG_HANDLER handler, struct fm_cust_cfg 
                 //record group name
                 state = FM_CFG_STAT_NONE;
                 trim_string(&group_start);
-                //WCN_DBG(FM_DBG|MAIN, "%s\n", group_start);
+                //WCN_DBG(FM_NTC|MAIN, "g=%s\n", group_start);
             }
 
             break;
@@ -237,7 +260,7 @@ static fm_s32 cfg_parser(fm_s8 *buffer, CFG_HANDLER handler, struct fm_cust_cfg 
                 state = FM_CFG_STAT_VALUE;
                 value_start = p + 1;
                 trim_string(&key_start);
-                //WCN_DBG(FM_DBG|MAIN, "%s\n", key_start);
+                //WCN_DBG(FM_NTC|MAIN, "k=%s\n", key_start);
             }
 
             break;
@@ -248,13 +271,13 @@ static fm_s32 cfg_parser(fm_s8 *buffer, CFG_HANDLER handler, struct fm_cust_cfg 
                 *p = '\0';
                 //record value
                 trim_string(&value_start);
+                //WCN_DBG(FM_NTC|MAIN, "v=%s\n", value_start);
 
                 if (handler) {
                     ret = handler(group_start, key_start, value_start, cfg);
                 }
 
                 state = FM_CFG_STAT_NONE;
-                //WCN_DBG(FM_DBG|MAIN, "%s\n", value_start);
             }
 
             break;
@@ -267,12 +290,14 @@ static fm_s32 cfg_parser(fm_s8 *buffer, CFG_HANDLER handler, struct fm_cust_cfg 
     return ret;
 }
 
-static fm_s32 cfg_item_match(fm_s8 *src_key, fm_s8 *src_val, fm_s8 *dst_key, fm_u16 *dst_val)
+fm_s32 cfg_item_match(fm_s8 *src_key, fm_s8 *src_val, fm_s8 *dst_key, fm_s32 *dst_val)
 {
     fm_s32 ret = 0;
     fm_u16 tmp_hex;
     fm_s32 tmp_dec;
 
+	//WCN_DBG(FM_NTC|MAIN,"src_key=%s,src_val=%s\n", src_key,src_val);
+	//WCN_DBG(FM_NTC|MAIN,"dst_key=%s\n", dst_key);
     if (strcmp(src_key, dst_key) == 0) {
         if (strncmp(src_val, "0x", strlen("0x")) == 0) {
             src_val += strlen("0x");
@@ -281,30 +306,34 @@ static fm_s32 cfg_item_match(fm_s8 *src_key, fm_s8 *src_val, fm_s8 *dst_key, fm_
 
             if (!ret) {
                 *dst_val = tmp_hex;
-                //WCN_DBG(FM_DBG|MAIN, "%s 0x%04x\n", dst_key, tmp_hex);
+                //WCN_DBG(FM_NTC|MAIN, "%s 0x%04x\n", dst_key, tmp_hex);
                 return 0;
             } else {
-                WCN_DBG(FM_ERR | MAIN, "%s format error\n", dst_key);
+                //WCN_DBG(FM_ERR | MAIN, "%s format error\n", dst_key);
                 return 1;
             }
         } else {
             ret = ascii_to_dec(src_val, &tmp_dec);
 
-            if (!ret && ((0 <= tmp_dec) && (tmp_dec <= 0xFFFF))) {
+            if (!ret /*&& ((0 <= tmp_dec) && (tmp_dec <= 0xFFFF))*/) {
                 *dst_val = tmp_dec;
-                //WCN_DBG(FM_DBG|MAIN, "%s %d\n", dst_key, tmp_dec);
+                //WCN_DBG(FM_NTC|MAIN, "%s %d\n", dst_key, tmp_dec);
                 return 0;
             } else {
-                WCN_DBG(FM_ERR | MAIN, "%s format error\n", dst_key);
+                //WCN_DBG(FM_ERR | MAIN, "%s format error\n", dst_key);
                 return 1;
             }
         }
     }
+    //else
+    //{
+	//	WCN_DBG(FM_ERR | MAIN, "src_key!=dst_key\n");
+    //}
 
     return -1;
 }
 
-static fm_s32 cfg_item_handler(fm_s8 *grp, fm_s8 *key, fm_s8 *val, struct fm_cust_cfg *cfg)
+static fm_s32 cfg_item_handler(fm_s8 *grp, fm_s8 *key, fm_s8 *val, fm_cust_cfg *cfg)
 {
     fm_s32 ret = 0;
     struct fm_rx_cust_cfg *rx_cfg = &cfg->rx_cfg;
@@ -354,9 +383,10 @@ static fm_s32 cfg_item_handler(fm_s8 *grp, fm_s8 *key, fm_s8 *val, struct fm_cus
     }
 }
 
-static fm_s32 fm_cust_config_default(struct fm_cust_cfg *cfg)
+static fm_s32 fm_cust_config_default(fm_cust_cfg *cfg)
 {
     FMR_ASSERT(cfg);
+#if (!defined(MT6628_FM)&&!defined(MT6620_FM)&&!defined(MT6627_FM)&&!defined(MT6630_FM))
 
     cfg->rx_cfg.long_ana_rssi_th = FM_RX_RSSI_TH_LONG;
     cfg->rx_cfg.short_ana_rssi_th = FM_RX_RSSI_TH_SHORT;
@@ -381,11 +411,11 @@ static fm_s32 fm_cust_config_default(struct fm_cust_cfg *cfg)
     cfg->tx_cfg.scan_hole_low = FM_TX_SCAN_HOLE_LOW;
     cfg->tx_cfg.scan_hole_high = FM_TX_SCAN_HOLE_HIGH;
     cfg->tx_cfg.power_level = FM_TX_PWR_LEVEL_MAX;
-
+#endif
     return 0;
 }
 
-static fm_s32 fm_cust_config_file(const fm_s8 *filename, struct fm_cust_cfg *cfg)
+static fm_s32 fm_cust_config_file(const fm_s8 *filename, fm_cust_cfg *cfg)
 {
     fm_s32 ret = 0;
     fm_s8 *buf = NULL;
@@ -416,7 +446,7 @@ out:
     return ret;
 }
 
-static fm_s32 fm_cust_config_print(struct fm_cust_cfg *cfg)
+static fm_s32 fm_cust_config_print(fm_cust_cfg *cfg)
 {
     fm_s32 i;
 
@@ -446,7 +476,7 @@ static fm_s32 fm_cust_config_print(struct fm_cust_cfg *cfg)
 
     return 0;
 }
-fm_s32 fm_cust_config_setup(const fm_s8 *filepath)
+fm_s32 fm_cust_config(const fm_s8 *filepath)
 {
     fm_s32 ret = 0;
     fm_s8 *filep = NULL;

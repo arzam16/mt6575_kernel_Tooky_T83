@@ -1,3 +1,4 @@
+
 #ifdef DFT_TAG
 #undef DFT_TAG
 #endif
@@ -147,13 +148,15 @@ static const struct parse_data wmtcfg_fields[] = {
     { CHAR(pwr_on_rst_slot) },
     { CHAR(pwr_on_off_slot) },
     { CHAR(pwr_on_on_slot) },
+    { CHAR(co_clock_flag) },
     
+    { INT(sdio_driving_cfg) },
     
 };
 
 #define NUM_WMTCFG_FIELDS (osal_sizeof(wmtcfg_fields) / osal_sizeof(wmtcfg_fields[0]))
 
-static int wmt_conf_parse_char(P_DEV_WMT pWmtDev, const struct parse_data *data,
+static INT32 wmt_conf_parse_char(P_DEV_WMT pWmtDev, const struct parse_data *data,
                  const PCHAR pos)
 {
     PUCHAR dst;
@@ -190,7 +193,7 @@ static PCHAR  wmt_conf_write_char(P_DEV_WMT pWmtDev, const struct parse_data *da
     return value;
 }
 
-static int wmt_conf_parse_short(P_DEV_WMT pWmtDev, const struct parse_data *data,
+static INT32 wmt_conf_parse_short(P_DEV_WMT pWmtDev, const struct parse_data *data,
                  const PCHAR pos)
 {
     PUINT16 dst;
@@ -231,7 +234,7 @@ static PCHAR  wmt_conf_write_short(P_DEV_WMT pWmtDev, const struct parse_data *d
     return value;
 }
 
-static int wmt_conf_parse_int(P_DEV_WMT pWmtDev, const struct parse_data *data,
+static INT32 wmt_conf_parse_int(P_DEV_WMT pWmtDev, const struct parse_data *data,
                  const PCHAR pos)
 {
     PUINT32 dst;
@@ -277,8 +280,8 @@ static INT32 wmt_conf_parse_pair (
     const PCHAR pVal
     )
 {
-    int i = 0;
-    int ret = 0;
+    INT32 i = 0;
+    INT32 ret = 0;
 
     //WMT_INFO_FUNC( DBG_NAME "cfg(%s) val(%s) \n", pKey, pVal);
 
@@ -426,24 +429,47 @@ static INT32 wmt_conf_parse (
 }
 
 
+INT32  wmt_conf_set_cfg_file(const CHAR *name)
+{
+    if (NULL == name)
+    {
+        WMT_ERR_FUNC("name is NULL\n");
+        return -1;
+    }
+	if (osal_strlen(name) >= osal_sizeof(gDevWmt.cWmtcfgName))
+	{
+	    WMT_ERR_FUNC("name is too long, length=%d, expect to < %d \n", osal_strlen(name), osal_sizeof(gDevWmt.cWmtcfgName));
+	    return -2;
+	}
+	osal_memset(&gDevWmt.cWmtcfgName[0], 0, osal_sizeof(gDevWmt.cWmtcfgName));
+	osal_strcpy(&(gDevWmt.cWmtcfgName[0]), name);
+	WMT_ERR_FUNC("WMT config file is set to (%s)\n", &(gDevWmt.cWmtcfgName[0]));
+	
+	return 0;
+}
+
+
 INT32  wmt_conf_read_file(VOID)
 {
     INT32 ret = -1;
 
     osal_memset(&gDevWmt.rWmtGenConf, 0, osal_sizeof(gDevWmt.rWmtGenConf));
     osal_memset(&gDevWmt.pWmtCfg, 0, osal_sizeof(gDevWmt.pWmtCfg));
+	
+	#if 0
     osal_memset(&gDevWmt.cWmtcfgName[0], 0, osal_sizeof(gDevWmt.cWmtcfgName));
 
     osal_strncat(&(gDevWmt.cWmtcfgName[0]), CUST_CFG_WMT_PREFIX, osal_sizeof(CUST_CFG_WMT_PREFIX));
     osal_strncat(&(gDevWmt.cWmtcfgName[0]), CUST_CFG_WMT, osal_sizeof(CUST_CFG_WMT));
-
+    #endif
+	
     if (!osal_strlen(&(gDevWmt.cWmtcfgName[0])))
     {
         WMT_ERR_FUNC("empty Wmtcfg name\n");
         osal_assert(0);
         return ret;
     }
-
+    WMT_INFO_FUNC("WMT config file:%s\n", &(gDevWmt.cWmtcfgName[0]));
     if ( 0 == wmt_dev_patch_get(&gDevWmt.cWmtcfgName[0], (osal_firmware **)&gDevWmt.pWmtCfg, 0) )
     {
         /*get full name patch success*/
@@ -464,7 +490,7 @@ INT32  wmt_conf_read_file(VOID)
             osal_assert(0);
             ret = -1;
         }
-        wmt_dev_patch_put(&gDevWmt.pWmtCfg);
+        wmt_dev_patch_put((osal_firmware **)&gDevWmt.pWmtCfg);
 /*
         if (gDevWmt.pWmtCfg)
         {
@@ -480,7 +506,7 @@ INT32  wmt_conf_read_file(VOID)
     }
     else
     {
-        WMT_ERR_FUNC("read wmt.cfg file fails\n");
+        WMT_ERR_FUNC("read %s file fails\n", &(gDevWmt.cWmtcfgName[0]));
         osal_assert(0);
 
         gDevWmt.rWmtGenConf.cfgExist = 0;

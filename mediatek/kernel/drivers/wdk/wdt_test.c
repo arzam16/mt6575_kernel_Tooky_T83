@@ -16,6 +16,37 @@
 #include <linux/rtpm_prio.h>
 #include <linux/rtc.h>
 #include <linux/cpu.h>
+#include <mach/mt_wdt.h>
+
+//
+
+#include <linux/init.h>        /* For init/exit macros */
+#include <linux/module.h>      /* For MODULE_ marcros  */
+#include <linux/kernel.h>
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <linux/device.h>
+#include <linux/interrupt.h>
+#include <linux/spinlock.h>
+#include <linux/watchdog.h>
+#include <linux/platform_device.h>
+
+
+
+#include <asm/uaccess.h>
+#include <mach/irqs.h>
+#include <mach/mt_reg_base.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_wdt.h>
+#include <linux/delay.h>
+
+#include <linux/device.h>
+#include <linux/kdev_t.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <mach/wd_api.h>
+#include <linux/aee.h>
+
 
 #ifdef CONFIG_LOCAL_WDT
 extern int nr_cpu_ids;
@@ -33,8 +64,6 @@ static DEFINE_SPINLOCK(wdt_test_lock1);
 static struct task_struct *wk_tsk[2];// cpu: 2
 static int data;
 
-
-
 static int __cpuinit
 cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
 {
@@ -48,9 +77,12 @@ cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
 	case CPU_ONLINE:
 	case CPU_ONLINE_FROZEN:
 //		
+        if(hotcpu < nr_cpu_ids)
+        {
 		kthread_bind(wk_tsk[hotcpu], hotcpu);
 	      wake_up_process(wk_tsk[hotcpu]);	
 		printk("[WDK-test]cpu %d plug on ", hotcpu);
+        }
 		break;
 #ifdef CONFIG_HOTPLUG_CPU
 	case CPU_UP_CANCELED:
@@ -86,7 +118,7 @@ static int kwdt_thread_test(void *arg)
 
   set_current_state(TASK_INTERRUPTIBLE);
   for(;;){ 
-  	printk("wulin debug start, cpu:%d\n", cpu);
+  	printk("wd_test debug start, cpu:%d\n", cpu);
   	spin_lock(&wdt_test_lock0);
   	cpu = smp_processor_id();
   	spin_unlock(&wdt_test_lock0);
@@ -102,7 +134,7 @@ static int kwdt_thread_test(void *arg)
 	  		spin_lock_irqsave(&wdt_test_lock1, flags);
 	  }	
   	msleep(5*1000);//5s
-  	printk("wulin debug end, cpu:%d\n", cpu);
+  	printk("wd_test debug end, cpu:%d\n", cpu);
   	}
   	return 0;
 }
@@ -110,11 +142,11 @@ static int start_kicker(void)
 {
 
 	int i;
-	unsigned char name[10] = {0};
+	unsigned char name[64] = {0};
 	
 
 	for(i = 0; i < nr_cpu_ids; i++){
-	sprintf(name, "wdtk-%d", i);
+	sprintf(name, "wdtk-test-%d", i);
 	printk("[WDK]:thread name: %s\n", name);
 	wk_tsk[i] = kthread_create(kwdt_thread_test, &data, name);
 	if (IS_ERR(wk_tsk[i])) {

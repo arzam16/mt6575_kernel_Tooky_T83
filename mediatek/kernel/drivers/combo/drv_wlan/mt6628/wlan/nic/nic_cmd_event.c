@@ -549,16 +549,6 @@ nicCmdEventQueryLinkQuality(
         prGlueInfo = prAdapter->prGlueInfo;
         prRssi = (PARAM_RSSI *) prCmdInfo->pvInformationBuffer;
 
-        if(!prLinkQuality->ucIsLQ0Rdy) {
-        	
-        	  rRssi = (PARAM_RSSI)prAdapter->rLinkQuality.cRssi; // ranged from (-128 ~ 30) in unit of dBm
-
-            if(rRssi > PARAM_WHQL_RSSI_MAX_DBM)
-                 rRssi = PARAM_WHQL_RSSI_MAX_DBM;
-            else if(rRssi < PARAM_WHQL_RSSI_MIN_DBM)
-                 rRssi = PARAM_WHQL_RSSI_MIN_DBM;
-
-        }
         kalMemCopy(prRssi, &rRssi, sizeof(PARAM_RSSI));
         u4QueryInfoLen = sizeof(PARAM_RSSI);
 
@@ -602,18 +592,12 @@ nicCmdEventQueryLinkSpeed(
         prGlueInfo = prAdapter->prGlueInfo;
         pu4LinkSpeed = (PUINT_32)(prCmdInfo->pvInformationBuffer);
 
-        if(prLinkQuality->ucIsLQ0Rdy) {
-        	  if(prLinkQuality->u2LinkSpeed == 0) {
-                 *pu4LinkSpeed = 10000; /* 10K * 100bps = 1Mbps */
-             }
-             else {
-                 *pu4LinkSpeed = prLinkQuality->u2LinkSpeed * 5000;
-             }
+        if(prLinkQuality->u2LinkSpeed == 0) {
+            *pu4LinkSpeed = 10000; /* 10K * 100bps = 1Mbps */
         }
         else {
-        	  *pu4LinkSpeed = prAdapter->rLinkQuality.u2LinkSpeed * 5000;
+            *pu4LinkSpeed = prLinkQuality->u2LinkSpeed * 5000;
         }
-
 
         u4QueryInfoLen = sizeof(UINT_32);
 
@@ -1662,6 +1646,110 @@ nicCmdEventQueryMemDump (
 
 }
 
+#if CFG_SUPPORT_BUILD_DATE_CODE
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief This function is called when event for build date code information
+*        has been retrieved
+*
+* @param prAdapter          Pointer to the Adapter structure.
+* @param prCmdInfo          Pointer to the command information
+* @param pucEventBuf        Pointer to the event buffer
+*
+* @return none
+*
+*/
+/*----------------------------------------------------------------------------*/
+VOID
+nicCmdEventBuildDateCode (
+    IN P_ADAPTER_T  prAdapter,
+    IN P_CMD_INFO_T prCmdInfo,
+    IN PUINT_8      pucEventBuf
+    )
+{
+    UINT_32 u4QueryInfoLen;
+    P_EVENT_BUILD_DATE_CODE prEvent;
+    P_GLUE_INFO_T prGlueInfo;
 
+    ASSERT(prAdapter);
+    ASSERT(prCmdInfo);
+    ASSERT(pucEventBuf);
+
+    //4 <2> Update information of OID
+    if (prCmdInfo->fgIsOid) {
+        prGlueInfo = prAdapter->prGlueInfo;
+        prEvent = (P_EVENT_BUILD_DATE_CODE)pucEventBuf;
+
+        u4QueryInfoLen = sizeof(UINT_8) * 16;
+        kalMemCopy(prCmdInfo->pvInformationBuffer, prEvent->aucDateCode, sizeof(UINT_8) * 16);
+
+        kalOidComplete(prGlueInfo, prCmdInfo->fgSetQuery, u4QueryInfoLen, WLAN_STATUS_SUCCESS);
+    }
+
+    return;
+}
+#endif
+
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief This function is called when event for query STA link status
+*        has been retrieved
+*
+* @param prAdapter          Pointer to the Adapter structure.
+* @param prCmdInfo          Pointer to the command information
+* @param pucEventBuf        Pointer to the event buffer
+*
+* @return none
+*
+*/
+/*----------------------------------------------------------------------------*/
+VOID
+nicCmdEventQueryStaStatistics (
+    IN P_ADAPTER_T  prAdapter,
+    IN P_CMD_INFO_T prCmdInfo,
+    IN PUINT_8      pucEventBuf
+    )
+{
+    UINT_32 u4QueryInfoLen;
+    P_EVENT_STA_STATISTICS_T prEvent;
+    P_GLUE_INFO_T prGlueInfo;
+    P_PARAM_GET_STA_STATISTICS prStaStatistics;
+
+    ASSERT(prAdapter);
+    ASSERT(prCmdInfo);
+    ASSERT(pucEventBuf);
+    ASSERT(prCmdInfo->pvInformationBuffer);
+
+    if (prCmdInfo->fgIsOid) {
+        prGlueInfo = prAdapter->prGlueInfo;
+        prEvent = (P_EVENT_STA_STATISTICS_T)pucEventBuf;
+        prStaStatistics = (P_PARAM_GET_STA_STATISTICS)prCmdInfo->pvInformationBuffer;
+
+        u4QueryInfoLen = sizeof(PARAM_GET_STA_STA_STATISTICS);
+
+        /* Statistics from FW is valid */
+        if(prEvent->u4Flags & BIT(0)) {
+            prStaStatistics->ucPer = prEvent->ucPer;
+            prStaStatistics->ucRcpi = prEvent->ucRcpi;
+            prStaStatistics->u4PhyMode = prEvent->u4PhyMode;
+            prStaStatistics->u2LinkSpeed = prEvent->u2LinkSpeed;
+            
+            prStaStatistics->u4TxFailCount = prEvent->u4TxFailCount;
+            prStaStatistics->u4TxLifeTimeoutCount = prEvent->u4TxLifeTimeoutCount;
+
+            if(prEvent->u4TxCount) {
+                UINT_32 u4TxDoneAirTimeMs = USEC_TO_MSEC(prEvent->u4TxDoneAirTime * 32);
+                
+                prStaStatistics->u4TxAverageAirTime = (u4TxDoneAirTimeMs / prEvent->u4TxCount);
+            }
+            else {
+                prStaStatistics->u4TxAverageAirTime = 0;
+            }            
+        }
+        
+        kalOidComplete(prGlueInfo, prCmdInfo->fgSetQuery, u4QueryInfoLen, WLAN_STATUS_SUCCESS);
+    }
+    
+}
 
 

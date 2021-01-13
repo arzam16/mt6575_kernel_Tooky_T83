@@ -2188,11 +2188,12 @@ nicUpdateBss(
             if (kalP2PGetCipher(prAdapter->prGlueInfo)) {
             rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_WPA2_PSK;
             rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION3_KEY_ABSENT;
-        }
-        else {
-            rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_OPEN;
-            rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION_DISABLED;
-        }
+            }
+            else {
+                rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_OPEN;
+                rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION_DISABLED;
+            }
+			/* Need the probe response to detect the PBC overlap */    
             rCmdSetBssInfo.fgIsApMode = p2pFuncIsAPMode(prAdapter->rWifiVar.prP2pFsmInfo);
         }
 #else
@@ -2482,6 +2483,8 @@ nicUpdateBeaconIETemplate (
     DEBUGFUNC("wlanUpdateBeaconIETemplate");
     DBGLOG(INIT, LOUD, ("\n"));
 
+	printk("nicUpdateBeaconIETemplate\n");
+
     ASSERT(prAdapter);
     prGlueInfo = prAdapter->prGlueInfo;
 
@@ -2505,6 +2508,7 @@ nicUpdateBeaconIETemplate (
     prCmdInfo = cmdBufAllocateCmdInfo(prAdapter, (CMD_HDR_SIZE + u2CmdBufLen));
     if (!prCmdInfo) {
         DBGLOG(INIT, ERROR, ("Allocate CMD_INFO_T ==> FAILED.\n"));
+		printk("Allocate CMD_INFO_T ==> FAILED.\n");
         return WLAN_STATUS_FAILURE;
     }
 

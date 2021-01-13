@@ -24,10 +24,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * 02 19 2012 koli.lin
  * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
@@ -37,19 +33,19 @@
  * 10 31 2011 koli.lin
  * [ALPS00081266] [Li Zhen]
 
-P49?ï¿½Oï¿½sï¿½bï¿½ï¿½?ï¿½H
+P49?¬O¦s¦b¦¹?¶H
 
 
 [Wenjing]
 
 Hi,Koli:
 
-tester?ï¿½ï¿½ï¿½ï¿½ï¿½??ï¿½X??ï¿½ï¿½?ï¿½ï¿½Aï¿½ï¿½O?ï¿½yï¿½zï¿½Ý¡A??ï¿½ò¤§«e6573ï¿½Wï¿½ï¿½?ï¿½ï¿½ï¿½bvideo modeï¿½ï¿½ï¿½@?issueï¿½Û¦Pï¿½Aï¿½ï¿½??ï¿½ï¿½check
+tester?¦³§ì¨ì??¥X??ªº?¤ù¡A¦ý¬O?´y­z¬Ý¡A??¸ò¤§«e6573¤W¦ó?´£¦bvideo modeªº¤@?issue¬Û¦P¡A³Â??¦£check
 
 thanks
 
 
-ï¿½ï¿½ï¿½ï¿½  61204
+§õ¬Ã  61204
 
  * [Camera] 1. Modify the preview output speed 648Mbps/lane.
  *                2. Fix the flicker min limitation value. (max 1 fps)
@@ -13152,7 +13148,8 @@ UINT32 OV5642GetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolution
     pSensorResolution->SensorFullHeight=IMAGE_SENSOR_FULL_HEIGHT - 4*OV5642_IMAGE_SENSOR_PV_STARTY;
     pSensorResolution->SensorPreviewWidth=IMAGE_SENSOR_PV_WIDTH - 2*OV5642_IMAGE_SENSOR_PV_STARTX;
     pSensorResolution->SensorPreviewHeight=IMAGE_SENSOR_PV_HEIGHT - 2*OV5642_IMAGE_SENSOR_PV_STARTY;
-
+    pSensorResolution->SensorVideoWidth=IMAGE_SENSOR_PV_WIDTH - 2*OV5642_IMAGE_SENSOR_PV_STARTX;
+    pSensorResolution->SensorVideoHeight=IMAGE_SENSOR_PV_HEIGHT - 2*OV5642_IMAGE_SENSOR_PV_STARTY;
     return ERROR_NONE;
 }   /* OV5642GetResolution() */
 
@@ -13160,25 +13157,12 @@ UINT32 OV5642GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
                                                 MSDK_SENSOR_INFO_STRUCT *pSensorInfo,
                                                 MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData)
 {
-
-	switch (ScenarioId)
-	{
-		case MSDK_SCENARIO_ID_CAMERA_ZSD:
-			pSensorInfo->SensorPreviewResolutionX=IMAGE_SENSOR_FULL_WIDTH - 4*OV5642_IMAGE_SENSOR_PV_STARTX;
-			pSensorInfo->SensorPreviewResolutionY=IMAGE_SENSOR_FULL_HEIGHT - 4*OV5642_IMAGE_SENSOR_PV_STARTY;
-			pSensorInfo->SensorCameraPreviewFrameRate=15;
-			break;
-
-		default:
                         pSensorInfo->SensorPreviewResolutionX=IMAGE_SENSOR_PV_WIDTH - 2*OV5642_IMAGE_SENSOR_PV_STARTX;
                         pSensorInfo->SensorPreviewResolutionY=IMAGE_SENSOR_PV_HEIGHT - 2*OV5642_IMAGE_SENSOR_PV_STARTY;
-			pSensorInfo->SensorCameraPreviewFrameRate=30;
-			break;
-	}
     pSensorInfo->SensorFullResolutionX=IMAGE_SENSOR_FULL_WIDTH - 4*OV5642_IMAGE_SENSOR_PV_STARTX;
     pSensorInfo->SensorFullResolutionY=IMAGE_SENSOR_FULL_HEIGHT - 4*OV5642_IMAGE_SENSOR_PV_STARTY;
 
-    //pSensorInfo->SensorCameraPreviewFrameRate=30;
+    pSensorInfo->SensorCameraPreviewFrameRate=30;
     pSensorInfo->SensorVideoFrameRate=30;
     pSensorInfo->SensorStillCaptureFrameRate=10;
     pSensorInfo->SensorWebCamCaptureFrameRate=15;
@@ -13191,32 +13175,7 @@ UINT32 OV5642GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     pSensorInfo->SensorVsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
     pSensorInfo->SensorInterruptDelayLines = 1;
     pSensorInfo->SensroInterfaceType=SENSOR_INTERFACE_TYPE_PARALLEL;
-    pSensorInfo->SensorDriver3D = 0;   // the sensor driver is 2D
 
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].ISOSupported=TRUE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].ISOSupported=TRUE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxWidth=CAM_SIZE_05M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxHeight=CAM_SIZE_1M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].BinningEnable=TRUE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxWidth=CAM_SIZE_05M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxHeight=CAM_SIZE_05M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].BinningEnable=TRUE;
 
     pSensorInfo->CaptureDelayFrame = 1; 
     pSensorInfo->PreviewDelayFrame = 2; 
@@ -13231,7 +13190,6 @@ UINT32 OV5642GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
         case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
             pSensorInfo->SensorClockFreq=26;
             pSensorInfo->SensorClockDividCount=	3;
             pSensorInfo->SensorClockRisingCount= 0;
@@ -13242,7 +13200,6 @@ UINT32 OV5642GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
             pSensorInfo->SensorGrabStartY = OV5642_IMAGE_SENSOR_PV_STARTY;             
             break;
         case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
 	case MSDK_SCENARIO_ID_CAMERA_ZSD:
             pSensorInfo->SensorClockFreq=26;
             pSensorInfo->SensorClockDividCount=	3;
@@ -13279,11 +13236,9 @@ UINT32 OV5642Control(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WIND
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
         case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
-            OV5642Preview(pImageWindow, pSensorConfigData);
+                    OV5642Preview(pImageWindow, pSensorConfigData);
             break;
         case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
 	case MSDK_SCENARIO_ID_CAMERA_ZSD:
             OV5642Capture(pImageWindow, pSensorConfigData);
             break;

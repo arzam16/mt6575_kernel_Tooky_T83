@@ -286,4 +286,4 @@ module_param(slp_dump_gpio, bool, 0644);
 module_param(slp_dump_regs, bool, 0644);
 
 MODULE_AUTHOR("Terry Chang <terry.chang@mediatek.com>");
-MODULE_DESCRIPTION("MT6577/75 Sleep Driver v3.7");
+MODULE_DESCRIPTION("Sleep Driver v3.7");

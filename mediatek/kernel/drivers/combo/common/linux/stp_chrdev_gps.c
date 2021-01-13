@@ -16,6 +16,7 @@
 #include <asm/current.h>
 #include <asm/uaccess.h>
 #include <linux/skbuff.h>
+#include <linux/device.h>
 
 #include "stp_exp.h"
 #include "wmt_exp.h"
@@ -34,9 +35,12 @@ MODULE_LICENSE("GPL");
 #define GPS_LOG_ERR                  0
 
 #define COMBO_IOC_GPS_HWVER           6
+#define COMBO_IOC_GPS_IC_HW_VERSION   7
+#define COMBO_IOC_GPS_IC_FW_VERSION   8
 
-unsigned int gDbgLevel = GPS_LOG_DBG;
 
+
+static unsigned int gDbgLevel = GPS_LOG_DBG;
 #define GPS_DBG_FUNC(fmt, arg...)    if(gDbgLevel >= GPS_LOG_DBG){ printk(PFX "%s: "  fmt, __FUNCTION__ ,##arg);}
 #define GPS_INFO_FUNC(fmt, arg...)   if(gDbgLevel >= GPS_LOG_INFO){ printk(PFX "%s: "  fmt, __FUNCTION__ ,##arg);}
 #define GPS_WARN_FUNC(fmt, arg...)   if(gDbgLevel >= GPS_LOG_WARN){ printk(PFX "%s: "  fmt, __FUNCTION__ ,##arg);}
@@ -211,7 +215,8 @@ long GPS_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int retval = 0;
     ENUM_WMTHWVER_TYPE_T hw_ver_sym = WMTHWVER_INVALID;
-
+    UINT32 hw_version = 0;
+	UINT32 fw_version = 0;
     printk("GPS_ioctl(): cmd (%d)\n", cmd);
 
     switch(cmd)
@@ -240,7 +245,25 @@ long GPS_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                retval = -EFAULT;
             }
             break;
-            
+         case COMBO_IOC_GPS_IC_HW_VERSION:             
+            /*get combo hw version from ic,  without wmt mapping*/            
+            hw_version = mtk_wcn_wmt_ic_info_get(WMTCHIN_HWVER);
+
+            GPS_INFO_FUNC(KERN_INFO "GPS_ioctl(): get hw version = 0x%x\n", hw_version);
+            if(copy_to_user((int __user *)arg, &hw_version, sizeof(hw_version))){
+               retval = -EFAULT;
+            }
+            break;
+
+		case COMBO_IOC_GPS_IC_FW_VERSION:             
+            /*get combo fw version from ic, without wmt mapping*/            
+            fw_version = mtk_wcn_wmt_ic_info_get(WMTCHIN_FWVER);
+
+            GPS_INFO_FUNC(KERN_INFO "GPS_ioctl(): get fw version = 0x%x\n", fw_version);
+            if(copy_to_user((int __user *)arg, &fw_version, sizeof(fw_version))){
+               retval = -EFAULT;
+            }
+            break;
         default:
             retval = -EFAULT;
             GPS_INFO_FUNC(KERN_INFO "GPS_ioctl(): unknown cmd (%d)\n", cmd);
@@ -293,6 +316,8 @@ static int GPS_open(struct inode *inode, struct file *file)
         iminor(inode),
         current->pid
         );
+	if(current->pid ==1)
+			return 0;
 
 #if 1 /* GeorgeKuo: turn on function before check stp ready */
      /* turn on BT */
@@ -337,6 +362,8 @@ static int GPS_close(struct inode *inode, struct file *file)
         iminor(inode),
         current->pid
         );
+	if(current->pid ==1)
+			return 0;
 
     /*Flush Rx Queue*/
     mtk_wcn_stp_register_event_cb(GPS_TASK_INDX, 0x0);  // unregister event callback function
@@ -372,11 +399,18 @@ void GPS_event_cb(void)
     return;
 }
 
+#if REMOVE_MK_NODE
+	struct class * stpgps_class = NULL;
+#endif
+
 static int GPS_init(void)
 {
     dev_t dev = MKDEV(GPS_major, 0);
     int alloc_ret = 0;
     int cdev_err = 0;
+#if REMOVE_MK_NODE
+		struct device * stpgps_dev = NULL;
+#endif
 
     /*static allocate chrdev*/
     alloc_ret = register_chrdev_region(dev, 1, GPS_DRIVER_NAME);
@@ -391,12 +425,29 @@ static int GPS_init(void)
     cdev_err = cdev_add(&GPS_cdev, dev, GPS_devs);
     if (cdev_err)
         goto error;
+#if REMOVE_MK_NODE  
 
+	stpgps_class = class_create(THIS_MODULE,"stpgps");
+	if(IS_ERR(stpgps_class))
+		goto error;
+	stpgps_dev = device_create(stpgps_class,NULL,dev,NULL,"stpgps");
+	if(IS_ERR(stpgps_dev))
+		goto error;
+#endif
     printk(KERN_ALERT "%s driver(major %d) installed.\n", GPS_DRIVER_NAME, GPS_major);
     
     return 0;
 
 error:
+	
+#if REMOVE_MK_NODE
+		if(!IS_ERR(stpgps_dev))
+			device_destroy(stpgps_class,dev);
+		if(!IS_ERR(stpgps_class)){
+			class_destroy(stpgps_class);
+			stpgps_class = NULL;
+		}
+#endif
     if (cdev_err == 0)
         cdev_del(&GPS_cdev);
 
@@ -409,6 +460,11 @@ error:
 static void GPS_exit(void)
 {
     dev_t dev = MKDEV(GPS_major, 0);
+#if REMOVE_MK_NODE
+		device_destroy(stpgps_class,dev);
+		class_destroy(stpgps_class);
+		stpgps_class = NULL;
+#endif
 
     cdev_del(&GPS_cdev);
     unregister_chrdev_region(dev, GPS_devs);
@@ -416,9 +472,28 @@ static void GPS_exit(void)
     printk(KERN_ALERT "%s driver removed.\n", GPS_DRIVER_NAME);
 }
 
+
+#ifdef MTK_WCN_REMOVE_KERNEL_MODULE
+	
+int mtk_wcn_stpgps_drv_init(void)
+{
+	return GPS_init();
+
+}
+
+void mtk_wcn_stpgps_drv_exit (void)
+{
+	return GPS_exit();
+}
+
+
+EXPORT_SYMBOL(mtk_wcn_stpgps_drv_init);
+EXPORT_SYMBOL(mtk_wcn_stpgps_drv_exit);
+#else
+	
 module_init(GPS_init);
 module_exit(GPS_exit);
-
-#if !defined(MT6628)
-EXPORT_SYMBOL(GPS_event_cb);
+	
 #endif
+
+

@@ -799,7 +799,7 @@ nicAllocateAdapterMemory (
             kalAllocateIOBuffer(sizeof(ENHANCE_MODE_DATA_STRUCT_T));
 
         if(prAdapter->prSDIOCtrl == NULL) {
-            DBGLOG(INIT, ERROR, ("Could not allocate %ld bytes for interrupt response.\n", sizeof(ENHANCE_MODE_DATA_STRUCT_T)));
+            DBGLOG(INIT, ERROR, ("Could not allocate %u bytes for interrupt response.\n", sizeof(ENHANCE_MODE_DATA_STRUCT_T)));
             break;
         }
 
@@ -1106,7 +1106,7 @@ nicProcessIST (
         //DBGLOG(INIT, TRACE, ("u4IntStatus: 0x%x\n", u4IntStatus));
 
         if (u4IntStatus & ~(WHIER_DEFAULT | WHIER_FW_OWN_BACK_INT_EN)) {
-            DBGLOG(INTR, WARN, ("Un-handled HISR %#x, HISR = %#x (HIER:0x%x)\n",
+            DBGLOG(INTR, WARN, ("Un-handled HISR %#lx, HISR = %#lx (HIER:0x%lx)\n",
                 (u4IntStatus & ~WHIER_DEFAULT), u4IntStatus, WHIER_DEFAULT));
             u4IntStatus &= WHIER_DEFAULT;
         }
@@ -1169,7 +1169,7 @@ nicProcessIST_impl (
             }
             else {
                 DBGLOG(INTR , WARN,
-                        ("Empty INTR handler! ISAR bit#: %ld, event:%d, func: 0x%x\n",
+                        ("Empty INTR handler! ISAR bit#: %lu, event:%lu, func: %p\n",
                          prIntEventMap->u4Int, prIntEventMap->u4Event, apfnEventFuncTable[prIntEventMap->u4Event]));
 
                 ASSERT(0); // to trap any NULL interrupt handler
@@ -1204,8 +1204,8 @@ nicVerifyChipID (
 
     HAL_MCR_RD(prAdapter, MCR_WCIR, &u4CIR );
 
-    DBGLOG(INIT, TRACE,("Chip ID: 0x%x\n", u4CIR & WCIR_CHIP_ID));
-    DBGLOG(INIT, TRACE,("Revision ID: 0x%x\n", ((u4CIR & WCIR_REVISION_ID) >> 16)));
+    DBGLOG(INIT, TRACE,("Chip ID: 0x%lx\n", u4CIR & WCIR_CHIP_ID));
+    DBGLOG(INIT, TRACE,("Revision ID: 0x%lx\n", ((u4CIR & WCIR_REVISION_ID) >> 16)));
 
     if ((u4CIR & WCIR_CHIP_ID) != MTK_CHIP_REV) {
         return FALSE;
@@ -1343,7 +1343,7 @@ nicProcessAbnormalInterrupt (
     UINT_32 u4Value;
 
     HAL_MCR_RD(prAdapter, MCR_WASR, &u4Value);
-    DBGLOG(REQ, WARN, ("MCR_WASR: 0x%x \n", u4Value));
+    DBGLOG(REQ, WARN, ("MCR_WASR: 0x%lx \n", u4Value));
 }
 
 /*----------------------------------------------------------------------------*/
@@ -1410,7 +1410,7 @@ nicProcessSoftwareInterrupt(
     }
 #endif
 
-    DBGLOG(REQ, WARN, ("u4IntrBits: 0x%x \n", u4IntrBits));
+    DBGLOG(REQ, WARN, ("u4IntrBits: 0x%lx \n", u4IntrBits));
 
     return;
 } /* end of nicProcessSoftwareInterrupt() */
@@ -2186,15 +2186,16 @@ nicUpdateBss(
 #if CFG_ENABLE_WIFI_DIRECT
         if(prAdapter->fgIsP2PRegistered) {
             if (kalP2PGetCipher(prAdapter->prGlueInfo)) {
-            rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_WPA2_PSK;
-            rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION3_KEY_ABSENT;
-        }
-        else {
-            rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_OPEN;
-            rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION_DISABLED;
-        }
+				rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_WPA2_PSK;
+				rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION3_KEY_ABSENT;
+			}
+			else {
+				rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_OPEN;
+				rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION_DISABLED;
+			}
+			/* Need the probe response to detect the PBC overlap */    
             rCmdSetBssInfo.fgIsApMode = p2pFuncIsAPMode(prAdapter->rWifiVar.prP2pFsmInfo);
-        }
+	    }
 #else
         rCmdSetBssInfo.ucAuthMode               = (UINT_8)AUTH_MODE_WPA2_PSK;
         rCmdSetBssInfo.ucEncStatus              = (UINT_8)ENUM_ENCRYPTION3_KEY_ABSENT;
@@ -2433,7 +2434,7 @@ nicConfigPowerSaveProfile (
             CMD_ID_POWER_SAVE_MODE,
             TRUE,
             FALSE,
-            TRUE,
+            (fgEnCmdEvent ? TRUE : FALSE),
             (fgEnCmdEvent ? nicCmdEventSetCommon : NULL),
             (fgEnCmdEvent ? nicOidCmdTimeoutCommon : NULL),
             sizeof(CMD_PS_PROFILE_T),
@@ -2443,6 +2444,202 @@ nicConfigPowerSaveProfile (
             );
 
 } /* end of wlanoidSetAcpiDevicePowerStateMode() */
+
+WLAN_STATUS
+nicEnterCtiaMode (
+    IN  P_ADAPTER_T prAdapter,
+    BOOLEAN fgEnterCtia,
+    BOOLEAN fgEnCmdEvent
+    )
+{
+    CMD_SW_DBG_CTRL_T rCmdSwCtrl;
+    CMD_ACCESS_REG rCmdAccessReg;
+    WLAN_STATUS rWlanStatus;
+
+    DEBUGFUNC("nicEnterCtiaMode");
+    DBGLOG(INIT, TRACE, ("nicEnterCtiaMode: %d\n", fgEnterCtia));
+
+    ASSERT(prAdapter);
+
+    rWlanStatus = WLAN_STATUS_SUCCESS;
+
+    if (fgEnterCtia) {
+        // 1. Disable On-Lin Scan
+        prAdapter->fgEnOnlineScan = FALSE;
+
+        // 3. Disable FIFO FULL no ack
+        rCmdAccessReg.u4Address = 0x60140028;
+        rCmdAccessReg.u4Data = 0x904;
+        wlanSendSetQueryCmd(prAdapter,
+            CMD_ID_ACCESS_REG,
+            TRUE, //FALSE,
+            FALSE, //TRUE,
+            FALSE,
+            NULL,
+            NULL,
+            sizeof(CMD_ACCESS_REG),
+            (PUINT_8)&rCmdAccessReg,
+            NULL,
+            0
+            );
+
+        // 4. Disable Roaming
+        rCmdSwCtrl.u4Id = 0x90000204;
+            rCmdSwCtrl.u4Data = 0x0;
+            wlanSendSetQueryCmd(prAdapter,
+                CMD_ID_SW_DBG_CTRL,
+                TRUE,
+                FALSE,
+                FALSE,
+                NULL,
+                NULL,
+                sizeof(CMD_SW_DBG_CTRL_T),
+                (PUINT_8)&rCmdSwCtrl,
+                NULL,
+                0
+            );
+
+        rCmdSwCtrl.u4Id = 0x90000200;
+        rCmdSwCtrl.u4Data = 0x820000;
+        wlanSendSetQueryCmd(prAdapter,
+            CMD_ID_SW_DBG_CTRL,
+            TRUE,
+            FALSE,
+            FALSE,
+            NULL,
+            NULL,
+            sizeof(CMD_SW_DBG_CTRL_T),
+            (PUINT_8)&rCmdSwCtrl,
+            NULL,
+            0
+            );
+
+        // Disalbe auto tx power        
+        rCmdSwCtrl.u4Id = 0xa0100003;
+        rCmdSwCtrl.u4Data = 0x0;
+        wlanSendSetQueryCmd(prAdapter,
+             CMD_ID_SW_DBG_CTRL,
+             TRUE,
+             FALSE,
+             FALSE,
+             NULL,
+             NULL,
+             sizeof(CMD_SW_DBG_CTRL_T),
+             (PUINT_8)&rCmdSwCtrl,
+             NULL,
+             0
+             );
+
+        // 2. Keep at CAM mode
+        {
+            PARAM_POWER_MODE ePowerMode;
+
+            prAdapter->u4CtiaPowerMode = 0;
+            prAdapter->fgEnCtiaPowerMode = TRUE;
+
+            ePowerMode = Param_PowerModeCAM;
+            rWlanStatus = nicConfigPowerSaveProfile(
+                   prAdapter,
+                   NETWORK_TYPE_AIS_INDEX,
+                   ePowerMode,
+                   fgEnCmdEvent);
+        }
+
+        // 5. Disable Beacon Timeout Detection
+        prAdapter->fgDisBcnLostDetection = TRUE;    
+    }
+    else {
+        // 1. Enaable On-Lin Scan
+        prAdapter->fgEnOnlineScan = TRUE;
+
+        // 3. Enable FIFO FULL no ack
+        rCmdAccessReg.u4Address = 0x60140028;
+        rCmdAccessReg.u4Data = 0x905;
+        wlanSendSetQueryCmd(prAdapter,
+            CMD_ID_ACCESS_REG,
+            TRUE, //FALSE,
+            FALSE, //TRUE,
+            FALSE,
+            NULL,
+            NULL,
+            sizeof(CMD_ACCESS_REG),
+            (PUINT_8)&rCmdAccessReg,
+            NULL,
+            0
+        );
+
+        // 4. Enable Roaming
+        rCmdSwCtrl.u4Id = 0x90000204;
+        rCmdSwCtrl.u4Data = 0x1;
+        wlanSendSetQueryCmd(prAdapter,
+            CMD_ID_SW_DBG_CTRL,
+            TRUE,
+            FALSE,
+            FALSE,
+            NULL,
+            NULL,
+            sizeof(CMD_SW_DBG_CTRL_T),
+            (PUINT_8)&rCmdSwCtrl,
+            NULL,
+            0
+        );
+
+        rCmdSwCtrl.u4Id = 0x90000200;
+        rCmdSwCtrl.u4Data = 0x820000;
+        wlanSendSetQueryCmd(prAdapter,
+            CMD_ID_SW_DBG_CTRL,
+            TRUE,
+            FALSE,
+            FALSE,
+            NULL,
+            NULL,
+            sizeof(CMD_SW_DBG_CTRL_T),
+            (PUINT_8)&rCmdSwCtrl,
+            NULL,
+            0
+        );
+
+        // Enable auto tx power
+        //
+
+        rCmdSwCtrl.u4Id = 0xa0100003;
+        rCmdSwCtrl.u4Data = 0x1;
+        wlanSendSetQueryCmd(prAdapter,
+            CMD_ID_SW_DBG_CTRL,
+            TRUE,
+            FALSE,
+            FALSE,
+            NULL,
+            NULL,
+            sizeof(CMD_SW_DBG_CTRL_T),
+            (PUINT_8)&rCmdSwCtrl,
+            NULL,
+            0
+        );
+
+
+        // 2. Keep at Fast PS
+        {
+            PARAM_POWER_MODE ePowerMode;
+
+            prAdapter->u4CtiaPowerMode = 2;
+            prAdapter->fgEnCtiaPowerMode = TRUE;
+
+            ePowerMode = Param_PowerModeFast_PSP;
+            rWlanStatus = nicConfigPowerSaveProfile(
+                prAdapter,
+                NETWORK_TYPE_AIS_INDEX,
+                ePowerMode,
+                fgEnCmdEvent);
+            }
+
+        // 5. Enable Beacon Timeout Detection
+        prAdapter->fgDisBcnLostDetection = FALSE;
+    
+    }
+    
+    return rWlanStatus;
+} /* end of nicEnterCtiaMode() */
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -2482,6 +2679,8 @@ nicUpdateBeaconIETemplate (
     DEBUGFUNC("wlanUpdateBeaconIETemplate");
     DBGLOG(INIT, LOUD, ("\n"));
 
+	printk("nicUpdateBeaconIETemplate\n");
+
     ASSERT(prAdapter);
     prGlueInfo = prAdapter->prGlueInfo;
 
@@ -2505,6 +2704,7 @@ nicUpdateBeaconIETemplate (
     prCmdInfo = cmdBufAllocateCmdInfo(prAdapter, (CMD_HDR_SIZE + u2CmdBufLen));
     if (!prCmdInfo) {
         DBGLOG(INIT, ERROR, ("Allocate CMD_INFO_T ==> FAILED.\n"));
+		printk("Allocate CMD_INFO_T ==> FAILED.\n");
         return WLAN_STATUS_FAILURE;
     }
 
@@ -4075,7 +4275,7 @@ nicRlmArUpdateParms(
     ucArPerL = (UINT_8) (((u4ArSysParam1>>24) & BITS(0,7)));
 
 
-    DBGLOG(INIT, INFO, ("ArParam %u %u %u %u\n", u4ArSysParam0, u4ArSysParam1, u4ArSysParam2, u4ArSysParam3));
+    DBGLOG(INIT, INFO, ("ArParam %lu %lu %lu %lu\n", u4ArSysParam0, u4ArSysParam1, u4ArSysParam2, u4ArSysParam3));
     DBGLOG(INIT, INFO, ("ArVer %u AbwVer %u AgiVer %u\n", ucArVer, ucAbwVer, ucAgiVer));
     DBGLOG(INIT, INFO, ("HtMask %x LegacyMask %x\n", u2HtClrMask, u2LegacyClrMask));
     DBGLOG(INIT, INFO, ("CheckWin %u RateDownPer %u PerH %u PerL %u\n", ucArCheckWindow, ucArPerForceRateDownPer, ucArPerH, ucArPerL));

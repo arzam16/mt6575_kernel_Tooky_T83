@@ -24,10 +24,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * 09 10 2010 jackie.su
  * [ALPS00002279] [Need Patch] [Volunteer Patch] ALPS.Wxx.xx Volunteer patch for

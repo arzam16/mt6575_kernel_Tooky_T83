@@ -10,6 +10,9 @@ extern "C"
 
 #define MMProfileMaxEventCount 4096
 
+#define MMP_EVENT_STATE_ENABLED	(1 << 0)
+#define MMP_EVENT_STATE_FTRACE	(1 << 1)
+
 typedef struct
 {
 	unsigned int parentId;
@@ -41,6 +44,7 @@ typedef struct
     unsigned int new_buffer_size_record;
     unsigned int new_meta_buffer_size;
     unsigned int selected_buffer;
+    unsigned int max_event_count;
     unsigned int event_state[MMProfileMaxEventCount];
 } MMProfile_Global_t;
 
@@ -87,7 +91,6 @@ typedef struct
 
 static void MMProfileInitBuffer(void);
 static void MMProfileResetBuffer(void);
-static void MMProfileStart(int start);
 
 #ifdef __cplusplus
 }

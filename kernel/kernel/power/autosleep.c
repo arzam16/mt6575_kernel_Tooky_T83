@@ -15,6 +15,18 @@
 #define _TAG_PM_M "[Ker_PM]"
 #define pm_log(fmt, ...)	pr_info("[%s][%s]" fmt, _TAG_PM_M, __func__, ##__VA_ARGS__);
 
+#define HIB_AUTOSLEEP_DEBUG 0
+extern bool console_suspend_enabled; // from printk.c
+#define _TAG_HIB_M "HIB/AUTOSLEEP"
+#undef pm_log
+#if (HIB_AUTOSLEEP_DEBUG)
+#define pm_log(fmt, ...) if (!console_suspend_enabled) pr_warn("[%s][%s]" fmt, _TAG_HIB_M, __func__, ##__VA_ARGS__);
+#else
+#define pm_log(fmt, ...)
+#endif
+#undef pm_warn
+#define pm_warn(fmt, ...) if (!console_suspend_enabled) pr_warn("[%s][%s]" fmt, _TAG_HIB_M, __func__, ##__VA_ARGS__);
+
 static suspend_state_t autosleep_state;
 static struct workqueue_struct *autosleep_wq;
 /*
@@ -26,6 +38,10 @@ static struct workqueue_struct *autosleep_wq;
 static DEFINE_MUTEX(autosleep_lock);
 static struct wakeup_source *autosleep_ws;
 
+#ifdef CONFIG_MTK_HIBERNATION
+extern bool system_is_hibernating;
+extern int mtk_hibernate_via_autosleep(suspend_state_t *autoslp_state);
+#endif
 static void try_to_suspend(struct work_struct *work)
 {
 	unsigned int initial_count, final_count;
@@ -44,16 +60,37 @@ static void try_to_suspend(struct work_struct *work)
 	}
 
 	if (autosleep_state == PM_SUSPEND_ON) {
+        pm_warn("leaving state(%d)\n", autosleep_state);
+#ifdef CONFIG_MTK_HIBERNATION
+        system_is_hibernating = false;
+#endif
 		mutex_unlock(&autosleep_lock);
 		return;
 	}
-	
-	if (autosleep_state >= PM_SUSPEND_MAX)
-		hibernate();
-	else {
-		pm_log("pm_suspend\n");
-		pm_suspend(autosleep_state);
+
+#ifdef CONFIG_MTK_HIBERNATION
+	if (autosleep_state >= PM_SUSPEND_MAX) {
+        mtk_hibernate_via_autosleep(&autosleep_state);
+    }
+    else {
+		pm_log("pm_suspend: state(%d)\n", autosleep_state);
+        if (!system_is_hibernating) {
+            pm_warn("calling pm_suspend() state(%d)\n", autosleep_state);
+            pm_suspend(autosleep_state);
+        }
+        else {
+            pm_warn("system is hibernating: so changing state(%d->%d)\n",  autosleep_state, PM_SUSPEND_MAX);
+            autosleep_state = PM_SUSPEND_MAX;
+        }
 	}
+#else // !CONFIG_MTK_HIBERNATION
+    if (autosleep_state >= PM_SUSPEND_MAX)
+        hibernate();
+    else {
+        pm_log("pm_suspend\n");
+        pm_suspend(autosleep_state);
+    }
+#endif // CONFIG_MTK_HIBERNATION
 	mutex_unlock(&autosleep_lock);
 
 	if (!pm_get_wakeup_count(&final_count, false))
@@ -77,7 +114,7 @@ void queue_up_suspend_work(void)
 {
 	if (!work_pending(&suspend_work) && autosleep_state > PM_SUSPEND_ON)
 	{
-		pm_log("queue_work\n");
+		pm_log("queue_work autosleep_state(%d)\n", autosleep_state);
 		queue_work(autosleep_wq, &suspend_work);
 	}
 }

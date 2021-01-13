@@ -1,4 +1,3 @@
-
 #ifndef __DSI_DRV_H__
 #define __DSI_DRV_H__
 
@@ -159,6 +158,7 @@ DSI_STATUS DSI_WaitForNotBusy(void);
 DSI_STATUS DSI_EnableClk(void);
 DSI_STATUS DSI_DisableClk(void);
 DSI_STATUS DSI_Reset(void);
+unsigned int DSI_GetMode(void);
 DSI_STATUS DSI_SetMode(unsigned int mode);
 
 DSI_STATUS DSI_EnableInterrupt(DISP_INTERRUPT_EVENTS eventID);

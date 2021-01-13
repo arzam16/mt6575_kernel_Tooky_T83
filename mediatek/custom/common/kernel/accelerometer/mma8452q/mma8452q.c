@@ -27,54 +27,23 @@
 #include <linux/platform_device.h>
 #include <asm/atomic.h>
 
-
 #include <cust_acc.h>
 #include <linux/hwmsensor.h>
 #include <linux/hwmsen_dev.h>
 #include <linux/sensors_io.h>
 #include "mma8452q.h"
 #include <linux/hwmsen_helper.h>
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
 
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-#ifdef MT6516
-#define POWER_NONE_MACRO MT6516_POWER_NONE
-#endif
 
-#ifdef MT6573
+#include <mach/mt_devs.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
+
+
+
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
 
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#endif
-#ifdef MT6577
-
-#include <mach/mt6577_devs.h>
-#include <mach/mt6577_typedefs.h>
-#include <mach/mt6577_gpio.h>
-#include <mach/mt6577_pm_ldo.h>
-#endif
-
-#ifdef MT6575
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-#ifdef MT6577
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
 
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_MMA8452Q 0x2a
@@ -109,9 +78,9 @@ static int MMA8452Q_SetPowerMode(struct i2c_client *client, bool enable);
 
 /*------------------------------------------------------------------------------*/
 typedef enum {
-    ADX_TRC_FILTER  = 0x01,
-    ADX_TRC_RAWDATA = 0x02,
-    ADX_TRC_IOCTL   = 0x04,
+    ADX_TRC_FILTER	= 0x01,
+    ADX_TRC_RAWDATA	= 0x02,
+    ADX_TRC_IOCTL	= 0x04,
     ADX_TRC_CALI	= 0X08,
     ADX_TRC_INFO	= 0X10,
     ADX_TRC_REGXYZ	= 0X20,

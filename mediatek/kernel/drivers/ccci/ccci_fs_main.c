@@ -49,7 +49,7 @@ static struct kfifo        fs_fifo;
 //static struct class       *fs_class;
 //static struct device      *fs_dev;
 static int                 reset_handle;
-
+static struct wake_lock	fs_wake_lock;
 DECLARE_WAIT_QUEUE_HEAD(fs_waitq);
 
 #define CCCI_FS_DEVNAME  "ccci_fs"
@@ -89,11 +89,11 @@ static void ccci_fs_callback(CCCI_BUFF_T *buff, void *private_data)
     spin_lock_irqsave(&fs_spinlock,flag);
     if (buff->channel == CCCI_FS_RX)
     {
-    	if(fs_rx_debug_enable){
-			CCCI_MSG_INF("fs ", "fs_callback: %08X  %08X  %08X\n", 
-				buff->data[0], buff->data[1], buff->reserved);
-		}
-		
+        if(fs_rx_debug_enable)
+    	{
+	     CCCI_MSG_INF("fs ", "fs_callback: %08X  %08X  %08X\n", 
+	     buff->data[0], buff->data[1], buff->reserved);
+	}		
         if (kfifo_in(&fs_fifo, (unsigned char *) &buff->reserved, sizeof(buff->reserved)) == sizeof(buff->reserved))
         {
             wake_up_interruptible(&fs_waitq);
@@ -104,7 +104,7 @@ static void ccci_fs_callback(CCCI_BUFF_T *buff, void *private_data)
         }
     }
     spin_unlock_irqrestore(&fs_spinlock,flag);
-
+    wake_lock_timeout(&fs_wake_lock, HZ/2);
 }
 
 
@@ -361,7 +361,7 @@ static struct file_operations fs_fops =
         CCCI_MSG_INF("fs ", "FS initialize fail\n");
         return ret;
     }
-     
+    wake_lock_init(&fs_wake_lock, WAKE_LOCK_SUSPEND, "ccci_fs_main"); 
     CCCI_FS_MSG("Init complete, device major number = %d\n", MAJOR(fs_dev_num));
     
     return 0;
@@ -374,6 +374,7 @@ static struct file_operations fs_fops =
 
     cdev_del(&fs_cdev);
     unregister_chrdev_region(fs_dev_num, 1);
+    wake_lock_destroy(&fs_wake_lock);
 }
 
 

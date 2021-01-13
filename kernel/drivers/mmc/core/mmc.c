@@ -241,9 +241,7 @@ static int mmc_get_ext_csd(struct mmc_card *card, u8 **new_ext_csd)
 /*
  * Decode extended CSD.
  */
- //Sync from Megne6517_common_dint by pu.li on 2013.3.19
 #define VENDOR_SAMSUNG  (0x15)
-//******************************************************
 static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 {
 	int err = 0, idx;
@@ -268,7 +266,7 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 	}
 
 	card->ext_csd.rev = ext_csd[EXT_CSD_REV];
-	if (card->ext_csd.rev > 6) {
+	if (card->ext_csd.rev > 7) {
 		pr_err("%s: unrecognised EXT_CSD revision %d\n",
 			mmc_hostname(card->host), card->ext_csd.rev);
 		err = -EINVAL;
@@ -391,13 +389,13 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		ext_csd[EXT_CSD_SEC_FEATURE_SUPPORT];
 	card->ext_csd.raw_trim_mult =
 		ext_csd[EXT_CSD_TRIM_MULT];
+	card->ext_csd.raw_partition_support = ext_csd[EXT_CSD_PARTITION_SUPPORT];
 	if (card->ext_csd.rev >= 4) {
 		/*
 		 * Enhanced area feature support -- check whether the eMMC
 		 * card has the Enhanced area enabled.  If so, export enhanced
 		 * area offset and size to user by adding sysfs interface.
 		 */
-		card->ext_csd.raw_partition_support = ext_csd[EXT_CSD_PARTITION_SUPPORT];
 		if ((ext_csd[EXT_CSD_PARTITION_SUPPORT] & 0x2) &&
 		    (ext_csd[EXT_CSD_PARTITION_ATTRIBUTE] & 0x1)) {
 			hc_erase_grp_sz =
@@ -510,7 +508,7 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		card->erased_byte = 0xFF;
 	else
 		card->erased_byte = 0x0;
-//Sync from Megne6517_common_dint by pu.li on 2013.3.19
+
         /* for samsung emmc4.41 plus spec */
         if ((card->cid.manfid == VENDOR_SAMSUNG) && 
             (card->ext_csd.rev == 5)             && 
@@ -518,7 +516,7 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
             printk("set to support discard\n");
             card->ext_csd.feature_support |= MMC_DISCARD_FEATURE;
         }
-//*****************************************************
+
 	/* eMMC v4.5 or later */
 	if (card->ext_csd.rev >= 6) {
 		card->ext_csd.feature_support |= MMC_DISCARD_FEATURE;
@@ -1539,7 +1537,7 @@ int mmc_attach_mmc(struct mmc_host *host)
 	mmc_release_host(host);
 	err = mmc_add_card(host->card);
 #ifdef MTK_EMMC_SUPPORT
-	err = init_pmt();
+	//err = init_pmt();
 	host->card_init_complete(host);
 #endif
 	mmc_claim_host(host);

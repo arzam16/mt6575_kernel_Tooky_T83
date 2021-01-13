@@ -23,10 +23,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * Apr 7 2009 mtk02204
  * [DUMA00004012] [Camera] Restructure and rename camera related custom folders and folder name of came

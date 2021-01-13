@@ -3,10 +3,11 @@
 
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/mtk_ram_console.h>
 
 #define AEE_MODULE_NAME_LENGTH 64
 #define AEE_PROCESS_NAME_LENGTH 256
-#define AEE_BACKTRACE_LENGTH 4096
+#define AEE_BACKTRACE_LENGTH 3072
 
 typedef enum {
     AE_DEFECT_FATAL,
@@ -25,16 +26,27 @@ typedef enum {
     AE_EXP_ERR_END,
     AE_ANR, /* Error or Warning or Defect */
     AE_RESMON,  
+    AE_MODEM_WARNING,
     AE_WRN_ERR_END,
     AE_MANUAL, /* Manual Raise */
     AE_EXP_CLASS_END,
 
     AE_KERNEL_PROBLEM_REPORT = 1000,
-    AE_PROCESS_PROBLEM_REPORT,
+    AE_SYSTEM_JAVA_DEFECT,
+    AE_SYSTEM_NATIVE_DEFECT,
 } AE_EXP_CLASS; /* General Program Exception Class */
+
+typedef enum {
+	AEE_REBOOT_MODE_NORMAL = 0,
+	AEE_REBOOT_MODE_KERNEL_PANIC,
+	AEE_REBOOT_MODE_NESTED_EXCEPTION,
+	AEE_REBOOT_MODE_WDT,
+	AEE_REBOOT_MODE_MANUAL_KDUMP,
+} AEE_REBOOT_MODE;
 
 struct aee_oops
 {
+	struct list_head list;
 	AE_DEFECT_ATTR attr;
 	AE_EXP_CLASS clazz;
 
@@ -57,22 +69,23 @@ struct aee_oops
 
 	char *userspace_info;
 	int  userspace_info_len;
+
+	char *mmprofile;
+	int mmprofile_len;
 	
+  char *mini_rdump;
+  int mini_rdump_len;
+
 	int dump_option;
 };
 
 struct aee_kernel_api {
-    void (*kernel_exception)(const int db_opt, const char *module, const char *msg);
-    void (*kernel_warning)(const int db_opt, const char *module, const char *msg);
-    void (*kernel_reminding)(const int db_opt, const char *module, const char *msg);
-    void (*md_exception1)(const int *log, int log_size, const int *phy, int phy_size, 
-        const char *assert_type, const char *exp_filename, unsigned int exp_linenum, 
-        unsigned int fatal1, unsigned int fatal2);
-    void (*md_exception2)(const int *log, int log_size, const int *phy, int phy_size, 
-        const char *detail);
+    void (*kernel_reportAPI)(const AE_DEFECT_ATTR attr,const int db_opt, const char *module, const char *msg);
+    void (*md_exception)(const char *assert_type, const int *log, int log_size, const int *phy, int phy_size,
+         const char *detail);
+    void (*combo_exception)(const char *assert_type, const int *log, int log_size, const int *phy, int phy_size, 
+         const char *detail);
 };
-
-#define RR_CPU_COUNT 2
 
 /* 
    This group of API call by sub-driver module to report reboot reasons
@@ -80,35 +93,24 @@ struct aee_kernel_api {
  */
 struct last_reboot_reason {
 	uint8_t     wdt_status;
-	uint8_t     shutdown_mode;
-	uint8_t     in_idle;
+	uint8_t     fiq_step;
+	uint8_t     reboot_mode;
 
-	uint32_t    jiffies_current;
-	uint32_t    jiffies_idle;
-	uint32_t    jiffies_wdk_kick;
+	uint32_t    last_irq_enter[NR_CPUS];
+	uint64_t    jiffies_last_irq_enter[NR_CPUS];
 
-	uint32_t    last_irq_enter[RR_CPU_COUNT];
-	uint64_t    jiffies_last_irq_enter[RR_CPU_COUNT];
+	uint32_t    last_irq_exit[NR_CPUS];
+	uint64_t    jiffies_last_irq_exit[NR_CPUS];
 
-	uint32_t    last_irq_exit[RR_CPU_COUNT];
-	uint64_t    jiffies_last_irq_exit[RR_CPU_COUNT];
+	uint64_t    jiffies_last_sched[NR_CPUS];
+	char        last_sched_comm[NR_CPUS][TASK_COMM_LEN];
 
-	uint64_t    jiffies_last_sched[RR_CPU_COUNT];
-	char        last_sched_comm[RR_CPU_COUNT][TASK_COMM_LEN];
+	uint8_t     hotplug_data1[NR_CPUS];
+	uint8_t     hotplug_data2[NR_CPUS];
 };
 
 void aee_rr_last(struct last_reboot_reason *lrr);
-
-void aee_rr_rec_current_jiffies(u32 j);
-void aee_rr_rec_wdk_kick_jiffies(u32 j);
-void aee_rr_rec_idle_jiffies(u32 j);
-void aee_rr_rec_shutdown_mode(u8 mode);
-void aee_rr_rec_last_irq_enter(int cpu, int irq, u64 j);
-void aee_rr_rec_last_irq_exit(int cpu, int irq, u64 j);
-void aee_rr_rec_last_sched_jiffies(int cpu, u64 j, const char *comm);
-
 void aee_sram_printk(const char *fmt, ...);
-void aee_sram_fiq_log(const char *msg);
 
 void aee_wdt_irq_info(void);
 void aee_wdt_fiq_info(void *arg, void *regs, void *svc_sp);
@@ -117,6 +119,25 @@ struct aee_oops *aee_oops_create(AE_DEFECT_ATTR attr, AE_EXP_CLASS clazz, const 
 void aee_oops_set_backtrace(struct aee_oops *oops, const char *backtrace);
 void aee_oops_set_process_path(struct aee_oops *oops, const char *process_path);
 void aee_oops_free(struct aee_oops *oops);
+/* powerkey press,modules use bits */
+#define AE_WDT_Powerkey_DEVICE_PATH      	"/dev/kick_powerkey"
+#define WDT_SETBY_DEFAULT               	(0)
+#define WDT_SETBY_Backlight             	(1<<0)
+#define WDT_SETBY_Display              		(1<<1)
+#define WDT_SETBY_SF            			(1<<2)
+#define WDT_SETBY_PM            			(1<<3)
+#define WDT_SETBY_WMS_DISABLE_PWK_MONITOR 	(0xAEEAEE00)
+#define WDT_SETBY_WMS_ENABLE_PWK_MONITOR  	(0xAEEAEE01)
+#define WDT_PWK_HANG_FORCE_HWT  		 	(0xAEE0FFFF)
+
+
+
+
+
+// QHQ RT Monitor    
+#define AEEIOCTL_RT_MON_Kick _IOR('p', 0x0A, int)
+#define AE_WDT_DEVICE_PATH      "/dev/RT_Monitor"
+// QHQ RT Monitor    end
 
 /* DB dump option bits, set relative bit to 1 to include related file in db */
 #define DB_OPT_DEFAULT                  (0)
@@ -132,6 +153,23 @@ void aee_oops_free(struct aee_oops *oops);
 #define DB_OPT_DISPLAY_HANG_DUMP        (1<<9)
 #define DB_OPT_LOW_MEMORY_KILLER        (1<<10)
 #define DB_OPT_PROC_MEM                 (1<<11)
+#define DB_OPT_FS_IO_LOG                (1<<12)
+#define DB_OPT_PROCESS_COREDUMP         (1<<13)
+#define DB_OPT_VM_HPROF                 (1<<14)
+#define DB_OPT_PROCMEM                  (1<<15)
+#define DB_OPT_DUMPSYS_INPUT            (1<<16)
+#define DB_OPT_MMPROFILE_BUFFER         (1<<17)
+#define DB_OPT_BINDER_INFO              (1<<18)
+#define DB_OPT_WCN_ISSUE_INFO           (1<<19)
+#define DB_OPT_DUMMY_DUMP               (1<<20)
+#define DB_OPT_PID_MEMORY_INFO          (1<<21)
+#define DB_OPT_VM_OOME_HPROF            (1<<22)
+#define DB_OPT_PID_SMAPS                (1<<23)
+#define DB_OPT_PROC_CMDQ_INFO           (1<<24)
+#define DB_OPT_PROC_USKTRK              (1<<25)
+#define DB_OPT_SF_RTT_DUMP              (1<<26)
+#define DB_OPT_PAGETYPE_INFO            (1<<27)
+#define DB_OPT_DUMPSYS_PROCSTATS        (1<<28)
 
 #define aee_kernel_exception(module, msg...)	\
 	aee_kernel_exception_api(__FILE__, __LINE__, DB_OPT_DEFAULT, module, msg)
@@ -139,20 +177,42 @@ void aee_oops_free(struct aee_oops *oops);
 	aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, module, msg)
 #define aee_kernel_reminding(module, msg...)	\
 	aee_kernel_reminding_api(__FILE__, __LINE__, DB_OPT_DEFAULT, module, msg)
+#define aee_kernel_dal_show(msg)	\
+	aee_kernel_dal_api(__FILE__, __LINE__, msg)
 
 void aee_kernel_exception_api(const char *file, const int line, const int db_opt, const char *module, const char *msg, ...);
 void aee_kernel_warning_api(const char *file, const int line, const int db_opt, const char *module, const char *msg, ...);
 void aee_kernel_reminding_api(const char *file, const int line, const int db_opt, const char *module, const char *msg, ...);
+void aee_kernel_dal_api(const char *file, const int line, const char *msg);
 
-void aed_md_exception1(const int *log, int log_size, const int *phy, int phy_size, const char *assert_type, const char *exp_filename, unsigned int exp_linenum, unsigned int fatal1, unsigned int fatal2);
+void aed_md_exception(const int *log, int log_size, const int *phy, int phy_size, const char* detail);
+void aed_combo_exception(const int *log, int log_size, const int *phy, int phy_size, const char* detail);
 
-#if defined(CONFIG_MTK_AEE_IPANIC)
-/* Begin starting panic record */
+void aee_kernel_wdt_kick_Powkey_api(const char *module, int msg);
+int  aee_kernel_wdt_kick_api(int kinterval);
+void aee_powerkey_notify_press(unsigned long pressed);
+int  aee_kernel_Powerkey_is_press(void);
+
+void aee_kdump_reboot(AEE_REBOOT_MODE, const char *msg, ...);
+
+// QHQ RT Monitor    
+void aee_kernel_RT_Monitor_api(int lParam);
+// QHQ RT Monitor    end
+
 void ipanic_oops_start(void);
 void ipanic_oops_end(void);
+
+void mt_fiq_printf(const char *fmt, ...);
+void aee_register_api(struct aee_kernel_api *aee_api);
+void aee_stop_nested_panic(struct pt_regs *regs);
+void aee_wdt_dump_info(void);
+void aee_wdt_printf(const char *fmt, ...);
+
+#if defined(CONFIG_MTK_AEE_DRAM_CONSOLE)
+void aee_dram_console_reserve_memory(void);
 #else
-#define ipanic_oops_start()
-#define ipanic_oops_end()
+static inline void aee_dram_console_reserve_memory(void) {}
 #endif
 
+extern void *aee_excp_regs; /* To store latest exception, in case of stack corruption */
 #endif // __AEE_H__

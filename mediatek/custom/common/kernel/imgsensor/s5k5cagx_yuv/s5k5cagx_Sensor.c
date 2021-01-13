@@ -24,10 +24,50 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
+ *
+ * 11 16 2012 jianrong.zhang
+ * [ALPS00361874] [Must Resolve][MT6517TD_AST3001][camcorder]preview play the video when set effects as choose your video
+ * Copy from ALPS.ICS2.TDD.FPB.
+ *
+ * 11 07 2012 jianrong.zhang
+ * [ALPS00361874] [Must Resolve][MT6517TD_AST3001][camcorder]preview play the video when set effects as choose your video
  * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+ * 
+ * 
+ * Modify disable awb function.
+ *
+ * 09 24 2012 jianrong.zhang
+ * [ALPS00353199] [MT6517_AST3001][Camcorder]record video with banding when set anti-flicker as 50hz
  * .
+ * Modify video mode flag
+ *
+ * 09 21 2012 jianrong.zhang
+ * [ALPS00361755] [MT6517TD_AST3001][Camera]only show correctly according to night when set auto scene detection
+ * Modify uploaded ASD info.
+ *
+ * 09 19 2012 jianrong.zhang
+ * [ALPS00360943] [基本功能][CMCC Case Fail][TS-NATIVEFUNC-PHOTOCAMERA-SET-000008][M]摄像记录的帧率低于30fps
+ * Rollback //ALPS_SW/DEV/ALPS.ICS2.TDD.FPB/alps/mediatek/custom/common/kernel/imgsensor/s5k5cagx_yuv/s5k5cagx_Sensor.c to revision 9
+ *
+ * 09 13 2012 jianrong.zhang
+ * [ALPS00358276] [基本功能][CMCC Case Fail][TS-NATIVEFUNC-PHOTOCAMERA-SET-000006][M]不支持ISO感光度、对比度、饱和度调节，人脸识别。
+ * Add ISO, saturation, contrast support.
+ *
+ * 09 13 2012 jianrong.zhang
+ * [ALPS00352069] [基本功能][CMCC Case Fail][TS-NATIVEFUNC-PHOTOCAMERA-SET-000005][O]场景模式只有自动，夜景
+ * Add scene mode portrait, landscape, sport.
+ *
+ * 09 13 2012 jianrong.zhang
+ * [ALPS00352027] [基本功能][CMCC Case Fail][TS-NATIVEFUNC-PHOTOCAMERA-SET-000003][M]曝光补偿设置可选项不包括-2，2
+ * Modify EV braket value from exponent to multiplier.
+ *
+ * 09 12 2012 jianrong.zhang
+ * [ALPS00357506] Review s5k5ca sensor driver code in all branch
+ * Add some logs.
+ *
+ * 09 12 2012 jianrong.zhang
+ * [ALPS00357506] Review s5k5ca sensor driver code in all branch
+ * Add spin lock.
  *
  *
  *------------------------------------------------------------------------------
@@ -77,46 +117,36 @@
 #include "s5k5cagx_CameraCustomized.h"
 
 #define S5K5CAGX_DEBUG
+
 #ifdef S5K5CAGX_DEBUG
-#define SENSORDB printk
+#define LOG_TAG "[SENSOR_DRV]"
+#define SENSORDB(fmt,arg...) printk(LOG_TAG "%s: " fmt "\n", __FUNCTION__ ,##arg)
 #else
-#define SENSORDB(x,...)
+#define SENSORDB(fmt,arg...)  
 #endif
+
 
 extern int iReadRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u8 * a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
 extern int iWriteRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u16 i2cId);
-
-
-//#define ROTL(n,X) ( ( ( X ) << n ) | ( ( X ) >> ( 32 - n ) ) )
-//#define ROTR(n,X) ( ( ( X ) >> n ) | ( ( X ) << ( 32 - n ) ) )
-//extern int iReadRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u8 * a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
-//extern int iWriteRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u16 i2cId);
 
 static int sensor_id_fail = 0; 
 static kal_uint32 zoom_factor = 0; 
 
 static DEFINE_SPINLOCK(s5k5cagx_drv_lock);
 
-inline S5K5CAGX_read_cmos_sensor(kal_uint32 addr)
+inline kal_uint16 S5K5CAGX_read_cmos_sensor(kal_uint16 addr)
 {
 	kal_uint16 get_byte=0;
 	char puSendCmd[2] = {(char)(addr >> 8) , (char)(addr & 0xFF) };
 	iReadRegI2C(puSendCmd , 2, (u8*)&get_byte,2,S5K5CAGX_WRITE_ID);
 	return ((get_byte<<8)&0xff00)|((get_byte>>8)&0x00ff);
-
 }
 
-inline int S5K5CAGX_write_cmos_sensor(u16 addr, u32 para)
+inline kal_uint16 S5K5CAGX_write_cmos_sensor(kal_uint16 addr, kal_uint32 para) 
 {
    char puSendCmd[4] = {(char)(addr >> 8) , (char)(addr & 0xFF) ,(char)(para >> 8),(char)(para & 0xFF)};
    iWriteRegI2C(puSendCmd , 4,S5K5CAGX_WRITE_ID);
 }
-
-
-
-//s_porting add
-//s_porting add
-//s_porting add
 
 
 /*******************************************************************************
@@ -205,38 +235,6 @@ UINT8 S5K5CAGXPixelClockDivider=0;
 
 MSDK_SENSOR_CONFIG_STRUCT S5K5CAGXSensorConfigData;
 
-//static void S5K5CAGX_write_cmos_sensor(const kal_uint32 addr, const kal_uint32 para)
-//{    
-//    S5K5CAGXI2CConfig.operation=I2C_OP_WRITE;
-//	  S5K5CAGXI2CConfig.slaveAddr=S5K5CAGX_sensor_write_I2C_address>>1;
-//	  S5K5CAGXI2CConfig.transfer_num=1;	/* TRANSAC_LEN */
-//	  S5K5CAGXI2CConfig.transfer_len=4;
-//	  S5K5CAGXI2CConfig.buffer[0]=(UINT8)(addr>>8);
-//	  S5K5CAGXI2CConfig.buffer[1]=(UINT8)(addr&0xFF);
-//	  S5K5CAGXI2CConfig.buffer[2]=(UINT8)(para>>8);
-//	  S5K5CAGXI2CConfig.buffer[3]=(UINT8)(para&0XFF);
-//	  DRV_I2CTransaction(S5K5CAGXhDrvI2C, &S5K5CAGXI2CConfig);
-//}   /*  S5K5CAGX_S5K5CAGX_write_cmos_sensor()  */
-
-//static kal_uint32 S5K5CAGX_read_cmos_sensor(const kal_uint32 addr)
-//{   
-//    kal_uint16 iGetByte = 0;
-//    S5K5CAGXI2CConfig.operation=I2C_OP_WRITE;
-//    S5K5CAGXI2CConfig.slaveAddr=S5K5CAGX_sensor_write_I2C_address>>1;
-//    S5K5CAGXI2CConfig.transfer_num=1;	/* TRANSAC_LEN */
-//    S5K5CAGXI2CConfig.transfer_len=2;
-//    S5K5CAGXI2CConfig.buffer[0]=(UINT8)(addr>>8);
-//    S5K5CAGXI2CConfig.buffer[1]=(UINT8)(addr&0xFF);
-//    DRV_I2CTransaction(S5K5CAGXhDrvI2C, &S5K5CAGXI2CConfig);
-
-//	  S5K5CAGXI2CConfig.operation=I2C_OP_READ;
-//	  S5K5CAGXI2CConfig.slaveAddr=S5K5CAGX_sensor_read_I2C_address>>1;
-//	  S5K5CAGXI2CConfig.transfer_num=1;	/* TRANSAC_LEN */
-//	  S5K5CAGXI2CConfig.transfer_len=2;
-//	  DRV_I2CTransaction(S5K5CAGXhDrvI2C, &S5K5CAGXI2CConfig);
-//	  iGetByte=(S5K5CAGXI2CConfig.buffer[0]<<8)|S5K5CAGXI2CConfig.buffer[1];
-//   return iGetByte;
-//}   /*  S5K5CAGX_read_cmos_sensor()  */
 
 /*************************************************************************
 * FUNCTION
@@ -303,40 +301,35 @@ void S5K5CAGX_select_page(kal_uint16 page)
 }   /* S5K5CAGX_select_page */
 
 void S5K5CAGX_set_mirror(kal_uint8 image_mirror)
+{
+	SENSORDB("image_mirror=%d",image_mirror);
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0296); 	
+	switch (image_mirror)
 	{
-#ifdef S5K5CAGX_OUTPUT_DEBUG_INFO
-		kal_wap_trace(MOD_ENG, TRACE_INFO, "Set image_mirror=%d", image_mirror);
-#endif
-	
-		S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
-		S5K5CAGX_write_cmos_sensor(0x002a, 0x0296); 	
-	
-		switch (image_mirror)
-		{
-			case IMAGE_NORMAL:
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); 	// REG_0TC_PCFG_uPrevMirror
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); 	// REG_0TC_PCFG_uCaptureMirror
-				break;
-			case IMAGE_H_MIRROR:
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 	// REG_0TC_PCFG_uPrevMirror
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 	// REG_0TC_PCFG_uCaptureMirror
-				break;
-			case IMAGE_V_MIRROR:
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002); 	// REG_0TC_PCFG_uPrevMirror
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002); 	// REG_0TC_PCFG_uCaptureMirror
-				break;
-			case IMAGE_HV_MIRROR:
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003); 	// REG_0TC_PCFG_uPrevMirror
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003); 	// REG_0TC_PCFG_uCaptureMirror
-				break;
-			default:
-				ASSERT(0);
-				break;
-		}
-	
-		S5K5CAGX_write_cmos_sensor(0x002A, 0x023E);
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevConfigChanged
+		case IMAGE_NORMAL:
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); 	// REG_0TC_PCFG_uPrevMirror
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); 	// REG_0TC_PCFG_uCaptureMirror
+		break;
+		case IMAGE_H_MIRROR:
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 	// REG_0TC_PCFG_uPrevMirror
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 	// REG_0TC_PCFG_uCaptureMirror
+		break;
+		case IMAGE_V_MIRROR:
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002); 	// REG_0TC_PCFG_uPrevMirror
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002); 	// REG_0TC_PCFG_uCaptureMirror
+		break;
+		case IMAGE_HV_MIRROR:
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003); 	// REG_0TC_PCFG_uPrevMirror
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003); 	// REG_0TC_PCFG_uCaptureMirror
+		break;
+		default:
+			//ASSERT(0);
+		break;
 	}
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x023E);
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevConfigChanged
+}
 
 
 
@@ -356,18 +349,15 @@ void S5K5CAGX_set_isp_driving_current(kal_uint8 current)
  *  void
  *****************************************************************************/
 void S5K5CAGX_set_dummy(kal_uint16 dummy_pixels, kal_uint16 dummy_lines)
-{
-		/****************************************************
-		  * Adjust the extra H-Blanking & V-Blanking.
-		  *****************************************************/
+{		
+	//Adjust the extra H-Blanking & V-Blanking.
 			S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
 		S5K5CAGX_write_cmos_sensor(0x002A, 0x044C); 
 
-		
 		S5K5CAGX_write_cmos_sensor(0x0F12, dummy_pixels); 
 		//S5K5CAGX_write_cmos_sensor(0x0F1C, dummy_pixels); 	// Extra H-Blanking
 		S5K5CAGX_write_cmos_sensor(0x0F12, dummy_lines); 	// Extra V-Blanking
-}   /* S5K5CAGX_set_dummy */
+}
 
 /*****************************************************************************
  * FUNCTION
@@ -380,7 +370,7 @@ void S5K5CAGX_set_dummy(kal_uint16 dummy_pixels, kal_uint16 dummy_lines)
  *  void
  *****************************************************************************/
 void S5K5CAGX_Initialize_Setting(void)
-	{
+{
 
 	//================================================================
 	// ARM GO
@@ -390,7 +380,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0010, 0x0001); // Reset
 	S5K5CAGX_write_cmos_sensor(0x1030, 0x0000); // Clear host interrupt so main will wait
 	S5K5CAGX_write_cmos_sensor(0x0014, 0x0001); // ARM go
-	mdelay(15);		// Actually delay 13.845ms , 10ms delay is enough for ARM go
+	mdelay(10);		// Actually delay 13.845ms , 10ms delay is enough for ARM go
 
 	//================================================================
 	// Start T&P part 2010-01-11
@@ -1126,7 +1116,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // Slope calibration tolerance in units of 1/256
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x1568);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00FC);
-	
+
 	//ADC control
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x155A);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01CC); //ADC SAT of 450mV for 10bit default in EVT1
@@ -1144,27 +1134,27 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x08AC); // 2220 ADC columns in normal mode including Hold & Latch
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0050); // 80 addition of ADC columns in Y-ave mode (default 244 0x74)
 	//WRITE #senHal_ForceModeType			0001	// Long exposure mode
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x1696);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // based on APS guidelines
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // based on APS guidelines
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00C6); // default. 1492 used for ADC dark characteristics
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00C6); // default. 1492 used for ADC dark characteristics
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x12B8);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0B00); //disable CINTR 0
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x1690);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // when set double sampling is activated - requires different set of pointers
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x12B0);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0055); // comp and pixel bias control 0xF40E - default for EVT1
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x005A); // comp and pixel bias control 0xF40E for binning mode
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x337A);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0006); // [7] - is used for rest-only mode (EVT0 value is 0xD and HW 0x6)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0068); 	// 104M
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x327C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1000); //Enable DBLR Regulation
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x6998); //VPIX 2.8
@@ -1208,11 +1198,11 @@ void S5K5CAGX_Initialize_Setting(void)
 								[3:2]	Vsync_cd10 ? Sdat pad cd1/cd0 control { Sdat _cd1, Sdat _cd0}.
 								[1:0]	Hsync_cd10 ? Hsync pad cd1/cd0 control { Hsync _cd1, Hsync _cd0}.
 	*/
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0555); // 0000 //	   Set IO driving current
-	
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x05d5); // 0000 //	   Set IO driving current
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x169E);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0007); // [3:0]- specifies the target (default 7)- DCLK = 64MHz instead of 116MHz.
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0BF6);
 #ifdef S5K5CAGX_MTK_INTERNAL_USE
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // 1 - Enable Bayer Downscaler for much power saving in VGA and below - #setot_bUseBayer32Bin		 
@@ -1561,7 +1551,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0060);
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x15BC);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0200); // added by Shy.
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x1608); //Analog Offset for MSM
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0100); // #gisp_msm_sAnalogOffset[0] 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0100); // #gisp_msm_sAnalogOffset[1]
@@ -1633,7 +1623,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x9C40); //#evt1_lt_uMaxExp4100ms
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
-	
+
 	//Setcaptureexposuretime
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0538);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x4650); //#lt_uCapMaxExp145ms
@@ -1645,7 +1635,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x9C40); //#evt1_lt_uCapMaxExp4100ms
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
-	
+
 	//Setgain
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0540);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0150); //#lt_uMaxAnGain1
@@ -1675,10 +1665,10 @@ void S5K5CAGX_Initialize_Setting(void)
 	//================================================================
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0F70);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x003A); //003B//#TVAR_ae_BrAve 091222
-// AE mode
+	// AE mode
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0F76);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x000F);//000D //Disable illumination & contrast// #ae_StatMode
-// AE weight
+	// AE weight
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0F7E);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0101); //#ae_WeightTbl_16_0_
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0101); //#ae_WeightTbl_16_1_
@@ -1719,14 +1709,14 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0C18);
 	//S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // 0001: 60Hz start auto / 0000: 50Hz start auto
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // 0001: 60Hz start auto / 0000: 50Hz start auto
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2);		// Auto Algorithms disable
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x067F);		// Enable Anti Flicker Auto Algorithm 
-	
+
 	//================================================================
 	// SET GAS, Anti Shading, 2010-01-11
 	//================================================================
-// GAS alpha
+	// GAS alpha
 	// R, Gr, Gb, B per light source
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x06CE);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0100); //#TVAR_ash_GASAlpha[0]//Horizon
@@ -1797,7 +1787,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x06B4);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); //#wbt_bUseOutdoorASH ON:1 OFF:0
 
-// Parabloic function
+	// Parabloic function
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x075A);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); //#ash_bParabolicEstimation
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#ash_uParabolicCenterX
@@ -1816,11 +1806,11 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x074E); 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); //#ash_bLumaMode //use Beta : 0001 not use Beta : 0000
 
-// GAS LUT start address // 7000_347C 
+	// GAS LUT start address // 7000_347C 
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0754);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x347C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x7000);
-// GAS LUT
+	// GAS LUT
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x347C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01C8); //#TVAR_ash_pGAS[0]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x018F); //#TVAR_ash_pGAS[1]
@@ -2406,14 +2396,14 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0198); //#TVAR_ash_AwbAshCord_5_
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01A8); //#TVAR_ash_AwbAshCord_6_
 
-//================================================================================================
-// SET CCM
-//================================================================================================ 
-// CCM start address // 7000_33A4
+	//================================================================================================
+	// SET CCM
+	//================================================================================================ 
+	// CCM start address // 7000_33A4
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0698);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x33A4);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x7000);
-// Horizon
+	// Horizon
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x33A4);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01CB); //#TVAR_wbt_pBaseCcms
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF8E); //#TVAR_wbt_pBaseCcms
@@ -2433,7 +2423,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF33); //#TVAR_wbt_pBaseCcms
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0173); //#TVAR_wbt_pBaseCcms
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012F); //#TVAR_wbt_pBaseCcms
-// Inca
+	// Inca
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01C8); //#TVAR_wbt_pBaseCcms[18]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF7F); //#TVAR_wbt_pBaseCcms[19]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFE4); //#TVAR_wbt_pBaseCcms[20]
@@ -2452,7 +2442,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF33); //#TVAR_wbt_pBaseCcms[33]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0173); //#TVAR_wbt_pBaseCcms[34]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012F); //#TVAR_wbt_pBaseCcms[35]
-// WW
+	// WW
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01C8); //#TVAR_wbt_pBaseCcms[36]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF7F); //#TVAR_wbt_pBaseCcms[37]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFE4); //#TVAR_wbt_pBaseCcms[38]
@@ -2471,7 +2461,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF33); //#TVAR_wbt_pBaseCcms[51]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0173); //#TVAR_wbt_pBaseCcms[52]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012F); //#TVAR_wbt_pBaseCcms[53]
-// CWF
+	// CWF
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01C8); //#TVAR_wbt_pBaseCcms[54]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF7F); //#TVAR_wbt_pBaseCcms[55]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFE4); //#TVAR_wbt_pBaseCcms[56]
@@ -2490,7 +2480,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF33); //#TVAR_wbt_pBaseCcms[69]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0173); //#TVAR_wbt_pBaseCcms[70]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012F); //#TVAR_wbt_pBaseCcms[71]
-// D50
+	// D50
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01C8); //#TVAR_wbt_pBaseCcms[72]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF7F); //#TVAR_wbt_pBaseCcms[73]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFE4); //#TVAR_wbt_pBaseCcms[74]
@@ -2509,7 +2499,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF33); //#TVAR_wbt_pBaseCcms[87]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0173); //#TVAR_wbt_pBaseCcms[88]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012F); //#TVAR_wbt_pBaseCcms[89]
-// D65
+	// D65
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01C8); //#TVAR_wbt_pBaseCcms[90]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF7F); //#TVAR_wbt_pBaseCcms[91]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFE4); //#TVAR_wbt_pBaseCcms[92]
@@ -2528,11 +2518,11 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF33); //#TVAR_wbt_pBaseCcms[105]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0173); //#TVAR_wbt_pBaseCcms[106]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012F); //#TVAR_wbt_pBaseCcms[107]
-// Outdoor CCM address // 7000_3380
+	// Outdoor CCM address // 7000_3380
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x06A0);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x3380);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x7000);
-// Outdoor CCM
+	// Outdoor CCM
 
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x3380);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01E0); //#TVAR_wbt_pOutdoorCcm[0]
@@ -2553,11 +2543,11 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF82); //#TVAR_wbt_pOutdoorCcm[15] 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x015D); //#TVAR_wbt_pOutdoorCcm[16] 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00FD); //#TVAR_wbt_pOutdoorCcm[17] 
-//================================================================================================
-// SET AWB
-//================================================================================================
-// Indoor boundary
-// 
+	//================================================================================================
+	// SET AWB
+	//================================================================================================
+	// Indoor boundary
+	// 
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0C48);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0384); //awbb_IndoorGrZones_m_BGrid[0] 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x03A3); //awbb_IndoorGrZones_m_BGrid[1] 
@@ -2603,8 +2593,8 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0CA0);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0149); // #awbb_IndoorGrZones_m_Boffs
 
-// Outdoor boundary
-//
+	// Outdoor boundary
+	//
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0CA4);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0294); // #awbb_OutdoorGrZones_m_BGrid[0] 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x02AB); // #awbb_OutdoorGrZones_m_BGrid[1] 
@@ -2633,8 +2623,8 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0005); // #awbb_OutdoorGrZones_m_GridStep
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0CDC);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0220); // #awbb_OutdoorGrZones_m_Boffs
-     
-// Outdoor detection zone??
+	 
+	// Outdoor detection zone??
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D88);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFB6); //#awbb_OutdoorDetectionZone_m_BGrid[0]_m_left
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00B6); //#awbb_OutdoorDetectionZone_m_BGrid[0]_m_right
@@ -2655,7 +2645,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1388); //#awbb_OutdoorDetectionZone_ZInfo_m_MaxNB 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
 
-// LowBr boundary
+	// LowBr boundary
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0CE0);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x03C6); //#awbb_LowBrGrZones_m_BGrid[0]
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x03F1); //#awbb_LowBrGrZones_m_BGrid[1]
@@ -2685,50 +2675,50 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D18);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00FE); //#awbb_LowBrGrZones_m_Boffs
 
-// AWB ETC
+	// AWB ETC
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D1C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x036C); //#awbb_CrclLowT_R_c
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D20);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x011D); //#awbb_CrclLowT_B_c
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D24);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x62B8); //#awbb_CrclLowT_Rad_c
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D2C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0135); //#awbb_IntcR
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x012B); //#awbb_IntcB
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D28);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0269); //#awbb_OutdoorWP_r
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0240); //#awbb_OutdoorWP_b
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0E4C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); //#awbboost_useBoosting4Outdoor
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D4C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0187); //#awbb_GamutWidthThr1
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00CF); //#awbb_GamutHeightThr1
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x000D); //#awbb_GamutWidthThr2
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x000A); //#awbb_GamutHeightThr2
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D5C);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x7FFF); //#awbb_LowTempRB
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0050); //#awbb_LowTemp_RBzone
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D46);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0420);//#awbb_MvEq_RBthresh
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0D4A);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x000A); //#awbb_MovingScale10
- 
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0E3E);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); //#awbb_rpl_InvalidOutdoor off
 //	S5K5CAGX_write_cmos_sensor(0x002A, 0x22DE);
 //	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0004); //#Mon_AWB_ByPassMode // [0]Outdoor [1]LowBr [2]LowTemp
- 
+
 //	S5K5CAGX_write_cmos_sensor(0x002A, 0x337C);
 //	S5K5CAGX_write_cmos_sensor(0x0F12, 0x00B3); //#Tune_TP_ChMoveToNearR
 //	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0040); //#Tune_TP_AvMoveToGamutDist
-	
+
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0E44);
 #ifdef S5K5CAGX_MTK_INTERNAL_USE
 	// AWB initial point, clear the Initial awb gain to solve the enter preview yellow issue.
@@ -2888,11 +2878,11 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x014C); //#SARR_AwbCcmCord_3_
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0184); //#SARR_AwbCcmCord_4_
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01AD); //#SARR_AwbCcmCord_5_
- 
-//================================================================================================
-// SET AFIT
-//================================================================================================
-// Noise index
+
+	//================================================================================================
+	// SET AFIT
+	//================================================================================================
+	// Noise index
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0764);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0041); //#afit_uNoiseIndInDoor[0] // 65
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0063); //#afit_uNoiseIndInDoor[1] // 99
@@ -3451,29 +3441,35 @@ void S5K5CAGX_Initialize_Setting(void)
 	//================================================================
 	// Ex. 24Mhz master clock, S5K5CAGX_master_clk_freq == 240.
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x01CC); // Set input CLK // 24MHz
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x6590); // #REG_TC_IPRM_InClockLSBs // 24Mhz
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x6590); // #REG_TC_IPRM_InClockLSBs // 26Mhz
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // #REG_TC_IPRM_InClockMSBs
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x01EE);
-	#ifdef MIPI_INTERFACE
+#ifdef MIPI_INTERFACE
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);   //mipi modify
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003);   //mipi modify
-  #else
+#else
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003); // #REG_TC_IPRM_UseNPviClocks // Number of PLL setting 2PLL configurations
-	#endif
+#endif
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x01F6); // Set system CLK 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x38a4); // #REG_TC_IPRM_OpClk4KHz_0  1st 58MHz for 30fps preview	
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x2EB0); // #REG_TC_IPRM_MinOutRate4KHz_0  PVI clock 48MHz
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x2EF0); // #REG_TC_IPRM_MaxOutRate4KHz_0
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x38a4); // #REG_TC_IPRM_OpClk4KHz_2  3thd 58MHz for 30fps preview	
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1308); // #REG_TC_IPRM_MinOutRate4KHz_2  PVI clock 72MHz
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1388); // #REG_TC_IPRM_MaxOutRate4KHz_2
+	#if defined(S5K5CAGX_CAP_3_7FPS)
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1308);//0x4228); // #REG_TC_IPRM_MinOutRate4KHz_2	PVI clock 82MHz
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1388);//0x42a8); // #
+  #elif  (defined(S5K5CAGX_CAP_10_15fps))
+	
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x4fd4);//0x4228); // #REG_TC_IPRM_MinOutRate4KHz_2  PVI clock 82MHz
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x5054);//0x42a8); // #REG_TC_IPRM_MaxOutRate4KHz_2
+	#endif
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x38a4); // #REG_TC_IPRM_OpClk4KHz_1  2nd 58MHz for 30fps preview	
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1f00); // #REG_TC_IPRM_MinOutRate4KHz_1  PVI clock 40MHz
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1f40); // #REG_TC_IPRM_MaxOutRate4KHz_1
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0208);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_IPRM_InitParamsUpdated
 
-	mdelay(15); 
+	//mdelay(5); 
 
 	//================================================================
 	//	SET PREVIEW CONFIGURATION_0, Camera Normal 10~30fps
@@ -3528,7 +3524,111 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0220);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_EnablePreview // Start preview
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_EnablePreviewChanged
+	
+	
+		//================================================================
+	//	SET PREVIEW CONFIGURATION_1, Camera Normal 10~30fps
+	//================================================================
+	
+	 S5K5CAGX_write_cmos_sensor(0x002A, 0x029C);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800);  //0400 //#REG_1TC_PCFG_usWidth//1024                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0600);   
+	 S5K5CAGX_write_cmos_sensor(0x0F12, 0x0005);  //#REG_1TC_PCFG_Format         0270                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+     
+       
+       
+       
+       #if defined(S5K5CAGX_CAP_3_7FPS)
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1308);//0x4228); // #REG_TC_IPRM_MinOutRate4KHz_2	PVI clock 82MHz
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1388);//0x42a8); // #
+  #elif  (defined(S5K5CAGX_CAP_10_15fps))
+	
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x4fd4);//0x4228); // #REG_TC_IPRM_MinOutRate4KHz_2  PVI clock 82MHz
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x5054);//0x42a8); // #REG_TC_IPRM_MaxOutRate4KHz_2
+	#endif
+	
+	   	//	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1F00);	//157C //3AA8 //#REG_1TC_PCFG_usMaxOut4KHzRate	0272																																																																																																																																																																																																																				   
+		   	//S5K5CAGX_write_cmos_sensor(0x0F12, 0x1F40);
+		   	
+		   	//S5K5CAGX_write_cmos_sensor(0x0F12, 0x5054);  //#REG_0TC_CCFG_usMaxOut4KHzRate
+	//S5K5CAGX_write_cmos_sensor(0x0F12, 0x4fd4);  //#REG_0TC_CCFG_usMinOut4KHzRate
+	
+	//S5K5CAGX_write_cmos_sensor(0x0F12, 0x2ef0);  //#REG_0TC_CCFG_usMaxOut4KHzRate
+	//S5K5CAGX_write_cmos_sensor(0x0F12, 0x2eb0);  //#REG_0TC_CCFG_usMinOut4KHzRate
+      
+
+		    S5K5CAGX_write_cmos_sensor(0x0F12, 0x0100);  //#REG_1TC_PCFG_OutClkPerPix88    0276                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800);  //#REG_1TC_PCFG_uMaxBpp88         027                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0052);  //0052 //#REG_1TC_PCFG_PVIMask //s0050 = FALSE in MSM6290 : s0052 = TRUE in MSM6800 //reg 027A                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x4000);  //#REG_1TC_PCFG_OIFMask                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x03C0);  //01E0 //#REG_1TC_PCFG_usJpegPacketSize                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0320);  //0000 //#REG_1TC_PCFG_usJpegTotalPackets                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
+
+		    //S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_uClockInd                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);
+		    S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_usFrTimeType                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //1 //#REG_1TC_PCFG_FrRateQualityType                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+        //S5K5CAGX_write_cmos_sensor(0x0F12, 0x07D0);  //0535 //03E8 //#REG_1TC_PCFG_usMaxFrTimeMsecMult10 //5fps                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+        //S5K5CAGX_write_cmos_sensor(0x0F12, 0x014D);  //01C6 //#REG_1TC_PCFG_usMinFrTimeMsecMult10 //22fps   
+      
+        
+       // S5K5CAGX_write_cmos_sensor(0x0F12, 0x03e8);//0x0535);  //#REG_0TC_CCFG_usMaxFrTimeMsecMult10 //7.5fps
+	     // S5K5CAGX_write_cmos_sensor(0x0F12, 0x029a);//0x03e8);  //#REG_0TC_CCFG_usMinFrTimeMsecMult10 //10fps 
+	      
+	        #if defined(S5K5CAGX_CAP_3_7FPS)
+	      S5K5CAGX_write_cmos_sensor(0x0F12, 0x0a35);  //#REG_0TC_CCFG_usMaxFrTimeMsecMult10 //7.5fps
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0535);  //#REG_0TC_CCFG_usMinFrTimeMsecMult10 //10fps 
+	    #elif  (defined(S5K5CAGX_CAP_10_15fps))
+	    S5K5CAGX_write_cmos_sensor(0x0F12, 0x03e8);//0x0535);  //#REG_0TC_CCFG_usMaxFrTimeMsecMult10 //7.5fps
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x029a);//0x03e8);  //#REG_0TC_CCFG_usMinFrTimeMsecMult10 //10fps 
+	    
+	    #endif
+	
+		
+		    S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_bSmearOutput                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_sSaturation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_sSharpBlur                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_sColorTemp                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_uDeviceGammaIndex                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_uPrevMirror                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_uCaptureMirror                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_1TC_PCFG_uRotation      
+	
+	
+	#if  (defined(S5K5CAGX_CAP_10_15fps))
 	//==, 0x====);=======================================================================================
+	// S, 0xCAPT);URE CONFIGURATION_0
+	// #, 0xramt); :YUV
+	// #, 0xze: );QXGA
+	// #, 0xS : );5 ~ 7.5fps
+	//==, 0x====);=======================================================================================
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x035C);  
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_uCaptureModeJpEG
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800);  //#REG_0TC_CCFG_usWidth 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0600);  //#REG_0TC_CCFG_usHeight
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0005);  //#REG_0TC_CCFG_Format//5:YUV9:JPEG 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x5054);  //#REG_0TC_CCFG_usMaxOut4KHzRate
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x4fd4);  //#REG_0TC_CCFG_usMinOut4KHzRate
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0100);  //#REG_0TC_CCFG_OutClkPerPix88
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800);  //#REG_0TC_CCFG_uMaxBpp88 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0052);  //#REG_0TC_CCFG_PVIMask 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_OIFMask   edison
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x01E0);  //#REG_0TC_CCFG_usJpegPacketSize
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_usJpegTotalPackets
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  //#REG_0TC_CCFG_uClockInd 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_usFrTimeType
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);  //#REG_0TC_CCFG_FrRateQualityType 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x03e8);//0x0535);  //#REG_0TC_CCFG_usMaxFrTimeMsecMult10 //7.5fps
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x029a);//0x03e8);  //#REG_0TC_CCFG_usMinFrTimeMsecMult10 //10fps 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_bSmearOutput
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sSaturation 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sSharpBlur
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sColorTemp
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_uDeviceGammaIndex 
+	#elif  (defined(S5K5CAGX_CAP_3_7FPS))
+	
+		//==, 0x====);=======================================================================================
 	// S, 0xCAPT);URE CONFIGURATION_0
 	// #, 0xramt); :YUV
 	// #, 0xze: );QXGA
@@ -3557,6 +3657,7 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sSharpBlur
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sColorTemp
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_uDeviceGammaIndex 
+	#endif
 	//==, 0x====);=======================================================================================
 	// S, 0xCAPT);URE CONFIGURATION_1
 	// #, 0xramt); :YUV
@@ -3568,8 +3669,8 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800);  //#REG_0TC_CCFG_usWidth 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0600);  //#REG_0TC_CCFG_usHeight
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0005);  //#REG_0TC_CCFG_Format//5:YUV9:JPEG 
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1388);  //#REG_0TC_CCFG_usMaxOut4KHzRate
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1308);  //#REG_0TC_CCFG_usMinOut4KHzRate
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x5054);  //#REG_0TC_CCFG_usMaxOut4KHzRate
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x4fd4);  //#REG_0TC_CCFG_usMinOut4KHzRate
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0100);  //#REG_0TC_CCFG_OutClkPerPix88
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800);  //#REG_0TC_CCFG_uMaxBpp88 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0052);  //#REG_0TC_CCFG_PVIMask 
@@ -3579,8 +3680,8 @@ void S5K5CAGX_Initialize_Setting(void)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  //#REG_0TC_CCFG_uClockInd 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);  //#REG_0TC_CCFG_usFrTimeType
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);  //#REG_0TC_CCFG_FrRateQualityType 
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0d05);  //#REG_0TC_CCFG_usMaxFrTimeMsecMult10 //7.5fps
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0535);  //#REG_0TC_CCFG_usMinFrTimeMsecMult10 //10fps 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x03e8);//0x0535);  //#REG_0TC_CCFG_usMaxFrTimeMsecMult10 //7.5fps
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x029a);//0x03e8);  //#REG_0TC_CCFG_usMinFrTimeMsecMult10 //10fps 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_bSmearOutput
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sSaturation 
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //#REG_0TC_CCFG_sSharpBlur
@@ -3615,14 +3716,16 @@ void S5K5CAGX_Initialize_Setting(void)
  * RETURNS
  *  void
  *****************************************************************************/
-void S5K5CAGX_PV_Mode(void)
+void S5K5CAGX_PV_Mode(kal_uint8 num)
 	{
 		//================================================================
 		// APPLY PREVIEW CONFIGURATION & RUN PREVIEW
 		//================================================================
 		S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
+		S5K5CAGX_write_cmos_sensor(0x002A, 0x12c8);
+		S5K5CAGX_write_cmos_sensor(0x0F12, 0x08ac);
 		S5K5CAGX_write_cmos_sensor(0x002A, 0x023C);
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // #REG_TC_GP_ActivePrevConfig // Select preview configuration_0
+		S5K5CAGX_write_cmos_sensor(0x0F12, num); // #REG_TC_GP_ActivePrevConfig // Select preview configuration_0
 		S5K5CAGX_write_cmos_sensor(0x002A, 0x0240);
 		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevOpenAfterChange
 		S5K5CAGX_write_cmos_sensor(0x002A, 0x0230);
@@ -3652,247 +3755,79 @@ void S5K5CAGX_PV_Mode(void)
  *  void
  *****************************************************************************/
 void S5K5CAGX_CAP_Mode2(void)
-	{
-			S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x0244); 
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  //config select   0 :48, 1, 20,
-			S5K5CAGX_write_cmos_sensor(0x002a, 0x0230);  			 
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  				 
-			S5K5CAGX_write_cmos_sensor(0x002a, 0x0246);  					 
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 		 
-			S5K5CAGX_write_cmos_sensor(0x002a, 0x0224);  			 
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 					 
-			S5K5CAGX_write_cmos_sensor(0x002a, 0x0226); 				 
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  			 
-			mdelay(50);
-			//S5K5CAGX_gPVmode = KAL_FALSE;
-		}
+{
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x0244); 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  //config select   0 :48, 1, 20,
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0230);  			 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  				 
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0246);  					 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 		 
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0224);  			 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 					 
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0226); 				 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);  			 
+	mdelay(50);
+	//S5K5CAGX_gPVmode = KAL_FALSE;
+}
 
 
 void S5K5CAGX_CAP_Mode(void)
-	{
-		S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
-		S5K5CAGX_write_cmos_sensor(0x002A, 0x0244); 
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //config select   0 :48, 1, 20,
-		S5K5CAGX_write_cmos_sensor(0x002a, 0x0230); 			 
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 				 
-		S5K5CAGX_write_cmos_sensor(0x002a, 0x0246); 					 
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 		 
-		S5K5CAGX_write_cmos_sensor(0x002a, 0x0224); 			 
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 					 
-		S5K5CAGX_write_cmos_sensor(0x002a, 0x0226); 				 
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 			 
-		mdelay(50);
-
-		//S5K5CAGX_gPVmode = KAL_FALSE;
-	}
-
-
-/*void S5K5CAGX_AE_AWB_Enable(kal_bool enable)
 {
-	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);	
-	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2);		// REG_TC_DBG_AutoAlgEnBits
-		
-	if (enable)
-	{
-		// Enable AE/AWB
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x077F);		// Enable aa_all, ae, awb.
-	}
-	else
-	{
-		// Disable AE/AWB
-		S5K5CAGX_write_cmos_sensor(0x0F12, 0x0770);		// Disable aa_all, ae, awb.
-	}
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x12c8);
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x1200);
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x0244); 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);  //config select   0 :48, 1, 20,
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0230); 			 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 				 
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0246); 					 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 		 
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0224); 			 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 					 
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x0226); 				 
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 			 
+	mdelay(50);
+	//S5K5CAGX_gPVmode = KAL_FALSE;
+}
 
-}*/
 static void S5K5CAGX_set_AE_mode(kal_bool AE_enable)
 {
-#if 0
-    kal_uint8 temp_AE_reg = 0;
-	S5K5CAGX_write_cmos_sensor(0xFCFC, 0x7000);
-	temp_AE_reg = S5K5CAGX_read_cmos_sensor(0x04D2);
-	S5K5CAGX_write_cmos_sensor(0xFCFC, 0x7000); 
-	//S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2); 	// REG_TC_DBG_AutoAlgEnBits
-
+	SENSORDB("AE_enable=%d",AE_enable);
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x2466); 	// REG_TC_DBG_AutoAlgEnBits
     if (AE_enable == KAL_TRUE)
-    {
-        // turn on AEC/AGC
-        S5K5CAGX_write_cmos_sensor(0x04D2, temp_AE_reg|0x0003);
+    {    
+        S5K5CAGX_write_cmos_sensor(0x0F12, 0x01); //  turn on AEC/AGC
     }
     else
     {
-        // turn off AEC/AGC
-       S5K5CAGX_write_cmos_sensor(0x04D2, temp_AE_reg&0xFFFC);
+    	 S5K5CAGX_write_cmos_sensor(0x0F12, 0x00);
     }
-	#endif
 }
 
 
 static void S5K5CAGX_set_AWB_mode(kal_bool AWB_enable)
 {
-#if 0
-    kal_uint8 temp_AWB_reg = 0;
-	S5K5CAGX_write_cmos_sensor(0xFCFC, 0x7000);
-	temp_AWB_reg = S5K5CAGX_read_cmos_sensor(0x04D2);
-	S5K5CAGX_write_cmos_sensor(0xFCFC, 0x7000); 
-	//S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2); 	// REG_TC_DBG_AutoAlgEnBits
-
-    if (AWB_enable == KAL_TRUE)
-    {
-        //enable Auto WB
-        S5K5CAGX_write_cmos_sensor(0x04D2, temp_AWB_reg | 0x0009);        
+	kal_uint16 u16temp_AWB_Reg=0;
+	SENSORDB("AWB_enable=%d",AWB_enable);
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2); 	// REG_TC_DBG_AutoAlgEnBits
+	u16temp_AWB_Reg=S5K5CAGX_read_cmos_sensor(0x0F12);
+	if (AWB_enable == KAL_TRUE)
+    {   //enable Auto WB
+    	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2);
+        S5K5CAGX_write_cmos_sensor(0x0F12, (u16temp_AWB_Reg|0x08));// turn on AEC/AGC
     }
     else
     {
-        //turn off AWB
-        temp_AWB_reg = S5K5CAGX_read_cmos_sensor(0x3324);
-        S5K5CAGX_write_cmos_sensor(0x04D2, temp_AWB_reg & 0xFFF6);        
+		//disable Auto WB
+		S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2);
+		S5K5CAGX_write_cmos_sensor(0x0F12, (u16temp_AWB_Reg&(~0x08)));//3
     }
-#endif
 }
 
 
-
-/*************************************************************************
-* FUNCTION
-*	S5K5CAGX_night_mode
-*
-* DESCRIPTION
-*	This function night mode of S5K5CAGX.
-*
-* PARAMETERS
-*	none
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-void S5K5CAGX_night_mode(kal_bool enable)
-{
-	/*----------------------------------------------------------------*/
-	/* Local Variables												  */
-	/*----------------------------------------------------------------*/
-
-	/*----------------------------------------------------------------*/
-	/* Code Body													  */
-	/*----------------------------------------------------------------*/
-	kal_uint16 video_frame_len = 0;
-	kal_uint16 prev_line_len = 0;
-
-	SENSORDB("S5K5CAGX_night_mode [in]\r\n");
-
-	if (S5K5CAGX_sensor_cap_state == KAL_TRUE)
-		return ;	//Don't need rewrite the setting when capture.
-	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
-	S5K5CAGX_write_cmos_sensor(0x002A, 0x0288);	//#REG_0TC_PCFG_usMaxFrTimeMsecMult10 
-	
-	if (enable)
-	{
-		if (
-			S5K5CAGX_MPEG4_encode_mode == KAL_TRUE)
-		{
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NIT_FIX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NIT_FIX_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
-		}
-		else
-		{
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NIT_MAX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NIT_MIN_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
-
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x1680);	//Set Shutter Speed
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x1340);	// #evt1_lt_uMaxExp4 340ms
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x1688);
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x1340);	// #evt1_lt_uCapMaxExp4 340ms
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);
-
-			// Set gain
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x168E);
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0A00); // #evt1_lt_uMaxAnGain4
-		}	
-		spin_lock(&s5k5cagx_drv_lock);
-
-		S5K5CAGX_night_mode_enable = KAL_TRUE;
-		spin_unlock(&s5k5cagx_drv_lock);
-	}
-	else
-	{
-		if (S5K5CAGX_MPEG4_encode_mode == KAL_TRUE)
-		{
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NOM_FIX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NOM_FIX_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
-		}
-		else
-		{
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NOM_MAX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
-			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NOM_MIN_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
-
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x1680);	//Set Shutter Speed
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0xBB80);	// #evt1_lt_uMaxExp4 120ms
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x1688);
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0xBB80);	// #evt1_lt_uCapMaxExp4 120ms
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
-
-			// Set gain
-			S5K5CAGX_write_cmos_sensor(0x002A, 0x168E);
-			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800); //04CC// #evt1_lt_uMaxAnGain4 
-		}	
-        spin_lock(&s5k5cagx_drv_lock);
-		S5K5CAGX_night_mode_enable = KAL_FALSE;
-		spin_unlock(&s5k5cagx_drv_lock);
-	}
-	S5K5CAGX_write_cmos_sensor(0x002A, 0x0240);
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevOpenAfterChange
-	S5K5CAGX_write_cmos_sensor(0x002A, 0x0230);
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_NewConfigSync // Update preview configuration
-	S5K5CAGX_write_cmos_sensor(0x002A, 0x023E);
-	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevConfigChanged
-
-}	/* S5K5CAGX_night_mode */
-
-/*************************************************************************
-* FUNCTION
-*	S5K5CAGX_GetSensorID
-*
-* DESCRIPTION
-*	This function get the sensor ID
-*
-* PARAMETERS
-*	None
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint32 S5K5CAGX_GetSensorID(kal_uint32 *sensorID)
-{
-    volatile signed char i;
-	kal_uint16 sensor_id=0;
-	
-     // SW reset must be the 1st command sent to S5K5CAGX
-	 S5K5CAGX_write_cmos_sensor(0xFCFC, 0x0000);
-	 // check if sensor ID correct
-	 sensor_id=S5K5CAGX_read_cmos_sensor(0x0040) ;
-	 SENSORDB("Sensor Read S5K5CAGX ID %x \r\n",sensor_id);
-	 *sensorID=sensor_id;
-	if (sensor_id != S5K5CAGX_SENSOR_ID)
-	{
-	    *sensorID=0xFFFFFFFF;
-	    SENSORDB("Sensor Read ByeBye \r\n");
-		return ERROR_SENSOR_CONNECT_FAIL;
-	}
-    return ERROR_NONE;    
-}   /* S5K5CAGXOpen  */
-
-
-/*****************************************************************************/
-/* Windows Mobile Sensor Interface */
-/*****************************************************************************/
 /*************************************************************************
 * FUNCTION
 *	S5K5CAGXOpen
@@ -3914,45 +3849,24 @@ UINT32 S5K5CAGXOpen(void)
 	volatile signed char i;
 	kal_uint16 sensor_id=0;
 	
-     // SW reset must be the 1st command sent to S5K5CAGX
-	 S5K5CAGX_write_cmos_sensor(0xFCFC, 0x0000);
-	 // check if sensor ID correct
-	 sensor_id=S5K5CAGX_read_cmos_sensor(0x0040) ;
-	 SENSORDB("Sensor Read S5K5CAGX ID %x \r\n",sensor_id);
+	// SW reset must be the 1st command sent to S5K5CAGX
+	S5K5CAGX_write_cmos_sensor(0xFCFC, 0x0000);
+	sensor_id=S5K5CAGX_read_cmos_sensor(0x0040) ;
+	SENSORDB("Sensor Read S5K5CAGX ID= 0x%04x",sensor_id);
 	if (sensor_id != S5K5CAGX_SENSOR_ID)
 	{
-	    SENSORDB("Sensor Read ByeBye \r\n");
+	    SENSORDB("Sensor Read ByeBye");
 		return ERROR_SENSOR_CONNECT_FAIL;
-	}
-			
-	// 10. Initial sequence setting apply to cmos sensor.
-		S5K5CAGX_Initialize_Setting();
+	}			
+	//Initial sequence setting apply to cmos sensor.
+	S5K5CAGX_Initialize_Setting();
 	return ERROR_NONE;
 }	/* S5K5CAGXOpen() */
 
-/*************************************************************************
-* FUNCTION
-*	S5K5CAGXClose
-*
-* DESCRIPTION
-*	This function is to turn off sensor module power.
-*
-* PARAMETERS
-*	None
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
 UINT32 S5K5CAGXClose(void)
 {
-//	CISModulePowerOn(FALSE);
-
-//	DRV_I2CClose(S5K5CAGXhDrvI2C);
 	return ERROR_NONE;
-}	/* S5K5CAGXClose() */
+}
 
 /*************************************************************************
 * FUNCTION
@@ -3974,26 +3888,73 @@ UINT32 S5K5CAGXClose(void)
 UINT32 S5K5CAGXPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
 {
-    spin_lock(&s5k5cagx_drv_lock);
+	spin_lock(&s5k5cagx_drv_lock);		
 	S5K5CAGX_sensor_cap_state = KAL_FALSE;
     S5K5CAGX_PV_dummy_pixels = 0x0400;
 	S5K5CAGX_PV_dummy_lines = 0;
 	spin_unlock(&s5k5cagx_drv_lock);
+	SENSORDB("SensorOperationMode=%d",sensor_config_data->SensorOperationMode);
 	if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		// MPEG4 Encode Mode
 	{
-        spin_lock(&s5k5cagx_drv_lock);
+		spin_lock(&s5k5cagx_drv_lock);	
 		S5K5CAGX_MPEG4_encode_mode = KAL_TRUE;		
 		S5K5CAGX_MJPEG_encode_mode = KAL_FALSE;
 		spin_unlock(&s5k5cagx_drv_lock);
 	}
 	else
 	{
-        spin_lock(&s5k5cagx_drv_lock);
+		spin_lock(&s5k5cagx_drv_lock);	
 		S5K5CAGX_MPEG4_encode_mode = KAL_FALSE;		
 		S5K5CAGX_MJPEG_encode_mode = KAL_FALSE;
 		spin_unlock(&s5k5cagx_drv_lock);
+		
 	}
-	S5K5CAGX_PV_Mode();
+	
+	S5K5CAGX_PV_Mode(0);
+	S5K5CAGX_set_mirror(sensor_config_data->SensorImageMirror);
+    image_window->ExposureWindowWidth = S5K5CAGX_IMAGE_SENSOR_PV_WIDTH;
+    image_window->ExposureWindowHeight = S5K5CAGX_IMAGE_SENSOR_PV_HEIGHT;
+	// copy sensor_config_data
+	memcpy(&S5K5CAGXSensorConfigData, sensor_config_data, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
+  	return ERROR_NONE;
+}	/* S5K5CAGXPreview() */
+
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGXPreview
+*
+* DESCRIPTION
+*	This function start the sensor preview.
+*
+* PARAMETERS
+*	*image_window : address pointer of pixel numbers in one period of HSYNC
+*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
+UINT32 S5K5CAGXZsdPreview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
+					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
+{
+	S5K5CAGX_sensor_cap_state = KAL_FALSE;
+    S5K5CAGX_PV_dummy_pixels = 0x0400;
+	S5K5CAGX_PV_dummy_lines = 0;
+	SENSORDB("SensorOperationMode=%d",sensor_config_data->SensorOperationMode);
+	if(sensor_config_data->SensorOperationMode==MSDK_SENSOR_OPERATION_MODE_VIDEO)		// MPEG4 Encode Mode
+	{
+		S5K5CAGX_MPEG4_encode_mode = KAL_TRUE;		
+		S5K5CAGX_MJPEG_encode_mode = KAL_FALSE;
+	}
+	else
+	{
+		S5K5CAGX_MPEG4_encode_mode = KAL_FALSE;		
+		S5K5CAGX_MJPEG_encode_mode = KAL_FALSE;
+		
+	}
+	S5K5CAGX_PV_Mode(1);
 	S5K5CAGX_set_mirror(sensor_config_data->SensorImageMirror);
     image_window->ExposureWindowWidth = S5K5CAGX_IMAGE_SENSOR_PV_WIDTH;
     image_window->ExposureWindowHeight = S5K5CAGX_IMAGE_SENSOR_PV_HEIGHT;
@@ -4013,57 +3974,14 @@ UINT32 S5K5CAGXCapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     spin_lock(&s5k5cagx_drv_lock);
     S5K5CAGX_sensor_cap_state = KAL_TRUE;
      spin_unlock(&s5k5cagx_drv_lock);
+	S5K5CAGX_CAP_Mode();      
 
-	// Webcam mode, just set the grab only, and make sure the AE/AWB is turn on.
-
-    if ((image_window->ImageTargetWidth<=S5K5CAGX_IMAGE_SENSOR_VGA_WIDTH)&&
-        (image_window->ImageTargetHeight<=S5K5CAGX_IMAGE_SENSOR_VGA_HEIGHT))
-    {    /* Less than PV Mode */	
-		image_window->GrabStartX = S5K5CAGX_IMAGE_SENSOR_PV_INSERTED_PIXELS;
-        image_window->GrabStartY = S5K5CAGX_IMAGE_SENSOR_PV_INSERTED_LINES;
-        image_window->ExposureWindowWidth= S5K5CAGX_IMAGE_SENSOR_PV_WIDTH-400;
-        image_window->ExposureWindowHeight = S5K5CAGX_IMAGE_SENSOR_PV_HEIGHT-300;
-    }
-    else 
-    {    
-   		// 3M, QXGA Mode readout   
-        if ((image_window->ImageTargetWidth<=S5K5CAGX_IMAGE_SENSOR_1M_WIDTH)&&
-        (image_window->ImageTargetHeight<=S5K5CAGX_IMAGE_SENSOR_1M_HEIGHT))
-        {         	
-	       S5K5CAGX_CAP_Mode();         
-        }
-
-        else if ((image_window->ImageTargetWidth<=S5K5CAGX_IMAGE_SENSOR_2M_WIDTH)&&
-        (image_window->ImageTargetHeight<=S5K5CAGX_IMAGE_SENSOR_2M_HEIGHT))//2M
-        {
-  	        if (zoom_factor <= 10)
-	        {  
-	        S5K5CAGX_CAP_Mode();
-	        }
-	        else  
-	        {  
-	        S5K5CAGX_CAP_Mode2();
-	        }               
-        }
-        else
-        	{
-		if (zoom_factor <= 5)
-	        {  
-	        S5K5CAGX_CAP_Mode();
-	        }	
-		else
-			{
-			S5K5CAGX_CAP_Mode2();
-	        }
-        	}
-        image_window->GrabStartX = S5K5CAGX_IMAGE_SENSOR_FULL_INSERTED_PIXELS;
-        image_window->GrabStartY = S5K5CAGX_IMAGE_SENSOR_FULL_INSERTED_LINES;
-        image_window->ExposureWindowWidth= S5K5CAGX_IMAGE_SENSOR_FULL_WIDTH;
-        image_window->ExposureWindowHeight = S5K5CAGX_IMAGE_SENSOR_FULL_HEIGHT;
-    	}
-
-	// copy sensor_config_data
+	image_window->GrabStartX = S5K5CAGX_IMAGE_SENSOR_FULL_INSERTED_PIXELS;
+	image_window->GrabStartY = S5K5CAGX_IMAGE_SENSOR_FULL_INSERTED_LINES;
+	image_window->ExposureWindowWidth= S5K5CAGX_IMAGE_SENSOR_FULL_WIDTH;
+	image_window->ExposureWindowHeight = S5K5CAGX_IMAGE_SENSOR_FULL_HEIGHT;
 	memcpy(&S5K5CAGXSensorConfigData, sensor_config_data, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
+	SENSORDB("exit");
 	return ERROR_NONE;
 }	/* S5K5CAGXCapture() */
 
@@ -4082,28 +4000,25 @@ UINT32 S5K5CAGXGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 {
     switch(ScenarioId)
     {
-        #if defined(MT6575)
     	case MSDK_SCENARIO_ID_CAMERA_ZSD:
 			 pSensorInfo->SensorPreviewResolutionX=S5K5CAGX_IMAGE_SENSOR_FULL_WIDTH;
 	         pSensorInfo->SensorPreviewResolutionY=S5K5CAGX_IMAGE_SENSOR_FULL_HEIGHT;
 			 pSensorInfo->SensorCameraPreviewFrameRate=15;
-			 break;
-		
+		break;
 		default:
-		#endif
 			 pSensorInfo->SensorPreviewResolutionX=S5K5CAGX_IMAGE_SENSOR_PV_WIDTH;
 	         pSensorInfo->SensorPreviewResolutionY=S5K5CAGX_IMAGE_SENSOR_PV_HEIGHT;
 			 pSensorInfo->SensorCameraPreviewFrameRate=30;
-    	}
+	}
 	pSensorInfo->SensorFullResolutionX=S5K5CAGX_IMAGE_SENSOR_FULL_WIDTH;
 	pSensorInfo->SensorFullResolutionY=S5K5CAGX_IMAGE_SENSOR_FULL_HEIGHT;
-	pSensorInfo->SensorCameraPreviewFrameRate=30;
+	//pSensorInfo->SensorCameraPreviewFrameRate=30;
 	pSensorInfo->SensorVideoFrameRate=30;
 	pSensorInfo->SensorStillCaptureFrameRate=10;
 	pSensorInfo->SensorWebCamCaptureFrameRate=15;
 	pSensorInfo->SensorResetActiveHigh=FALSE;
 	pSensorInfo->SensorResetDelayCount=1;
-	pSensorInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_VYUY;
+	pSensorInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_YVYU;
 	pSensorInfo->SensorClockPolarity=SENSOR_CLOCK_POLARITY_LOW;	
 	pSensorInfo->SensorClockFallingPolarity=SENSOR_CLOCK_POLARITY_LOW;
 	pSensorInfo->SensorHsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
@@ -4115,7 +4030,7 @@ UINT32 S5K5CAGXGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
    		pSensorInfo->SensroInterfaceType		= SENSOR_INTERFACE_TYPE_PARALLEL;
    	#endif
 	pSensorInfo->SensorMasterClockSwitch = 0; 
-    pSensorInfo->SensorDrivingCurrent = ISP_DRIVING_4MA;   	
+    pSensorInfo->SensorDrivingCurrent = ISP_DRIVING_8MA;   	
 	pSensorInfo->CaptureDelayFrame = 3; 
 	pSensorInfo->PreviewDelayFrame = 3; 
 	pSensorInfo->VideoDelayFrame = 4; 
@@ -4132,16 +4047,15 @@ UINT32 S5K5CAGXGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 			pSensorInfo->SensorDataLatchCount= 2;
 			pSensorInfo->SensorGrabStartX = 2; 
 			pSensorInfo->SensorGrabStartY = 2; 
-			#ifdef MIPI_INTERFACE
-	            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_1_LANE;			
-	            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0; 
-		        pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14; 
-		        pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
-	            pSensorInfo->SensorWidthSampling = 0;  // 0 is default 1x
-	            pSensorInfo->SensorHightSampling = 0;   // 0 is default 1x 
-	            pSensorInfo->SensorPacketECCOrder = 1;
-	        	#endif
-
+		#ifdef MIPI_INTERFACE
+            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_1_LANE;			
+            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0; 
+	        pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14; 
+	        pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->SensorWidthSampling = 0;  // 0 is default 1x
+            pSensorInfo->SensorHightSampling = 0;   // 0 is default 1x 
+            pSensorInfo->SensorPacketECCOrder = 1;
+		#endif
 		break;
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
@@ -4153,15 +4067,15 @@ UINT32 S5K5CAGXGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 			pSensorInfo->SensorDataLatchCount= 2;
 			pSensorInfo->SensorGrabStartX = 2; 
 			pSensorInfo->SensorGrabStartY = 2; 					
-			#ifdef MIPI_INTERFACE
-	            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_1_LANE;			
-	            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0; 
-		        pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14; 
-		        pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
-	            pSensorInfo->SensorWidthSampling = 0;  // 0 is default 1x
-	            pSensorInfo->SensorHightSampling = 0;   // 0 is default 1x 
-	            pSensorInfo->SensorPacketECCOrder = 1;
-	        	#endif			
+		#ifdef MIPI_INTERFACE
+            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_1_LANE;			
+            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0; 
+	        pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14; 
+	        pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->SensorWidthSampling = 0;  // 0 is default 1x
+            pSensorInfo->SensorHightSampling = 0;   // 0 is default 1x 
+            pSensorInfo->SensorPacketECCOrder = 1;
+		#endif			
 		break;
 		default:
 			pSensorInfo->SensorClockFreq=26;
@@ -4174,7 +4088,6 @@ UINT32 S5K5CAGXGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 			pSensorInfo->SensorGrabStartY = 2; 					
 		break;
 	}
-	//S5K5CAGX_PixelClockDivider=pSensorInfo->SensorPixelClockCount;
 	memcpy(pSensorConfigData, &S5K5CAGXSensorConfigData, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
 	return ERROR_NONE;
 }	/* S5K5CAGXGetInfo() */
@@ -4183,6 +4096,7 @@ UINT32 S5K5CAGXGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 UINT32 S5K5CAGXControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *pImageWindow,
 					  MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData)
 {
+	SENSORDB("ScenarioId=%d",ScenarioId);
 	switch (ScenarioId)
 	{
 		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
@@ -4194,22 +4108,13 @@ UINT32 S5K5CAGXControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WI
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
 			S5K5CAGXCapture(pImageWindow, pSensorConfigData);
 		break;
-		#if defined(MT6575)
 		case MSDK_SCENARIO_ID_CAMERA_ZSD:
-		     printk("S5K5CAGX MSDK_SCENARIO_ID_CAMERA_ZSD");
-			   S5K5CAGXCapture(pImageWindow, pSensorConfigData);
-			break;
-		#endif
-        //s_porting add
-        //s_porting add
-        //s_porting add
+			S5K5CAGXCapture(pImageWindow, pSensorConfigData);
+		break;
         default:
-            return ERROR_INVALID_SCENARIO_ID;
-        //e_porting add
-        //e_porting add
-        //e_porting add		
+            return ERROR_INVALID_SCENARIO_ID;	
 	}
-	return TRUE;
+	return 0;
 }	/* S5K5CAGXControl() */
 
 /* [TC] YUV sensor */	
@@ -4226,9 +4131,8 @@ void S5K5CAGXQuery(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 			pFeatureMultiSelection = (PMSDK_FEATURE_TYPE_MULTI_SELECTION_STRUCT)(&pSensorFeatureInfo->FeatureInformation.FeatureMultiSelection);
 			pFeatureMultiSelection->TotalSelection = CAM_NO_OF_SCENE_MODE_MAX-2;
 			pFeatureMultiSelection->DefaultSelection = CAM_AUTO_DSC_MODE;
-			pFeatureMultiSelection->SupportedSelection = 
-				(CAMERA_FEATURE_SUPPORT(CAM_AUTO_DSC_MODE)|
-				CAMERA_FEATURE_SUPPORT(CAM_NIGHTSCENE_MODE));			
+			pFeatureMultiSelection->SupportedSelection= (CAMERA_FEATURE_SUPPORT(CAM_AUTO_DSC_MODE) \
+														|CAMERA_FEATURE_SUPPORT(CAM_NIGHTSCENE_MODE));			
 		break;
 		case ISP_FEATURE_WHITEBALANCE:
 			pSensorFeatureInfo->FeatureType = MSDK_FEATURE_TYPE_MULTI_SELECTION;
@@ -4236,12 +4140,11 @@ void S5K5CAGXQuery(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 			pFeatureMultiSelection = (PMSDK_FEATURE_TYPE_MULTI_SELECTION_STRUCT)(&pSensorFeatureInfo->FeatureInformation.FeatureMultiSelection);
 			pFeatureMultiSelection->TotalSelection = CAM_NO_OF_WB;
 			pFeatureMultiSelection->DefaultSelection = CAM_WB_AUTO;
-			pFeatureMultiSelection->SupportedSelection = 
-				(CAMERA_FEATURE_SUPPORT(CAM_WB_AUTO)|
-				CAMERA_FEATURE_SUPPORT(CAM_WB_CLOUD)|
-				CAMERA_FEATURE_SUPPORT(CAM_WB_DAYLIGHT)|
-				CAMERA_FEATURE_SUPPORT(CAM_WB_INCANDESCENCE)|
-				CAMERA_FEATURE_SUPPORT(CAM_WB_FLUORESCENT));
+			pFeatureMultiSelection->SupportedSelection= (CAMERA_FEATURE_SUPPORT(CAM_WB_AUTO) \
+														|CAMERA_FEATURE_SUPPORT(CAM_WB_CLOUD) \
+														|CAMERA_FEATURE_SUPPORT(CAM_WB_DAYLIGHT) \
+														|CAMERA_FEATURE_SUPPORT(CAM_WB_INCANDESCENCE) \
+														|CAMERA_FEATURE_SUPPORT(CAM_WB_FLUORESCENT));
 		break;
 		case ISP_FEATURE_IMAGE_EFFECT:
 			pSensorFeatureInfo->FeatureType = MSDK_FEATURE_TYPE_MULTI_SELECTION;
@@ -4249,15 +4152,14 @@ void S5K5CAGXQuery(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 			pFeatureMultiSelection = (PMSDK_FEATURE_TYPE_MULTI_SELECTION_STRUCT)(&pSensorFeatureInfo->FeatureInformation.FeatureMultiSelection);
 			pFeatureMultiSelection->TotalSelection = CAM_NO_OF_EFFECT_ENC;
 			pFeatureMultiSelection->DefaultSelection = CAM_EFFECT_ENC_NORMAL;
-			pFeatureMultiSelection->SupportedSelection = 
-				(CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_NORMAL)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_GRAYSCALE)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_COLORINV)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_GRAYINV)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_SEPIABLUE)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_SKETCH)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_EMBOSSMENT)|
-				CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_SEPIA));	
+			pFeatureMultiSelection->SupportedSelection =(CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_NORMAL) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_GRAYSCALE) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_COLORINV) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_GRAYINV) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_SEPIABLUE) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_SKETCH) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_EMBOSSMENT) \
+														|CAMERA_FEATURE_SUPPORT(CAM_EFFECT_ENC_SEPIA));	
 		break;
 		case ISP_FEATURE_AE_METERING_MODE:
 			pSensorFeatureInfo->FeatureSupported = MSDK_FEATURE_NOT_SUPPORTED;
@@ -4277,9 +4179,8 @@ void S5K5CAGXQuery(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 			pFeatureMultiSelection = (PMSDK_FEATURE_TYPE_MULTI_SELECTION_STRUCT)(&pSensorFeatureInfo->FeatureInformation.FeatureMultiSelection);
 			pFeatureMultiSelection->TotalSelection = CAM_NO_OF_BANDING;
 			pFeatureMultiSelection->DefaultSelection = CAM_BANDING_50HZ;
-			pFeatureMultiSelection->SupportedSelection = 
-				(CAMERA_FEATURE_SUPPORT(CAM_BANDING_50HZ)|
-				CAMERA_FEATURE_SUPPORT(CAM_BANDING_60HZ));
+			pFeatureMultiSelection->SupportedSelection =(CAMERA_FEATURE_SUPPORT(CAM_BANDING_50HZ) \
+														|CAMERA_FEATURE_SUPPORT(CAM_BANDING_60HZ));
 		break;
 		case ISP_FEATURE_AF_OPERATION:
 			pSensorFeatureInfo->FeatureSupported = MSDK_FEATURE_NOT_SUPPORTED;
@@ -4296,9 +4197,8 @@ void S5K5CAGXQuery(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 			pFeatureMultiSelection = (PMSDK_FEATURE_TYPE_MULTI_SELECTION_STRUCT)(&pSensorFeatureInfo->FeatureInformation.FeatureMultiSelection);
 			pFeatureMultiSelection->TotalSelection = 2;
 			pFeatureMultiSelection->DefaultSelection = CAM_VIDEO_AUTO_MODE;
-			pFeatureMultiSelection->SupportedSelection = 
-				(CAMERA_FEATURE_SUPPORT(CAM_VIDEO_AUTO_MODE)|
-				CAMERA_FEATURE_SUPPORT(CAM_VIDEO_NIGHT_MODE));
+			pFeatureMultiSelection->SupportedSelection =(CAMERA_FEATURE_SUPPORT(CAM_VIDEO_AUTO_MODE) \
+														|CAMERA_FEATURE_SUPPORT(CAM_VIDEO_NIGHT_MODE));
 		break;
 		case ISP_FEATURE_ISO:
 			pSensorFeatureInfo->FeatureSupported = MSDK_FEATURE_NOT_SUPPORTED;			
@@ -4310,144 +4210,112 @@ void S5K5CAGXQuery(PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo)
 }
 #endif 
 
-BOOL S5K5CAGX_set_param_wb(UINT16 para)
+kal_bool S5K5CAGX_set_param_wb(UINT16 para)
 {
-	    S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 	// Set page 						
-		S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2); 	// Set address						
-		switch (para)
-		{
-		    case AWB_MODE_OFF:
-				spin_lock(&s5k5cagx_drv_lock);
-                S5K5CAGX_AWB_ENABLE = KAL_FALSE; 
-				spin_unlock(&s5k5cagx_drv_lock);
-                S5K5CAGX_set_AWB_mode(S5K5CAGX_AWB_ENABLE);
-            break;     
-			case AWB_MODE_AUTO:
-				//============================================
-				//	MWB off (Change to Auto mode)			  
-				//============================================
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x077F); 	// #REG_TC_DBG_AutoAlgEnBits, AWB On
-				break;
-	
-			case AWB_MODE_CLOUDY_DAYLIGHT:	
-				//======================================================================
-				//	MWB : Cloudy_D65										 
-				//======================================================================
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
-				S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0630); //#REG_SF_USER_Rgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x05A0); //#REG_SF_USER_Bgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 											
-				break;
-	
-			case AWB_MODE_DAYLIGHT:
-				//==============================================
-				//	MWB : sun&daylight_D50						
-				//==============================================
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
-				S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0580); //#REG_SF_USER_Rgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x05E0); //#REG_SF_USER_Bgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				break;
-	
-			case AWB_MODE_INCANDESCENT:
-				//==============================================									   
-				//	MWB : Incand_Tungsten						
-				//==============================================
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
-				S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0460); //#REG_SF_USER_Rgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0830); //#REG_SF_USER_Bgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				break;
-	
-			case AWB_MODE_FLUORESCENT:
-				//==================================================================
-				//	MWB : Florescent_TL84							  
-				//==================================================================
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
-				S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x04B0); //#REG_SF_USER_Rgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0740); //#REG_SF_USER_Bgain
-				S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
-				break;
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 	// Set page 						
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2); 	// Set address						
+	switch (para)
+	{
+		case AWB_MODE_OFF:
+			spin_lock(&s5k5cagx_drv_lock);
+		    S5K5CAGX_AWB_ENABLE = KAL_FALSE; 
+			spin_unlock(&s5k5cagx_drv_lock);
+		    S5K5CAGX_set_AWB_mode(S5K5CAGX_AWB_ENABLE);
+		break;     
+		case AWB_MODE_AUTO:
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x077F); 	// #REG_TC_DBG_AutoAlgEnBits, AWB On
+		break;
+		case AWB_MODE_CLOUDY_DAYLIGHT:	//	MWB : Cloudy_D65										 
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0630); //#REG_SF_USER_Rgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x05A0); //#REG_SF_USER_Bgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); 											
+		break;
+		case AWB_MODE_DAYLIGHT: //	MWB : sun&daylight_D50						
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0580); //#REG_SF_USER_Rgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x05E0); //#REG_SF_USER_Bgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+		break;
+		case AWB_MODE_INCANDESCENT:	//	MWB : Incand_Tungsten						
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x05BE); //#REG_SF_USER_Rgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0629); //#REG_SF_USER_Bgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+		break;
+		case AWB_MODE_FLUORESCENT: //	MWB : Florescent_TL84							  
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x04B0); //#REG_SF_USER_Rgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0740); //#REG_SF_USER_Bgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+		break;
+		case AWB_MODE_TUNGSTEN:	
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0777); //#REG_TC_DBG_AutoAlgEnBits,AWBOff
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x04A0);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0437); //#REG_SF_USER_Rgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
 
-			default:
-				return KAL_FALSE;	
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0400); //#REG_SF_USER_Ggain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
 
-			}
-return TRUE;
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x087A); //#REG_SF_USER_Bgain
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+		break;
+		default:
+			return KAL_FALSE;	
+	}
+	return  KAL_TRUE;
 } /* S5K5CAGX_set_param_wb */
 
-BOOL S5K5CAGX_set_param_effect(UINT16 para)
+kal_bool S5K5CAGX_set_param_effect(UINT16 para)
 {
-	/*----------------------------------------------------------------*/
-	   /* Local Variables												 */
-	   /*----------------------------------------------------------------*/
-	   kal_uint32 ret = KAL_TRUE;
-	
-	   /*----------------------------------------------------------------*/
-	   /* Code Body 													 */
-	   /*----------------------------------------------------------------*/
-	
-	   S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
-	   S5K5CAGX_write_cmos_sensor(0x002a, 0x021e);
-	   switch (para)
-	   {
-		   case MEFFECT_OFF:
-			   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // Normal, 
-			   break;
-		   case MEFFECT_MONO:
-			   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // Monochrome (Black & White)
-			   break;
-		   case MEFFECT_SEPIA:
-			   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0004); // Sepia
-			   break;
-		   case MEFFECT_SEPIABLUE:
-			   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0005); // Aqua (Blue)
-			   break;
-		   //case ??
-			   //S5K5CAGX_write_cmos_sensor(0x0F12, 0x0003); // Negative Color
-			   //break;
-		   case MEFFECT_NEGATIVE:
-			   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002); // Negative Mono
-			   break;
-		   //case MEFFECT_POSTERIZE:
-			   //S5K5CAGX_write_cmos_sensor(0x0F12, 0x0006); // Sketch
-			   //break;
-		  // case MEFFECT_WHITEBOARD:
-			   //S5K5CAGX_write_cmos_sensor(0x0F12, 0x0008); // Emboss Mono
-			   //break;  
-		   default:
-			   ret = KAL_FALSE;
-	   }
-	   return ret;
+	kal_uint32 ret = KAL_TRUE;
+	//SENSORDB("para=%d",para);
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
+	S5K5CAGX_write_cmos_sensor(0x002a, 0x021e);
+	switch (para)
+	{
+		case MEFFECT_OFF:
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // Normal, 
+		break;
+		case MEFFECT_MONO:
+		   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // Monochrome (Black & White)
+		break;
+		case MEFFECT_SEPIA:
+		   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0004); // Sepia
+		break;
+		case MEFFECT_SEPIABLUE:
+		   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0005); // Aqua (Blue)
+		break;
+		case MEFFECT_NEGATIVE:
+		   S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002); // Negative Mono
+		break;
+		default:
+		   return KAL_FALSE;
+	}
+	return KAL_TRUE;
 } /* S5K5CAGX_set_param_effect */
 
-BOOL S5K5CAGX_set_param_banding(UINT16 para)
+kal_bool S5K5CAGX_set_param_banding(UINT16 para)
 {
-    /*----------------------------------------------------------------*/
-    /* Local Variables                                                */
-    /*----------------------------------------------------------------*/
-    /*----------------------------------------------------------------*/
-    /* Code Body                                                      */
-    /*----------------------------------------------------------------*/
-
-#if (defined(S5K5CAGX_MANUAL_ANTI_FLICKER))
-
+#ifdef S5K5CAGX_MANUAL_ANTI_FLICKER
+	SENSORDB("Manual anti-flicker,para=%d",para);
 	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000); 	// Set page 						
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x04D2); 	// Set address						
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x065F); 	// #REG_TC_DBG_AutoAlgEnBits, AA_FLICKER OFF
@@ -4459,124 +4327,709 @@ BOOL S5K5CAGX_set_param_banding(UINT16 para)
 		case CAM_BANDING_50HZ:
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);		//50Hz
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);		//Sync F/W
-			break;
+		break;
 		case CAM_BANDING_60HZ:
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);		// 60Hz
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);		//Sync F/W
-			break;
+		break;
 		default:
 			return KAL_FALSE;
 	}
 #else
 	/* Auto anti-flicker method is enabled, then nothing need to do in this function.  */
-
-#endif	/* #if (defined(S5K5CAGX_MANUAL_ANTI_FLICKER)) */
+	SENSORDB("Auto anti-flicker");
+#endif
 	return KAL_TRUE;
 } /* S5K5CAGX_set_param_banding */
 
-BOOL S5K5CAGX_set_param_exposure(UINT16 para)
+kal_bool S5K5CAGX_set_param_exposure(UINT16 para)
 {
-
-
+	SENSORDB("para=%d",para);
 	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
 	S5K5CAGX_write_cmos_sensor(0x002a, 0x020C);		//Adjusting camera brightness, #REG_TC_UserBrightness
     switch (para)
 	{	
-		case AE_EV_COMP_n13:					
+    	case AE_EV_COMP_n20:                    
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0xFF88);  // EV-2
-			break;
-		case AE_EV_COMP_n10:				   
+		break;
+    	case AE_EV_COMP_n15:                   
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFA0);  // EV-1.5
-			break;
-		case AE_EV_COMP_n07:				   
+		break;
+    	case AE_EV_COMP_n10:                   
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFC0);  // EV-1
-			break;
-		case AE_EV_COMP_n03:				   
+		break;
+    	case AE_EV_COMP_n05:                   
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0xFFE0);  // EV-0.5
-			break;
+		break;
 		case AE_EV_COMP_00:				   
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000); // Default Value, 0
-			break;
-		case AE_EV_COMP_03:				
+		break;
+    	case AE_EV_COMP_05:             
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0020);  // EV0.5
-			break;
-		case AE_EV_COMP_07:				   
+		break;
+		case AE_EV_COMP_10:                
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0040);  // EV1
-			break;
-		case AE_EV_COMP_10:					
+		break;
+    	case AE_EV_COMP_15:                 
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0060);  // EV1.5
-			break;
-		case AE_EV_COMP_13:				   
+		break;
+    	case AE_EV_COMP_20:                
 			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0078);  // EV2
-			break;		
+		break;		
 		default:			
-			return FALSE;
+			return KAL_FALSE;
 	}
-
-	return TRUE;
-
+	return KAL_TRUE;
 }/* S5K5CAGX_set_param_exposure */
+
+/*************************************************************************
+* FUNCTION
+*	S5K5CAGX_night_mode
+*
+* DESCRIPTION
+*	This function night mode of S5K5CAGX.
+*
+* PARAMETERS
+*	none
+*
+* RETURNS
+*	None
+*
+* GLOBALS AFFECTED
+*
+*************************************************************************/
+void S5K5CAGX_night_mode(kal_bool enable)
+{
+	kal_uint16 video_frame_len = 0;
+	kal_uint16 prev_line_len = 0;
+
+	SENSORDB("enable=%d,S5K5CAGX_MPEG4_encode_mode=%d",enable,S5K5CAGX_MPEG4_encode_mode);
+	
+	if (S5K5CAGX_sensor_cap_state == KAL_TRUE)
+		return ;	//Don't need rewrite the setting when capture.
+	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x0288);	//#REG_0TC_PCFG_usMaxFrTimeMsecMult10 
+	
+	if (enable)
+	{
+		if (
+			S5K5CAGX_MPEG4_encode_mode == KAL_TRUE)
+		{
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NIT_FIX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NIT_FIX_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
+		}
+		else
+		{
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NIT_MAX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NIT_MIN_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x1680);	//Set Shutter Speed
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x1340);	// #evt1_lt_uMaxExp4 340ms
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x1688);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x1340);	// #evt1_lt_uCapMaxExp4 340ms
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0002);
+			// Set gain
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x168E);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0A00); // #evt1_lt_uMaxAnGain4
+		}	
+		spin_lock(&s5k5cagx_drv_lock);
+		S5K5CAGX_night_mode_enable = KAL_TRUE;
+		spin_unlock(&s5k5cagx_drv_lock);
+	}
+	else
+	{
+		if (S5K5CAGX_MPEG4_encode_mode == KAL_TRUE)
+		{
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NOM_FIX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_VID_NOM_FIX_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
+		}
+		else
+		{
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NOM_MAX_FR_TIME); //#REG_0TC_PCFG_usMaxFrTimeMsecMult10
+			S5K5CAGX_write_cmos_sensor(0x0F12, S5K5CAGX_CAM_NOM_MIN_FR_TIME); //#REG_0TC_PCFG_usMinFrTimeMsecMult10
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x1680);	//Set Shutter Speed
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0xBB80);	// #evt1_lt_uMaxExp4 120ms
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x1688);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0xBB80);	// #evt1_lt_uCapMaxExp4 120ms
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0000);
+			// Set gain
+			S5K5CAGX_write_cmos_sensor(0x002A, 0x168E);
+			S5K5CAGX_write_cmos_sensor(0x0F12, 0x0800); //04CC// #evt1_lt_uMaxAnGain4 
+		}	
+        spin_lock(&s5k5cagx_drv_lock);
+		S5K5CAGX_night_mode_enable = KAL_FALSE;
+		spin_unlock(&s5k5cagx_drv_lock);
+	}
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x0240);
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevOpenAfterChange
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x0230);
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_NewConfigSync // Update preview configuration
+	S5K5CAGX_write_cmos_sensor(0x002A, 0x023E);
+	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevConfigChanged
+}	/* S5K5CAGX_night_mode */
+
+void S5K5CAGX_PORTRAIT_mode()
+{
+    //<CAMTUNING_SCENE_PORTRAIT>
+    S5K5CAGX_write_cmos_sensor(0xFCFC,0xD000);
+    S5K5CAGX_write_cmos_sensor(0x0028 ,0x7000);
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x020C);
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x0000);
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x0210);
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x0000);
+    S5K5CAGX_write_cmos_sensor(0x0F12,0xFFF6);
+}
+
+void S5K5CAGX_LANDSCAPE_mode()
+{
+	//<CAMTUNING_SCENE_LANDSCAPE>
+    S5K5CAGX_write_cmos_sensor(0xFCFC,0xD000);
+    S5K5CAGX_write_cmos_sensor(0x0028,0x7000);
+    S5K5CAGX_write_cmos_sensor(0x002A , 0x020C);
+    S5K5CAGX_write_cmos_sensor(0x0F12 , 0x0000);
+    S5K5CAGX_write_cmos_sensor(0x002A , 0x0210);
+    S5K5CAGX_write_cmos_sensor(0x0F12 , 0x001E);
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,  0x000A);
+}
+
+void S5K5CAGX_SPORTS_mode()
+{
+	//<CAMTUNING_SCENE_SPORTS>
+    S5K5CAGX_write_cmos_sensor(0xfcfc,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028 ,0x7000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x12B8);  
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x2000 );
+
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x0530);                                                         
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x36B0);   //lt_uMaxExp1	32 30ms  9~10ea// 15fps  // 
+    S5K5CAGX_write_cmos_sensor(0x002A  ,0x0534 );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12  ,0x36B0);   //lt_uMaxExp2	67 65ms	18~20ea // 7.5fps //
+    S5K5CAGX_write_cmos_sensor(0x002A  ,0x167C);                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x36B0);  //9C40//MaxExp3  83 80ms  24~25ea //                 
+    S5K5CAGX_write_cmos_sensor(0x002A  ,0x1680);                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x36B0 );  //MaxExp4   125ms  38ea //                           
+
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x0538);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x36B00);  // 15fps //                                                 
+    S5K5CAGX_write_cmos_sensor(0x002A  ,0x053C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x36B0 );  // 7.5fps //                                                
+    S5K5CAGX_write_cmos_sensor(0x002A  ,0x1684);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12  ,0x36B0);   //CapMaxExp3 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A   ,0x1688);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12  ,0x36B0);   //CapMaxExp4 //                                             
+
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x0540);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x0200);   //0170//0150//lt_uMaxAnGain1_700lux//                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12 , 0x0200);  //0200//0400//lt_uMaxAnGain2_400lux//                              
+    S5K5CAGX_write_cmos_sensor(0x002A  ,0x168C );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0200);   //0300//MaxAnGain3_200lux//                                       
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x0200);   //MaxAnGain4 //    
+
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x0544);  
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12 ,0x8000);
+	
+    S5K5CAGX_write_cmos_sensor(0x002A ,0x04B4);  
+    S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x00C8);
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);
+}
+
+void S5K5CAGXSetSceneMode(UINT16 iPara)
+{
+	//SENSORDB("iPara=%d",iPara);
+    switch(iPara)
+    {
+    	case SCENE_MODE_OFF:
+        	S5K5CAGX_night_mode(0); 
+		break;
+	    case SCENE_MODE_NIGHTSCENE:
+	        S5K5CAGX_night_mode(1);
+		break;
+
+	    case SCENE_MODE_PORTRAIT:
+			S5K5CAGX_PORTRAIT_mode();
+		break;
+	    case SCENE_MODE_LANDSCAPE:
+			S5K5CAGX_LANDSCAPE_mode();
+		break;
+	    case SCENE_MODE_SPORTS:
+	        S5K5CAGX_SPORTS_mode(); 
+		break;
+	    default:
+		break;
+    }   
+}
+
+void S5K5CAGX_set_saturation(UINT16 iPara)
+{
+	//SENSORDB("iPara=%d",iPara);
+    S5K5CAGX_write_cmos_sensor(0xfcfc,0xd000); 
+    S5K5CAGX_write_cmos_sensor(0x0028,0x7000);
+    S5K5CAGX_write_cmos_sensor(0x002a,0x0210);
+    switch(iPara)
+    {
+    	case ISP_SAT_LOW:
+        	S5K5CAGX_write_cmos_sensor(0x0f12,0x00A0);
+        break;
+	    case ISP_SAT_MIDDLE:
+	        S5K5CAGX_write_cmos_sensor(0x0f12,0x0000);
+		break;
+	    case ISP_SAT_HIGH:
+	        S5K5CAGX_write_cmos_sensor(0x0f12,0x0060);
+		break;
+	    default:
+        break;
+    }
+}
+
+void S5K5CAGX_set_contrast(UINT16 iPara)
+{
+	//SENSORDB("iPara=%d",iPara);
+    S5K5CAGX_write_cmos_sensor(0xfcfc,0xd000); 
+    S5K5CAGX_write_cmos_sensor(0x0028,0x7000);
+    S5K5CAGX_write_cmos_sensor(0x002a,0x020E); 
+    switch(iPara)
+    {
+	    case ISP_CONTRAST_LOW:
+	        S5K5CAGX_write_cmos_sensor(0x0f12,0x0030);
+		break;
+	    case ISP_CONTRAST_MIDDLE:
+	        S5K5CAGX_write_cmos_sensor(0x0f12,0x0000);
+		break;
+	    case ISP_CONTRAST_HIGH:
+	        S5K5CAGX_write_cmos_sensor(0x0f12,0xFFD0);
+		break;
+	    default:
+		break;
+    }
+} 
+
+/*ISO*/
+void S5K5CAGX_set_ISO_Auto()
+{
+	//<CAMTUNING_ISO_AUTO>
+    S5K5CAGX_write_cmos_sensor(0xfcfc,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028,0x7000);
+    S5K5CAGX_write_cmos_sensor(0x002A,0x12B8);  
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x1000); 
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0530);                                                          
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x3415);   //lt_uMaxExp1	32 30ms  9~10ea// 15fps  // 
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0534);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x682A);   //lt_uMaxExp2	67 65ms	18~20ea // 7.5fps //
+    S5K5CAGX_write_cmos_sensor(0x002A,0x167C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x8235);   //9C40//MaxExp3  83 80ms  24~25ea //                 
+    S5K5CAGX_write_cmos_sensor(0x002A,0x1680);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0xc350);   //MaxExp4   125ms  38ea // 
+
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0538);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x3415);   // 15fps //                                                 
+    S5K5CAGX_write_cmos_sensor(0x002A,0x053C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x682A);   // 7.5fps //                                                
+    S5K5CAGX_write_cmos_sensor(0x002A,0x1684);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x8235);   //CapMaxExp3 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A,0x1688);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0xc350);   //CapMaxExp4 //
+
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0540);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x01B3);    //0170//0150//lt_uMaxAnGain1_700lux//                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x01B3);   //0200//0400//lt_uMaxAnGain2_400lux//                              
+    S5K5CAGX_write_cmos_sensor(0x002A,0x168C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x02A0);   //0300//MaxAnGain3_200lux//                                       
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0710);   //MaxAnGain4 //    
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0544);  
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x8000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A,0x04B4);  
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0064);
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);
+
+    S5K5CAGX_write_cmos_sensor(0x002A,0x023C); //Normal Preview//
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0000); //config 0 //                                                  
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0240); 
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0230); 
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);             
+    S5K5CAGX_write_cmos_sensor(0x002A,0x023E); 
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0220); 
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A,0x0222); 
+    S5K5CAGX_write_cmos_sensor(0x0F12,0x0001);
+
+}
+
+void S5K5CAGX_set_ISO_100()
+{
+	//<CAMTUNING_ISO_100>
+    S5K5CAGX_write_cmos_sensor(0xfcfc    ,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028    ,0x7000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x12B8);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x1800); 
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0530);                                                          
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp1	32 30ms  9~10ea// 15fps  // 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0534 );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp2	67 65ms	18~20ea // 7.5fps //
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x167C );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350 );  //9C40//MaxExp3  83 80ms  24~25ea //                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1680 );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xc350 );  //MaxExp4   125ms  38ea //                           
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0538 );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350 );  // 15fps //                                                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x053C );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350 );  // 7.5fps //                                                
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1684 );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350 );  //CapMaxExp3 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1688 );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350 );  //CapMaxExp4 //                                             
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0540);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);    //0170//0150//lt_uMaxAnGain1_700lux//                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0200//0400//lt_uMaxAnGain2_400lux//                              
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x168C );                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0300//MaxAnGain3_200lux//                                       
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //MaxAnGain4 //    
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0544);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x8000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x04B4 ); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0096);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023C); //Normal Preview//
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0000); //config 0 //                                                  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0240); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0230); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023E); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0220); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0222); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001); 
+}
+
+void S5K5CAGX_set_ISO_200()
+{
+	//<CAMTUNING_ISO_200>
+    S5K5CAGX_write_cmos_sensor(0xfcfc    ,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028    ,0x7000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x12B8 ); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x2000); 
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0530);                                                          
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp1	32 30ms  9~10ea// 15fps  // 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0534);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp2	67 65ms	18~20ea // 7.5fps //
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x167C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //9C40//MaxExp3  83 80ms  24~25ea //                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1680);                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xc350);   //MaxExp4   125ms  38ea //                           
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0538);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   // 15fps //                                                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x053C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   // 7.5fps //                                                
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1684);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //CapMaxExp3 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1688);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //CapMaxExp4 //                                             
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0540);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);    //0170//0150//lt_uMaxAnGain1_700lux//                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0200//0400//lt_uMaxAnGain2_400lux//                              
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x168C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0300//MaxAnGain3_200lux//                                       
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //MaxAnGain4 //    
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0544);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x8000);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x04B4);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x00C8);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023C); //Normal Preview//
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0000); //config 0 //                                                  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0240); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0230); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023E);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0220); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0222); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001); 
+}
+
+void S5K5CAGX_set_ISO_400()
+{
+//<CAMTUNING_ISO_400>
+    S5K5CAGX_write_cmos_sensor(0xfcfc    ,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028    ,0x7000);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x12B8);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x3000); 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0530);                                                          
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp1	32 30ms  9~10ea// 15fps  // 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0534);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp2	67 65ms	18~20ea // 7.5fps //
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x167C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //9C40//MaxExp3  83 80ms  24~25ea //                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1680);                                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xc350);   //MaxExp4   125ms  38ea //                           
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0538);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   // 15fps //                                                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x053C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   // 7.5fps //                                                
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1684);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //CapMaxExp3 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1688);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //CapMaxExp4 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0540);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);    //0170//0150//lt_uMaxAnGain1_700lux//                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0200//0400//lt_uMaxAnGain2_400lux//                              
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x168C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0300//MaxAnGain3_200lux//                                       
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //MaxAnGain4 //    
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0544);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x8000);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x04B4);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x012C);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023C); //Normal Preview//
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0000); //config 0 //                                                  
+    S5K5CAGX_write_cmos_sensor(0x002A   ,0x0240); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0230); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023E); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0220); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0222); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001); 
+}
+
+void S5K5CAGX_set_ISO_800()
+{
+	//iso_800_tbl
+    S5K5CAGX_write_cmos_sensor(0xfcfc    ,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028    ,0x7000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x12B8);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x4000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0530);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0534);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x167C);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1680);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xc350);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0538);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x053C);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1684);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1688);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0540);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x168C);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0544);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x8000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x04B4);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0190);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023C);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0000);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0240);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0230);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023E);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0220);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0222);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+}
+
+void S5K5CAGX_set_ISO_1600()
+{
+	//<CAMTUNING_ISO_60>
+    S5K5CAGX_write_cmos_sensor(0xfcfc    ,0xd000);
+    S5K5CAGX_write_cmos_sensor(0x0028    ,0x7000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x12B8);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x1000); 
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0530);                                                          
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp1	32 30ms  9~10ea// 15fps  // 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0534);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //lt_uMaxExp2	67 65ms	18~20ea // 7.5fps //
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x167C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //9C40//MaxExp3  83 80ms  24~25ea //                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1680);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xc350);   //MaxExp4   125ms  38ea //                           
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0538);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   // 15fps //                                                 
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x053C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   // 7.5fps //                                                
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1684);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //CapMaxExp3 //                                             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x1688);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0xC350);   //CapMaxExp4 //                                             
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0540);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);    //0170//0150//lt_uMaxAnGain1_700lux//                                              
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0200//0400//lt_uMaxAnGain2_400lux//                              
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x168C);                                                               
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //0300//MaxAnGain3_200lux//                                       
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0200);   //MaxAnGain4 //    
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0544);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0100);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x8000);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x04B4);  
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0064);
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023C);//Normal Preview//
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0000); //config 0 //                                                  
+    S5K5CAGX_write_cmos_sensor(0x002A   ,0x0240); 
+    S5K5CAGX_write_cmos_sensor(0x0F12   ,0x0001);   
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0230); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);             
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x023E );
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0220 );
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);  
+    S5K5CAGX_write_cmos_sensor(0x002A    ,0x0222); 
+    S5K5CAGX_write_cmos_sensor(0x0F12    ,0x0001);
+}
+
+void S5K5CAGX_set_ISO(UINT16 iPara)
+{ 
+    switch(iPara)
+    {
+	    case AE_ISO_AUTO:
+	        S5K5CAGX_set_ISO_Auto();
+		break;
+	    case AE_ISO_100:
+	        S5K5CAGX_set_ISO_100();
+		break;
+	    case AE_ISO_200:
+	        S5K5CAGX_set_ISO_200();
+		break;
+	    case AE_ISO_400:
+	        S5K5CAGX_set_ISO_400();
+		break;
+	    case AE_ISO_800:
+	        S5K5CAGX_set_ISO_800();
+		break;
+	    case AE_ISO_1600:
+	        S5K5CAGX_set_ISO_1600();
+		break;
+	    default:
+		break;
+    }
+}
 
 
 UINT32 S5K5CAGXYUVSensorSetting(FEATURE_ID iCmd, UINT16 iPara)
 {
-	switch (iCmd) {
-	case FID_SCENE_MODE:
-	    if (iPara == SCENE_MODE_OFF)
-	    {
-	        S5K5CAGX_night_mode(0); 
-	    }
-
-         else if (iPara == SCENE_MODE_NIGHTSCENE)			
-	    {
-            S5K5CAGX_night_mode(1); 
-	    }	    
-	    break; 	    
-	case FID_AWB_MODE:
-    
-         S5K5CAGX_set_param_wb(iPara);
-	break;
-	case FID_COLOR_EFFECT:
-    	    
-         S5K5CAGX_set_param_effect(iPara);
-	break;
-	case FID_AE_EV:  	    
-         S5K5CAGX_set_param_exposure(iPara);
-	break;
-	case FID_AE_FLICKER:
-	    	    	    
-         S5K5CAGX_set_param_banding(iPara);
-	break;
-    case FID_AE_SCENE_MODE:  	
-      if (iPara == AE_MODE_OFF) {
-	  	  spin_lock(&s5k5cagx_drv_lock);
-          S5K5CAGX_AE_ENABLE = KAL_FALSE; 
-		  spin_unlock(&s5k5cagx_drv_lock);
-      }
-      else {
-	  	  spin_lock(&s5k5cagx_drv_lock);
-          S5K5CAGX_AE_ENABLE = KAL_TRUE; 
-		  spin_unlock(&s5k5cagx_drv_lock);
-      }
-      S5K5CAGX_set_AE_mode(S5K5CAGX_AE_ENABLE);
-    break; 
-	case FID_ZOOM_FACTOR:
-		 spin_lock(&s5k5cagx_drv_lock);
-	    zoom_factor = iPara; 		
-		 spin_unlock(&s5k5cagx_drv_lock);
-	break; 
-	default:
-	break;
+	SENSORDB("iCmd=%d,iPara=%d",iCmd,iPara);
+	switch (iCmd) 
+	{
+		case FID_SCENE_MODE:
+			S5K5CAGXSetSceneMode(iPara); 
+		break; 	    
+		case FID_AWB_MODE: 
+			S5K5CAGX_set_param_wb(iPara);
+		break;
+		case FID_COLOR_EFFECT: 	    
+			S5K5CAGX_set_param_effect(iPara);
+		break;
+		case FID_AE_EV:  	    
+			S5K5CAGX_set_param_exposure(iPara);
+		break;
+		case FID_AE_FLICKER:   	    	    
+			S5K5CAGX_set_param_banding(iPara);
+		break;
+	    case FID_AE_SCENE_MODE:
+			if (iPara == AE_MODE_OFF) 
+			{
+		  		spin_lock(&s5k5cagx_drv_lock);
+	          	S5K5CAGX_AE_ENABLE = KAL_FALSE; 
+			  	spin_unlock(&s5k5cagx_drv_lock);
+	      	}
+			else 
+			{
+				spin_lock(&s5k5cagx_drv_lock);
+				S5K5CAGX_AE_ENABLE = KAL_TRUE; 
+				spin_unlock(&s5k5cagx_drv_lock);
+			}
+      		S5K5CAGX_set_AE_mode(S5K5CAGX_AE_ENABLE);
+    	break; 
+		case FID_ZOOM_FACTOR:
+			spin_lock(&s5k5cagx_drv_lock);
+			zoom_factor = iPara; 		
+			spin_unlock(&s5k5cagx_drv_lock);
+		break; 
+		case FID_ISP_SAT:
+			S5K5CAGX_set_saturation(iPara);
+		break;
+	    case FID_ISP_CONTRAST:
+	        S5K5CAGX_set_contrast(iPara);
+		break;
+	    case FID_AE_ISO:
+	        S5K5CAGX_set_ISO(iPara);
+		break;
+		default:
+		break;
 	}
-	return TRUE;
+	return 0;
 }   /* S5K5CAGXYUVSensorSetting */
 
 
 UINT32 S5K5CAGXYUVSetVideoMode(UINT16 u2FrameRate)
 {
+	SENSORDB("u2FrameRate=%d",u2FrameRate);
     spin_lock(&s5k5cagx_drv_lock);
-    S5K5CAGX_VEDIO_encode_mode = KAL_TRUE; 
+    //S5K5CAGX_VEDIO_encode_mode = KAL_TRUE; 
+	S5K5CAGX_MPEG4_encode_mode = KAL_TRUE;
 	spin_unlock(&s5k5cagx_drv_lock);
+	
 	S5K5CAGX_write_cmos_sensor(0x0028, 0x7000);
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0288);	//#REG_0TC_PCFG_usMaxFrTimeMsecMult10 
 
@@ -4592,7 +5045,7 @@ UINT32 S5K5CAGXYUVSetVideoMode(UINT16 u2FrameRate)
     }
     else 
     {
-        printk("Wrong Frame Rate \n"); 
+        SENSORDB("Wrong Frame Rate"); 
     }
 	
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x0240);
@@ -4601,61 +5054,63 @@ UINT32 S5K5CAGXYUVSetVideoMode(UINT16 u2FrameRate)
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_NewConfigSync // Update preview configuration
 	S5K5CAGX_write_cmos_sensor(0x002A, 0x023E);
 	S5K5CAGX_write_cmos_sensor(0x0F12, 0x0001); // #REG_TC_GP_PrevConfigChanged    
-    return TRUE;
+    return 0;
 }
-
 
 kal_uint16 S5K5CAGXReadShutter()
 {
    kal_uint16 temp;
+   
    S5K5CAGX_write_cmos_sensor(0x002c,0x7000);
    S5K5CAGX_write_cmos_sensor(0x002e,0x23e8);
-
    temp=S5K5CAGX_read_cmos_sensor(0x0f12);
-
+   SENSORDB("temp=%d",temp);
    return temp;
 }
+
 kal_uint16 S5K5CAGXReadGain()
 {
     kal_uint16 temp;
+	
 	S5K5CAGX_write_cmos_sensor(0x002c,0x7000);
 	S5K5CAGX_write_cmos_sensor(0x002e,0x248C);
-
 	temp=S5K5CAGX_read_cmos_sensor(0x0f12);
-
+	SENSORDB("temp=%d",temp);
 	return temp;
 }
+
 kal_uint16 S5K5CAGXReadAwbRGain()
 {
     kal_uint16 temp;
 	
 	S5K5CAGX_write_cmos_sensor(0x002c,0x7000);
 	S5K5CAGX_write_cmos_sensor(0x002e,0x22CA);
-
 	temp=S5K5CAGX_read_cmos_sensor(0x0f12);
-
+	SENSORDB("temp=%d",temp);
 	return temp;
 }
+
 kal_uint16 S5K5CAGXReadAwbBGain()
 {
     kal_uint16 temp;
 	
 	S5K5CAGX_write_cmos_sensor(0x002c,0x7000);
 	S5K5CAGX_write_cmos_sensor(0x002e,0x22ce);
-
 	temp=S5K5CAGX_read_cmos_sensor(0x0f12);
-
+	SENSORDB("temp=%d",temp);
 	return temp;
-
-
 }
-#if defined(MT6575)
 
 /*************************************************************************
 * FUNCTION
 *    S5K5CAGXGetEvAwbRef
 *
 * DESCRIPTION
+*    This function get sensor Ev/Awb (EV05/EV13) for auto scene detect
+*
+* PARAMETERS
+*    Ref
+*
 * RETURNS
 *    None
 *
@@ -4664,25 +5119,30 @@ kal_uint16 S5K5CAGXReadAwbBGain()
 *************************************************************************/
 static void S5K5CAGXGetEvAwbRef(UINT32 pSensorAEAWBRefStruct/*PSENSOR_AE_AWB_REF_STRUCT Ref*/)
 {
-    PSENSOR_AE_AWB_REF_STRUCT Ref = (PSENSOR_AE_AWB_REF_STRUCT)pSensorAEAWBRefStruct;
-    SENSORDB("S5K5CAGXGetEvAwbRef ref = 0x%x \n", Ref);
-    	
-    #if 1
-	Ref->SensorAERef.AeRefLV05Shutter = 1503;
-    Ref->SensorAERef.AeRefLV05Gain = 496 * 2; /* 7.75x, 128 base */
-    Ref->SensorAERef.AeRefLV13Shutter = 49;
-    Ref->SensorAERef.AeRefLV13Gain = 64 * 2; /* 1x, 128 base */
-    Ref->SensorAwbGainRef.AwbRefD65Rgain = 188; /* 1.46875x, 128 base */
-    Ref->SensorAwbGainRef.AwbRefD65Bgain = 128; /* 1x, 128 base */
-    Ref->SensorAwbGainRef.AwbRefCWFRgain = 160; /* 1.25x, 128 base */
-    Ref->SensorAwbGainRef.AwbRefCWFBgain = 164; /* 1.28125x, 128 base */
-	#endif
+	//pSensorAEAWBRefStruct is UINT type, but actually a pointer
+    PSENSOR_AE_AWB_REF_STRUCT pRef = (PSENSOR_AE_AWB_REF_STRUCT)pSensorAEAWBRefStruct;
+    //SENSORDB("S5K5CAGXGetEvAwbRef pRef = 0x%x \n", pRef);
+	pRef->SensorAERef.AeRefLV05Shutter = 0x8c9c;;
+    pRef->SensorAERef.AeRefLV05Gain = 128* 8; /* 7.75x, 128 base */
+    pRef->SensorAERef.AeRefLV13Shutter = 0x35f;
+    pRef->SensorAERef.AeRefLV13Gain =  128 * 1;  /* 1x, 128 base */
+    pRef->SensorAwbGainRef.AwbRefD65Rgain = 179; /* 1.46875x, 128 base */
+    pRef->SensorAwbGainRef.AwbRefD65Bgain = 161; /* 1x, 128 base */
+    pRef->SensorAwbGainRef.AwbRefCWFRgain = 155; /* 1.25x, 128 base */
+    pRef->SensorAwbGainRef.AwbRefCWFBgain = 257; /* 1.28125x, 128 base */
+	SENSORDB("exit");
 }
+
 /*************************************************************************
 * FUNCTION
 *    S5K5CAGXGetCurAeAwbInfo
 *
 * DESCRIPTION
+*    This function get sensor cur Ae/Awb for auto scene detect
+*
+* PARAMETERS
+*    Info
+*
 * RETURNS
 *    None
 *
@@ -4691,20 +5151,42 @@ static void S5K5CAGXGetEvAwbRef(UINT32 pSensorAEAWBRefStruct/*PSENSOR_AE_AWB_REF
 *************************************************************************/
 static void S5K5CAGXGetCurAeAwbInfo(UINT32 pSensorAEAWBCurStruct/*PSENSOR_AE_AWB_CUR_STRUCT Info*/)
 {
-    PSENSOR_AE_AWB_CUR_STRUCT Info = (PSENSOR_AE_AWB_CUR_STRUCT)pSensorAEAWBCurStruct;
-    SENSORDB("S5K5CAGXGetCurAeAwbInfo Info = 0x%x \n", Info);
-
-    #if 1
-    Info->SensorAECur.AeCurShutter = S5K5CAGXReadShutter();
-    Info->SensorAECur.AeCurGain = S5K5CAGXReadGain() * 2; /* 128 base */
-    
-    Info->SensorAwbGainCur.AwbCurRgain = S5K5CAGXReadAwbRGain()<< 1; /* 128 base */
-    
-    Info->SensorAwbGainCur.AwbCurBgain = S5K5CAGXReadAwbBGain()<< 1; /* 128 base */
-    #endif
+	//pSensorAEAWBCurStruct is UINT type, but actually a pointer
+    PSENSOR_AE_AWB_CUR_STRUCT pInfo = (PSENSOR_AE_AWB_CUR_STRUCT)pSensorAEAWBCurStruct;
+    //SENSORDB("S5K5CAGXGetCurAeAwbInfo pInfo = 0x%x \n", pInfo);
+    pInfo->SensorAECur.AeCurShutter = S5K5CAGXReadShutter();
+    pInfo->SensorAECur.AeCurGain = (S5K5CAGXReadGain()/256) * 128; /* 128 base */   
+    pInfo->SensorAwbGainCur.AwbCurRgain = ((((UINT32)S5K5CAGXReadAwbRGain())*1000/1024)*128)/1000; /* 128 base */ 
+    pInfo->SensorAwbGainCur.AwbCurBgain = ((((UINT32)S5K5CAGXReadAwbBGain())*1000/1024)*128)/1000; /* 128 base */
+	SENSORDB("exit");
 }
 
-#endif
+UINT32 S5K5CAGXGetSensorID(UINT32 *sensorID)
+{
+	int retry=3;
+	do{
+		S5K5CAGX_write_cmos_sensor(0xFCFC, 0x0000);
+		*sensorID=S5K5CAGX_read_cmos_sensor(0x0040);
+
+		SENSORDB("*sensorID=0x%04x",*sensorID);
+		if(*sensorID == S5K5CAGX_SENSOR_ID)
+        	break;
+		retry--;
+	}while(retry>0);
+
+	if(*sensorID!=S5K5CAGX_SENSOR_ID)
+	{
+		*sensorID=0xFFFFFFFF;
+		return ERROR_SENSOR_CONNECT_FAIL;
+	}
+	else
+	{
+		//SENSORDB("S5K5CAGX Read Sendor ID SUCCESS:0x%04x",*sensorID);
+		return ERROR_NONE;
+	}
+}
+        
+
 UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 							 UINT8 *pFeaturePara,UINT32 *pFeatureParaLen)
 {
@@ -4722,7 +5204,7 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 	PMSDK_FEATURE_INFO_STRUCT pSensorFeatureInfo=(PMSDK_FEATURE_INFO_STRUCT) pFeaturePara;
 #endif 
 
-
+	SENSORDB("FeatureId=%d",FeatureId);
 	switch (FeatureId)
 	{
 		case SENSOR_FEATURE_GET_RESOLUTION:
@@ -4742,7 +5224,7 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 		case SENSOR_FEATURE_SET_ESHUTTER:
 		break;
 		case SENSOR_FEATURE_SET_NIGHTMODE:
-			S5K5CAGX_night_mode((BOOL) *pFeatureData16);
+			S5K5CAGX_night_mode((kal_bool) *pFeatureData16);
 		break;
 		case SENSOR_FEATURE_SET_GAIN:
 		case SENSOR_FEATURE_SET_FLASHLIGHT:
@@ -4775,11 +5257,10 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 		case SENSOR_FEATURE_GET_ITEM_INFO:
 		case SENSOR_FEATURE_SET_ITEM_INFO:
 		case SENSOR_FEATURE_GET_ENG_INFO:
-					break;
+		break;
 		case SENSOR_FEATURE_GET_GROUP_COUNT:
-                        *pFeatureReturnPara32++=0;
-                        *pFeatureParaLen=4;	    
-
+            *pFeatureReturnPara32++=0;
+            *pFeatureParaLen=4;
 		break;
 		case SENSOR_FEATURE_GET_LENS_DRIVER_ID:
 			// get the lens driver ID from EEPROM or just return LENS_DRIVER_ID_DO_NOT_CARE
@@ -4791,7 +5272,6 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 			//S5K5CAGXYUVSensorSetting((MSDK_ISP_FEATURE_ENUM)*pFeatureData16, *(pFeatureData16+1));
 			S5K5CAGXYUVSensorSetting((FEATURE_ID)*pFeatureData32, *(pFeatureData32+1));
 		break;
-		break;
 #if WINMO_USE		
 		case SENSOR_FEATURE_QUERY:
 			S5K5CAGXQuery(pSensorFeatureInfo);
@@ -4802,22 +5282,19 @@ UINT32 S5K5CAGXFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 		break;
 #endif 				
 		case SENSOR_FEATURE_SET_VIDEO_MODE:
-			//SENSORDB("S5K5CAGX SENSOR_FEATURE_SET_VIDEO_MODE\r\n");
-		    S5K5CAGXYUVSetVideoMode(*pFeatureData16);
-		    break; 
-		#if defined(MT6575)
-		case SENSOR_FEATURE_GET_EV_AWB_REF:
-			 S5K5CAGXGetEvAwbRef(*pFeatureData32);
-				break;
-  		case SENSOR_FEATURE_GET_SHUTTER_GAIN_AWB_GAIN:
-			   S5K5CAGXGetCurAeAwbInfo(*pFeatureData32);
-			break;
-		#endif
+			S5K5CAGXYUVSetVideoMode(*pFeatureData16);
+		break; 
+		case SENSOR_FEATURE_GET_EV_AWB_REF:  //*pFeatureData32 is UINT type, but actually a pointer on this case
+			S5K5CAGXGetEvAwbRef(*pFeatureData32);
+		break;
+  		case SENSOR_FEATURE_GET_SHUTTER_GAIN_AWB_GAIN: //*pFeatureData32 is UINT type, but actually a pointer on this case
+			S5K5CAGXGetCurAeAwbInfo(*pFeatureData32);
+		break;
 		case SENSOR_FEATURE_CHECK_SENSOR_ID:
-            S5K5CAGX_GetSensorID(pFeatureData32); 
-            break; 	
+			S5K5CAGXGetSensorID(pFeatureData32);
+		break;
 		default:
-			break;			
+		break;			
 	}
 	return ERROR_NONE;
 }	/* S5K5CAGXFeatureControl() */
@@ -4834,7 +5311,6 @@ SENSOR_FUNCTION_STRUCT	SensorFuncS5K5CAGX=
 
 UINT32 S5K5CAGX_YUV_SensorInit(PSENSOR_FUNCTION_STRUCT *pfFunc)
 {
-	/* To Do : Check Sensor status here */
 	if (pfFunc!=NULL)
 		*pfFunc=&SensorFuncS5K5CAGX;
 	return ERROR_NONE;

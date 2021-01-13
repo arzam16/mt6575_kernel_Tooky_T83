@@ -1480,6 +1480,10 @@
 
 #define CFG_STRICT_CHECK_CAPINFO_PRIVACY    0
 
+#define CFG_SUPPORT_WFD             1
+
+#define CFG_SUPPORT_WFD_COMPOSE_IE     1
+
 /*------------------------------------------------------------------------------
  * Flags of bus error tolerance
  *------------------------------------------------------------------------------

@@ -10,6 +10,9 @@
 /*
  * Define macros.
  */
+#define mt_reg_sync_writel(v, a)	mt65xx_reg_sync_writel(v, a)
+#define mt_reg_sync_writew(v, a)	mt65xx_reg_sync_writew(v, a)
+#define mt_reg_sync_writeb(v, a)	mt65xx_reg_sync_writeb(v, a)
 
 #define mt65xx_reg_sync_writel(v, a) \
         do {    \
@@ -39,6 +42,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+
+#define mt_reg_sync_writel(v, a)	mt65xx_reg_sync_writel(v, a)
+#define mt_reg_sync_writew(v, a)	mt65xx_reg_sync_writew(v, a)
+#define mt_reg_sync_writeb(v, a)	mt65xx_reg_sync_writeb(v, a)
 
 #define dsb()   \
         do {    \

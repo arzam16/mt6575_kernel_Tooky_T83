@@ -27,7 +27,7 @@
 //#include <asm/tcm.h>
 
 #include "mt_sd.h"
-#include <sd_misc.h>
+#include <linux/mmc/sd_misc.h>
 #include "board-custom.h"
 #include "../../../../../../kernel/drivers/mmc/card/queue.h"
 
@@ -38,15 +38,15 @@
 
 #ifdef MTK_EMMC_SUPPORT
 #include "partition_define.h"
-
-//extern struct excel_info PartInfoEmmc[PART_NUM];
-extern int simple_sd_request(struct mmc_host*mmc, struct mmc_request*mrq);
 #endif
 
 #define DRV_NAME_MISC            "misc-sd"
 
 #define DEBUG_MMC_IOCTL   0
 #define DEBUG_MSDC_SSC    1
+/*
+ * For simple_sd_ioctl
+ */
 #define FORCE_IN_DMA (0x11)
 #define FORCE_IN_PIO (0x10)
 #define FORCE_NOTHING (0x0)
@@ -75,18 +75,26 @@ extern int mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
            unsigned int timeout_ms);
 extern int mmc_send_ext_csd(struct mmc_card *card, u8 *ext_csd);
 extern struct msdc_host *mtk_msdc_host[];
-//#ifdef MTK_SD_REINIT_SUPPORT
 extern int msdc_reinit(struct msdc_host *host);
+static void simple_sd_ioctl_clksrc_env(struct msdc_ioctl*);
+static int simple_sd_ioctl_set_hop(struct msdc_ioctl*);
+static int simple_sd_ioctl_get_hop(struct msdc_ioctl*);
 
 static int sd_ioctl_reinit(struct msdc_ioctl* msdc_ctl)
 {
 	struct msdc_host *host = mtk_msdc_host[SD_HOST_ID];
 	return msdc_reinit(host);
 }
-//#endif
-static void simple_sd_ioctl_clksrc_env(struct msdc_ioctl*);
-static int simple_sd_ioctl_set_hop(struct msdc_ioctl*);
-static int simple_sd_ioctl_get_hop(struct msdc_ioctl*);
+
+void msdc_check_init_done(void){
+	struct msdc_host *host = NULL;
+	host = mtk_msdc_host[0];
+  BUG_ON(!host);
+	BUG_ON(!host->mmc);
+  host->mmc->card_init_wait(host->mmc);
+	BUG_ON(!host->mmc->card);
+	return;
+}
 
 static int simple_sd_ioctl_single_rw(struct msdc_ioctl* msdc_ctl)
 {
@@ -235,7 +243,7 @@ static int simple_sd_ioctl_single_rw(struct msdc_ioctl* msdc_ctl)
     return msdc_ctl->result;
 }
 
-int simple_sd_ioctl_multi_rw(struct msdc_ioctl* msdc_ctl)
+static int simple_sd_ioctl_multi_rw(struct msdc_ioctl* msdc_ctl)
 {
     char l_buf[512];
     struct scatterlist msdc_sg;
@@ -382,7 +390,15 @@ int simple_sd_ioctl_multi_rw(struct msdc_ioctl* msdc_ctl)
     return msdc_ctl->result;
 
 }
-EXPORT_SYMBOL(simple_sd_ioctl_multi_rw);
+
+int simple_sd_ioctl_rw(struct msdc_ioctl* msdc_ctl)
+{
+	if(msdc_ctl->total_size > 512)
+		return simple_sd_ioctl_multi_rw(msdc_ctl);
+	else
+		return simple_sd_ioctl_single_rw(msdc_ctl);
+}
+
 static int simple_sd_ioctl_get_cid(struct msdc_ioctl* msdc_ctl)
 {
     struct msdc_host *host_ctl;
@@ -479,7 +495,7 @@ static int simple_sd_ioctl_get_excsd(struct msdc_ioctl* msdc_ctl)
     return 0;
 
 }
-
+#if 0
 int __simple_sd_ioctl_get_excsd(struct msdc_ioctl* msdc_ctl,u8 *excsd)
 {
     char l_buf[512];
@@ -520,6 +536,7 @@ int __simple_sd_ioctl_get_excsd(struct msdc_ioctl* msdc_ctl,u8 *excsd)
     return 0;
 }
 EXPORT_SYMBOL(__simple_sd_ioctl_get_excsd);
+#endif
 
 static int simple_sd_ioctl_set_driving(struct msdc_ioctl* msdc_ctl)
 {
@@ -668,6 +685,7 @@ typedef struct mbr_part_info {
 #define MBR_PART_NUM  6
 #define __MMC_ERASE_ARG        0x00000000
 #define __MMC_TRIM_ARG         0x00000001
+#define __MMC_DISCARD_ARG      0x00000003
 
 struct __mmc_blk_data {
     spinlock_t    lock;
@@ -678,61 +696,60 @@ struct __mmc_blk_data {
     unsigned int    read_only;
 };
 
-#ifdef MTK_EMMC_SUPPORT
-int mt65xx_mmc_change_disk_info(unsigned int px, unsigned int addr, unsigned int size)
+extern int msdc_get_reserve(void);
+extern u64 msdc_get_capacity(int get_emmc_total); 
+extern struct gendisk* mmc_get_disk(struct mmc_card *card);
+int msdc_get_info(STORAGE_TPYE storage_type,GET_STORAGE_INFO info_type,struct storage_info* info)
 {
-#ifdef MTK_EMMC_SUPPORT
-
-    struct disk_part_iter piter;
-	struct hd_struct *part;
-	struct msdc_host *host;
-	struct gendisk *disk;
-    struct __mmc_blk_data *md;
-    int i;
-    /* emmc always in slot0 */
-	host = mtk_msdc_host[EMMC_HOST_NUM];
-	BUG_ON(!host);
-	BUG_ON(!host->mmc);
-	BUG_ON(!host->mmc->card);
-
-	md = mmc_get_drvdata(host->mmc->card);
-	BUG_ON(!md);
-	BUG_ON(!md->disk);
-	disk = md->disk;
-    disk_part_iter_init(&piter, disk, 0);
-
-	for(i=0;i<PART_NUM;i++){
-		if((PartInfo[i].partition_idx == px)&&((!strncmp(PartInfo[i].name,"usrdata",7))||(!strncmp(PartInfo[i].name,"sec_ro",6))||(!strncmp(PartInfo[i].name,"android",7))||(!strncmp(PartInfo[i].name,"cache",5)))){
-			printk("update %s,need reduce 1MB in block device\n",PartInfo[i].name);
-			size -= (0x100000)/512;
+	struct msdc_host *host = NULL;
+	
+	switch (storage_type){
+		case EMMC_CARD_BOOT :
+		case EMMC_CARD :
+		case SD_CARD_BOOT :
+			host = mtk_msdc_host[0];
+			break;
+		case SD_CARD :
+			host = mtk_msdc_host[1];
+			break;
+		default :
+			printk(KERN_ERR "No supported storage type!");
+			return 0;
+			break;
 		}
+		
+	switch (info_type){
+		case CARD_INFO :
+			if(host->mmc && host->mmc->card)
+				info->card = host->mmc->card;
+			else{
+				printk(KERN_ERR "CARD was not ready<get card>!");
+				return 0;
+			}
+			break;
+		case DISK_INFO :
+			if(host->mmc && host->mmc->card)
+				info->disk = mmc_get_disk(host->mmc->card);
+			else{
+				printk(KERN_ERR "CARD was not ready<get disk>!");
+				return 0;
+			}
+			break;
+		case EMMC_USER_CAPACITY :
+			info->emmc_user_capacity = msdc_get_capacity(0);
+			break;
+		case EMMC_CAPACITY:
+			info->emmc_capacity = msdc_get_capacity(1);
+			break;
+		case EMMC_RESERVE:
+			info->emmc_reserve = msdc_get_reserve();
+			break;
+		default :
+			printk(KERN_ERR "Please check INFO_TYPE");
+			return 0;
 	}
-    while ((part = disk_part_iter_next(&piter))){
-      
-            if (px != 0 && px == part->partno) {
-//#if DEBUG_MMC_IOCTL
-                printk("[mt65xx_mmc_change_disk_info]px = %d size %llx -> %x offset %llx -> %x\n",px,part->nr_sects,size,part->start_sect,addr);
-//#endif                
-               
-                    part->start_sect = addr;           
-                    part->nr_sects = size;           
-
-                    disk_part_iter_exit(&piter);
-                    return 0;
-                
-
-             
-            }
-        
-    }
-    disk_part_iter_exit(&piter);
-
-    return 1;
-#else
-    return 0;
-#endif
+	return 1;
 }
-EXPORT_SYMBOL(mt65xx_mmc_change_disk_info);
 
 static int simple_mmc_get_disk_info(struct mbr_part_info* mpi, unsigned char* name)
 {
@@ -793,34 +810,46 @@ static int simple_mmc_get_disk_info(struct mbr_part_info* mpi, unsigned char* na
 static int simple_mmc_erase_func(unsigned int start, unsigned int size)
 {
     struct msdc_host *host;
-    
+    unsigned int arg; 
+        
     /* emmc always in slot0 */
     host = mtk_msdc_host[EMMC_HOST_NUM];
     BUG_ON(!host);
     BUG_ON(!host->mmc);
     BUG_ON(!host->mmc->card);
-    
+                        
     mmc_claim_host(host->mmc);
 
-    if (!mmc_can_trim(host->mmc->card)){
-        printk("emmc card can't support trim\n");
-        return 0;
+    if(mmc_can_discard(host->mmc->card))
+    {
+        arg = __MMC_DISCARD_ARG; 
+    }else if (host->mmc->card->ext_csd.sec_feature_support & EXT_CSD_SEC_GB_CL_EN){
+        /* for Hynix eMMC chip£¬do trim even if it is  MMC_QUIRK_TRIM_UNSTABLE */
+        arg = __MMC_TRIM_ARG; 
+    }else if(mmc_can_erase(host->mmc->card)){
+        /* mmc_erase() will remove the erase group un-aligned part, 
+         * msdc_command_start() will do trim for old combo erase un-aligned issue 
+         */
+        arg = __MMC_ERASE_ARG; 
+    }else {
+        printk("[%s]: emmc card can't support trim / discard / erase\n", __func__);
+        goto end;
     }
     
-    mmc_erase(host->mmc->card, start, size,
-             __MMC_TRIM_ARG);
+    printk("[%s]: start=0x%x, size=%d, arg=0x%x, can_trim=(0x%x),EXT_CSD_SEC_GB_CL_EN=0x%x\n", 
+                    __func__, start, size, arg, host->mmc->card->ext_csd.sec_feature_support, EXT_CSD_SEC_GB_CL_EN); 
+    mmc_erase(host->mmc->card, start, size, arg);
 
 #if DEBUG_MMC_IOCTL
-    printk("erase done....\n");
+    printk("[%s]: erase done....arg=0x%x\n", __func__, arg);
 #endif
-
+end:
     mmc_release_host(host->mmc);
     
     return 0;
 }
-#endif
 
-int simple_mmc_erase_partition(unsigned char* name)
+static int simple_mmc_erase_partition(unsigned char* name)
 {
 #ifdef MTK_EMMC_SUPPORT
     struct mbr_part_info mbr_part;
@@ -1353,484 +1382,6 @@ static void __exit simple_sd_exit(void)
     
     platform_driver_unregister(&simple_sd_driver);
 }
-
-#ifdef MTK_EMMC_SUPPORT
-static int mmc_claim_host_simple(struct mmc_host *host, char *abort)
-{
-    host->claimed = 1;
-    host->claimer = current;
-    host->claim_cnt += 1;
-
-    return 0;
-}
-
-static void mmc_do_release_host_simple(struct mmc_host *host)
-{
-    if (--host->claim_cnt) {
-    } else {
-        host->claimed = 0;
-        host->claimer = NULL;
-    }
-}
-
-static void
-mmc_start_request_simple(struct mmc_host *host, struct mmc_request *mrq)
-{
-    mrq->cmd->error = 0;
-    mrq->cmd->mrq = mrq;
-    if (mrq->data) {
-
-        mrq->cmd->data = mrq->data;
-        mrq->data->error = 0;
-        mrq->data->mrq = mrq;
-        if (mrq->stop) {
-            mrq->data->stop = mrq->stop;
-            mrq->stop->error = 0;
-            mrq->stop->mrq = mrq;
-        }
-    }
-
-    simple_sd_request(host, mrq);
-}
-
-static int simple_sd_stop(struct msdc_ioctl* msdc_ctl)
-{
-    struct mmc_command msdc_cmd;
-    struct mmc_request msdc_mrq;
-    struct msdc_host *host_ctl;
-
-    host_ctl = mtk_msdc_host[msdc_ctl->host_num];
-
-    mmc_claim_host_simple(host_ctl->mmc, NULL);
-
-    if(msdc_ctl->total_size > 512){
-        msdc_ctl->result = -1;
-        return  msdc_ctl->result;
-    }
-
-    memset(&msdc_mrq, 0, sizeof(struct mmc_request));
-    memset(&msdc_cmd, 0, sizeof(struct mmc_command));
-
-    msdc_mrq.cmd = &msdc_cmd;
-    msdc_mrq.data = NULL;
-
-    dma_force[host_ctl->id] = FORCE_IN_PIO;
-
-    msdc_cmd.opcode = MMC_STOP_TRANSMISSION;
-    msdc_cmd.arg = 0;
-
-    BUG_ON(!host_ctl->mmc->card);
-
-    msdc_cmd.flags = MMC_RSP_SPI_R2 | MMC_RSP_R1B | MMC_CMD_AC;
-
-    mmc_start_request_simple(host_ctl->mmc, &msdc_mrq);
-
-    mmc_do_release_host_simple(host_ctl->mmc);
-    
-    if (msdc_cmd.error)
-        msdc_ctl->result= msdc_cmd.error;
-
-    return msdc_ctl->result;
-}
-
-
-static int simple_sd_status(struct msdc_ioctl* msdc_ctl)
-{
-    struct mmc_command msdc_cmd;
-    struct mmc_request msdc_mrq;
-    struct msdc_host *host_ctl;
-
-    host_ctl = mtk_msdc_host[msdc_ctl->host_num];
-
-    mmc_claim_host_simple(host_ctl->mmc, NULL);
-
-
-    if(msdc_ctl->total_size > 512){
-        msdc_ctl->result = -1;
-        return  msdc_ctl->result;
-    }
-
-    memset(&msdc_mrq, 0, sizeof(struct mmc_request));
-    memset(&msdc_cmd, 0, sizeof(struct mmc_command));
-
-    msdc_mrq.cmd = &msdc_cmd;
-    msdc_mrq.data = NULL;
-
-    dma_force[host_ctl->id] = FORCE_IN_PIO;
-
-    msdc_cmd.opcode = MMC_SEND_STATUS;
-    msdc_cmd.arg = host_ctl->mmc->card->rca << 16;
-
-    BUG_ON(!host_ctl->mmc->card);
-
-    msdc_cmd.flags = MMC_RSP_SPI_R2 | MMC_RSP_R1 | MMC_CMD_AC;
-
-    mmc_start_request_simple(host_ctl->mmc, &msdc_mrq);
-
-    mmc_do_release_host_simple(host_ctl->mmc);
-    
-    //if (msdc_cmd.error)
-    //    msdc_ctl->result= msdc_cmd.error;
-    msdc_ctl->result= msdc_cmd.resp[0];
-
-    return msdc_ctl->result;
-}
-
-
-static int simple_sd_panic_dump_single_w(struct msdc_ioctl* msdc_ctl)
-{
-    struct scatterlist msdc_sg;
-    struct mmc_data    msdc_data;
-    struct mmc_command msdc_cmd;
-    struct mmc_request msdc_mrq;
-    struct msdc_host *host_ctl;
-
-    host_ctl = mtk_msdc_host[msdc_ctl->host_num];
-
-    mmc_claim_host_simple(host_ctl->mmc, NULL);
-
-
-    if(msdc_ctl->total_size > 512){
-        msdc_ctl->result = -1;
-        return  msdc_ctl->result;
-    }
-
-    memset(&msdc_data, 0, sizeof(struct mmc_data));
-    memset(&msdc_mrq, 0, sizeof(struct mmc_request));
-    memset(&msdc_cmd, 0, sizeof(struct mmc_command));
-
-    msdc_mrq.cmd = &msdc_cmd;
-    msdc_mrq.data = &msdc_data;
-
-    dma_force[host_ctl->id] = FORCE_IN_PIO;
-
-    msdc_data.flags = MMC_DATA_WRITE;
-    msdc_cmd.opcode = MMC_WRITE_BLOCK;
-    msdc_data.blocks = msdc_ctl->total_size / 512;
-    if (MSDC_CARD_DUNM_FUNC != msdc_ctl->opcode) {
-        if (copy_from_user(sg_msdc_multi_buffer, msdc_ctl->buffer, 512))
-            return -EFAULT;
-    } else {
-        /* called from other kernel module */
-        memcpy(sg_msdc_multi_buffer, msdc_ctl->buffer, 512);
-    }
-
-    msdc_cmd.arg = msdc_ctl->address;
-
-    BUG_ON(!host_ctl->mmc->card);
-    if (!mmc_card_blockaddr(host_ctl->mmc->card)){
-        printk("the device is used byte address!\n");
-        msdc_cmd.arg <<= 9;
-    }
-
-    msdc_cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
-
-    msdc_data.stop = NULL;
-    msdc_data.blksz = 512;
-    msdc_data.sg = &msdc_sg;
-    msdc_data.sg_len = 1;
-
-    sg_init_one(&msdc_sg, sg_msdc_multi_buffer, msdc_ctl->total_size);
-
-    mmc_start_request_simple(host_ctl->mmc, &msdc_mrq);
-
-    mmc_do_release_host_simple(host_ctl->mmc);
-    
-    if (msdc_cmd.error)
-        msdc_ctl->result= msdc_cmd.error;
-
-    if (msdc_data.error)
-        msdc_ctl->result= msdc_data.error;
-    else
-        msdc_ctl->result= 0;
-
-    return msdc_ctl->result;
-}
-
-//#define PART_NUM  (18)
-#define DUMP_INTO_CARD_TYPE_MASK     (0xFFFF0000)
-#define DUMP_INTO_SLOT_NUM_MASK      (0xFFFF)
-#define DUMP_INTO_SD_CARD            (0x00000000)
-#define DUMP_INTO_MMC_CARD           (0x00010000)
-#define SD_FALSE             -1
-#define SD_TRUE               0
-
-
-static int emmc_dump_read(unsigned char* buf, unsigned int len, unsigned int offset,unsigned int slot)
-{
-    /* maybe delete in furture */
-    struct msdc_ioctl     msdc_ctl;
-    unsigned int i;
-    unsigned int l_user_begin_num = 0;
-    unsigned int l_dest_num = 0;
-    unsigned long long l_start_offset;
-    unsigned int ret = SD_FALSE;
-
-    if ((0 != slot) || (0 != offset % 512) || (0 != len % 512)) {
-        /* emmc always in slot0 */
-        printk("debug: slot is not use for emmc!\n");
-        return ret;
-    }
-
-    /* find the offset in emmc */
-    for (i = 0; i < PART_NUM; i++) {
-    //for (i = 0; i < 1; i++) {
-        if ('m' == *(PartInfo[i].name) && 'b' == *(PartInfo[i].name + 1) &&
-                'r' == *(PartInfo[i].name + 2)){
-            l_user_begin_num = i;
-        }
-
-        if ('e' == *(PartInfo[i].name) && 'x' == *(PartInfo[i].name + 1) &&
-                'p' == *(PartInfo[i].name + 2) && 'd' == *(PartInfo[i].name + 3) &&
-                'b' == *(PartInfo[i].name + 4)){
-            l_dest_num = i;
-        }
-    }
-
-#if DEBUG_MMC_IOCTL
-    printk("l_user_begin_num = %d l_dest_num = %d\n",l_user_begin_num,l_dest_num);
-#endif
-
-    if (l_user_begin_num >= PART_NUM && l_dest_num >= PART_NUM) {
-        printk("not find in scatter file error!\n");
-        return ret;
-    }
-
-    if (PartInfo[l_dest_num].size < (len + offset)) {
-        printk("read operation oversize!\n");
-        return ret;
-    }
-
-#if DEBUG_MMC_IOCTL
-    printk("read start address=0x%x\n", PartInfo[l_dest_num].start_address - PartInfo[l_user_begin_num].start_address);
-#endif 
-    l_start_offset = offset + PartInfo[l_dest_num].start_address - PartInfo[l_user_begin_num].start_address;
-
-    msdc_ctl.partition = 0;
-    msdc_ctl.iswrite = 0;
-    msdc_ctl.host_num = slot;
-    msdc_ctl.opcode = MSDC_CARD_DUNM_FUNC;
-    msdc_ctl.total_size = 512;
-    msdc_ctl.trans_type = 0;
-    for (i = 0; i < (len/512); i++) {
-        /* code */
-        msdc_ctl.address = (l_start_offset >> 9) + i; //blk address
-        msdc_ctl.buffer =(u32*)(buf + i * 512);
-
-#if DEBUG_MMC_IOCTL
-        printk("l_start_offset = %d\n", msdc_ctl.address);
-#endif        
-        msdc_ctl.result = simple_sd_ioctl_single_rw(&msdc_ctl);
-    }
-    
-#if DEBUG_MMC_IOCTL
-    printk("read data:");
-    for (i = 0; i < 32; i++) {
-        printk("0x%x", buf[i]);
-        if (0 == (i+1)%32)
-            printk("\n");
-    }
-#endif
-    return 0;
-}
-
-static int simple_emmc_dump_write(unsigned char* buf, unsigned int len, unsigned int offset,unsigned int slot)
-{
-    /* maybe delete in furture */
-    struct msdc_ioctl     msdc_ctl;
-    unsigned int i;
-    unsigned int l_user_begin_num = 0;
-    unsigned int l_dest_num = 0;
-    unsigned long long l_start_offset;
-    unsigned int ret = SD_FALSE;
-
-    static int sg_test = 0;
-
-    if ((0 != slot) || (0 != offset % 512) || (0 != len % 512)) {
-        /* emmc always in slot0 */
-        printk("debug: slot is not use for emmc!\n");
-        return ret;
-    }
-
-#if DEBUG_MMC_IOCTL
-    printk("write data:");
-    for (i = 0; i < 32; i++) {
-        printk("0x%x", buf[i]);
-        if (0 == (i+1)%32)
-            printk("\n");
-    }
-#endif
-
-
-    /* find the offset in emmc */
-    for (i = 0; i < PART_NUM; i++) {
-        if ('m' == *(PartInfo[i].name) && 'b' == *(PartInfo[i].name + 1) &&
-                'r' == *(PartInfo[i].name + 2)){
-            l_user_begin_num = i;
-        }
-
-        if ('e' == *(PartInfo[i].name) && 'x' == *(PartInfo[i].name + 1) &&
-                'p' == *(PartInfo[i].name + 2) && 'd' == *(PartInfo[i].name + 3) &&
-                'b' == *(PartInfo[i].name + 4)){
-            l_dest_num = i;
-        }
-    }
-
-    if (l_user_begin_num >= PART_NUM && l_dest_num >= PART_NUM) {
-        printk("not find in scatter file error!\n");
-        return ret;
-    }
-
-    if (PartInfo[l_dest_num].size < (len + offset)) {
-        printk("write operation oversize!\n");
-        return ret;
-    }
-
-#if DEBUG_MMC_IOCTL
-    printk("write start address=0x%x\n", PartInfo[l_dest_num].start_address - PartInfo[l_user_begin_num].start_address);
-#endif 
-
-    l_start_offset = offset + PartInfo[l_dest_num].start_address - PartInfo[l_user_begin_num].start_address;
-    msdc_ctl.partition = 0;
-    msdc_ctl.iswrite = 1;
-    msdc_ctl.host_num = slot;
-    msdc_ctl.opcode = MSDC_CARD_DUNM_FUNC;
-    msdc_ctl.total_size = 512;
-    msdc_ctl.trans_type = 0;
-    if (sg_test == 0) {
-        sg_test = 1;
-
-        msdc_ctl.result = simple_sd_stop(&msdc_ctl);
-        do{
-            msdc_ctl.result = simple_sd_status(&msdc_ctl);
-            printk("card state: %d\n", (msdc_ctl.result & 0x1f00)>>9);
-        } while( ((msdc_ctl.result & 0x1f00)>>9) != 4);
-    }
-    for (i = 0; i < (len/512); i++) {
-        /* code */
-        msdc_ctl.address = (l_start_offset >> 9) + i; //blk address
-        msdc_ctl.buffer = (u32*)(buf + i * 512);
-
-#if DEBUG_MMC_IOCTL
-        printk("l_start_offset = %d\n", msdc_ctl.address);
-#endif        
-        msdc_ctl.result = simple_sd_panic_dump_single_w(&msdc_ctl);
-    }
-
-    return 0;
-}
-#endif
-
-int card_dump_func_read(unsigned char* buf, unsigned int len, unsigned int offset, unsigned int dev)
-{
-#ifdef MTK_EMMC_SUPPORT
-    unsigned int l_slot;
-    unsigned int ret = SD_FALSE;
-
-    l_slot = dev & DUMP_INTO_SLOT_NUM_MASK;
-    if (l_slot > 3){
-        printk("big slot number, error!\n");
-        return ret;
-    }
-
-    if (DUMP_INTO_MMC_CARD == (dev & DUMP_INTO_CARD_TYPE_MASK)) {
-        /* emmc card */
-        ret = emmc_dump_read(buf, len, offset, l_slot);
-    } else if(DUMP_INTO_SD_CARD == (dev & DUMP_INTO_CARD_TYPE_MASK)) {
-        /* not support now */
-    } else {
-        printk("unknown card type, error!\n");
-        return ret;
-    }
-    return SD_TRUE;
-#else
-    return 0;
-#endif
-}
-
-int card_dump_func_write(unsigned char* buf, unsigned int len, unsigned int offset, unsigned int dev)
-{
-#ifdef MTK_EMMC_SUPPORT
-    unsigned int l_slot;
-    unsigned int ret = SD_FALSE;
-
-    l_slot = dev & DUMP_INTO_SLOT_NUM_MASK;
-    if (l_slot > 3){
-        printk("big slot number, error!\n");
-        return ret;
-    }
-
-    if (DUMP_INTO_MMC_CARD == (dev & DUMP_INTO_CARD_TYPE_MASK)) {
-        /* emmc card */
-        //printk("in card_dump_func_write func!\n");
-        ret = simple_emmc_dump_write(buf, len, offset, l_slot);
-    } else if(DUMP_INTO_SD_CARD == (dev & DUMP_INTO_CARD_TYPE_MASK)) {
-        /* not support now */
-    } else {
-        printk("unknown card type, error!\n");
-        return ret;
-    }
-    return SD_TRUE;
-#else
-    return 0;
-#endif
-}
-
-#if 0
-static void card_dump_func_test(void)
-{
-    u32 i;
-    char l_test_buf[1024];
-    memset(l_test_buf, 0, 1024);
-    //buf, len, dev, offset
-    printk("l_test_buf = 0x%p\n",l_test_buf);
-    card_dump_func_read(l_test_buf, 1024, 0, 0x10000);
-
-    printk("read as follow:\n");
-    for (i = 0; i < 1024; i++) {
-        printk("0x%x", l_test_buf[i]);
-
-        if (((i + 1) % 64) == 0){
-            printk("\n");
-        }
-    }
-
-    //write test
-    memset(l_test_buf, 0x5a, 1024);
-    card_dump_func_write(l_test_buf, 1024, 0, 0x10000);
-
-    memset(l_test_buf, 0, 1024);
-    card_dump_func_read(l_test_buf, 1024, 0, 0x10000);
-    for (i = 0; i < 1024; i++) {
-        printk("0x%x", l_test_buf[i]);
-
-        if (((i + 1) % 64) == 0){
-            printk("\n");
-        }
-    }
-
-    /* read size not aligned */
-    card_dump_func_read(l_test_buf, 1004, 0, 0x10000);
-
-    /* read addterss not aligned */
-    card_dump_func_read(l_test_buf, 1024, 3, 0x10000);
-
-    /* read size beyond the partition size */
-    card_dump_func_read(l_test_buf, 1004, 3, 0x10000);
-
-    /* write size not aligned */
-    card_dump_func_write(l_test_buf, 1004, 0, 0x10000);
-
-    /* write addterss not aligned */
-    card_dump_func_write(l_test_buf, 1024, 3, 0x10000);
-
-    /* write size beyond the partition size */
-    card_dump_func_write(l_test_buf, 1004, 3, 0x10000);
-}
-#endif
-EXPORT_SYMBOL(card_dump_func_read);
-EXPORT_SYMBOL(card_dump_func_write);
-
 
 module_init(simple_sd_init);
 module_exit(simple_sd_exit);

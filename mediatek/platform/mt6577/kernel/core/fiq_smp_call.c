@@ -4,6 +4,7 @@
 #include <linux/percpu.h>
 #include <linux/smp.h>
 #include <mach/irqs.h>
+#include <mach/fiq_smp_call.h>
 
 #if defined(CONFIG_FIQ_GLUE)
 
@@ -14,13 +15,13 @@ enum {
 struct call_function_data
 {
     struct call_single_data csd;
+    fiq_smp_call_func_t func;
     atomic_t refs;
     cpumask_var_t cpumask;
 };
 
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct call_function_data, fiq_cfd_data);
 static struct call_function_data *current_cfd_data;
-static spinlock_t fiq_smp_call_lock;
 
 extern void irq_raise_softirq(const struct cpumask *mask, unsigned int irq);
 
@@ -76,29 +77,28 @@ static void __csd_unlock(struct call_single_data *data)
  *
  * This function is designed for the debugger only.
  * Other kernel code or drivers should NOT use this function.
- * This function cannot be invoked with the interrupt disabled or 
- * in the interrupt context. 
- * The caller has better to disable CPU hotplug before invoking the function. 
+ * This function can only be used in the FIQ-WDT handler.
  */
-int fiq_smp_call_function(smp_call_func_t func, void *info, int wait)
+int fiq_smp_call_function(fiq_smp_call_func_t func, void *info, int wait)
 {
     struct cpumask *mask = (struct cpumask *)cpu_online_mask;
     struct call_function_data *data;
-    int refs, install_csd, this_cpu;
+    int refs, install_csd, this_cpu = 0;
 
-    preempt_disable();
-
-    this_cpu = smp_processor_id();
-
-    WARN_ON_ONCE(cpu_online(this_cpu) && irqs_disabled()
-                 && !oops_in_progress && !early_boot_irqs_disabled);
+    asm volatile (
+        "MRC p15, 0, %0, c0, c0, 5\n"
+        "AND %0, %0, #3\n"
+        : "r+"(this_cpu)
+        :
+        : "cc"
+    );
 
     data = &__get_cpu_var(fiq_cfd_data);
     __csd_lock(&data->csd);
 
     atomic_set(&data->refs, 0);
 
-    data->csd.func = func;
+    data->func = func;
     data->csd.info = info;
 
     smp_wmb();
@@ -116,7 +116,9 @@ int fiq_smp_call_function(smp_call_func_t func, void *info, int wait)
     /* poll to install data on current_cfd_data */
     install_csd = 0;
     do {
+#if 0   /* no need to protect due to FIQ-WDT */
         spin_lock(&fiq_smp_call_lock);
+#endif
 
         if (!current_cfd_data) {
             atomic_set(&data->refs, refs);
@@ -124,7 +126,9 @@ int fiq_smp_call_function(smp_call_func_t func, void *info, int wait)
             install_csd = 1;
         }
 
+#if 0
         spin_unlock(&fiq_smp_call_lock);
+#endif
     } while (!install_csd);
 
     smp_mb();
@@ -136,8 +140,6 @@ int fiq_smp_call_function(smp_call_func_t func, void *info, int wait)
         __csd_lock_wait(&data->csd);
 
 fiq_smp_call_function_exit:
-    preempt_enable();
-
     return 0;
 }
 
@@ -145,7 +147,7 @@ static void fiq_smp_call_handler(void *arg, void *regs, void *svc_sp)
 {
     struct call_function_data *data;
     int cpu = 0, refs;
-    smp_call_func_t func;
+    fiq_smp_call_func_t func;
 
     /* get the current cpu id */
     asm volatile(
@@ -158,8 +160,8 @@ static void fiq_smp_call_handler(void *arg, void *regs, void *svc_sp)
 
     data = current_cfd_data;
     if (data) {
-        func = data->csd.func;
-        func(data->csd.info);
+        func = data->func;
+        func(data->csd.info, regs, svc_sp);
 
         cpumask_clear_cpu(cpu, data->csd.cpumask);
         refs = atomic_dec_return(&data->refs);
@@ -185,8 +187,6 @@ static void __fiq_smp_call_init(void *info)
 
 static int __init fiq_smp_call_init(void)
 {
-    spin_lock_init(&fiq_smp_call_lock);
-
     __fiq_smp_call_init(NULL);
     smp_call_function(__fiq_smp_call_init, NULL, 1);
 

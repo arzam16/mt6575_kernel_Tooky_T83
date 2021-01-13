@@ -68,6 +68,23 @@ config MTK_AEE_IPANIC
 config MTK_AEE_KDUMP
         tristate "Include memory Dump"
         default y
+        
+config MTK_RAM_CONSOLE
+        bool "mt ram console"     
+        
+config MTK_RAM_CONSOLE_USING_SRAM
+	bool "Using SRAM as ram console storage"
+	depends on MTK_RAM_CONSOLE
+
+config MTK_RAM_CONSOLE_SIZE
+	hex "MTK RAM console  address"
+	default 0
+	depends on MTK_RAM_CONSOLE
+
+config MTK_RAM_CONSOLE_ADDR
+	hex "MTK RAM console buffer size"
+	default 0
+	depends on MTK_RAM_CONSOLE           
 
 config ANDROID_VMEM
 	tristate "Virutally continuous memory allocator"
@@ -93,8 +110,17 @@ config MT_LOCK_DEBUG
 	bool "Record lock table and detect some possible deadlock"
 	default n
 
+config MT_DEBUG_MUTEXES
+	bool "show mutex owner info"
+    depends on DEBUG_MUTEXES 
+	default n
+
 config PRINTK_PROCESS_INFO 
 	bool "Prefix pid/process_name to each kernel log"
+	default n
+
+config MT_PRINTK_UART_CONSOLE
+	bool "MTK printk UART controller"
 	default n
 
 config MT_ENG_BUILD
@@ -121,6 +147,12 @@ config MT_LOAD_BALANCE_PROFILER
 	bool "mt load balance profiler"
 	depends on SCHEDSTATS && SMP
 endmenu
-    
+
+config MTK_HIBERNATION
+        bool "Support MTK hibernation"
+        depends on HIBERNATION
+        default y
+        help
+
 endmenu
 

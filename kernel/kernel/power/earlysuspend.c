@@ -32,11 +32,12 @@ static int debug_mask = DEBUG_USER_STATE|DEBUG_SUSPEND|DEBUG_VERBOSE;
 //static int debug_mask = DEBUG_USER_STATE;
 module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-int earlysuspend_debug_mask = 0;
+//int earlysuspend_debug_mask = 0;
+int earlysuspend_debug_mask = DEBUG_USER_STATE;
 int early_suspend_count = 0;
 int forbid_id = 0x0;
 
-#define _TAG_PM_M "[Ker_PM]"
+#define _TAG_PM_M "Ker_PM"
 #define pm_warn(fmt, ...)	\
 	if (earlysuspend_debug_mask) pr_warn("[%s][%s]" fmt, _TAG_PM_M, __func__, ##__VA_ARGS__);
 
@@ -142,9 +143,16 @@ static void early_suspend(struct work_struct *work)
     /* Remove sys_sync from early_suspend, and use work queue to complete sys_sync */
 
 abort:
-	if (state == SUSPEND_REQUESTED_AND_SUSPENDED)
+	if (state == SUSPEND_REQUESTED_AND_SUSPENDED) {
 		//wake_unlock(&main_wake_lock);
+#ifdef CONFIG_MTK_HIBERNATION
+        suspend_state_t susp_state = get_suspend_state();
+        pm_warn("calling pm_autosleep_set_state() with parameter: %d\n", susp_state);
+        pm_autosleep_set_state(susp_state);
+#else
 		pm_autosleep_set_state(PM_SUSPEND_MEM);
+#endif
+    }
 }
 
 static void late_resume(struct work_struct *work)
@@ -156,7 +164,7 @@ static void late_resume(struct work_struct *work)
     
     pr_warn("@@@@@@@@@@@@@@@@@@@@@@@\n@@@__late_resume__@@@\n@@@@@@@@@@@@@@@@@@@@@@@\n");
 
-    pm_autosleep_set_state(PM_SUSPEND_ON);
+	pm_autosleep_set_state(PM_SUSPEND_ON);
 
     mutex_lock(&early_suspend_lock);
     spin_lock_irqsave(&state_lock, irqflags);

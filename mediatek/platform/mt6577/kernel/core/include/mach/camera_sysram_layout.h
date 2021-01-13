@@ -65,13 +65,13 @@ typedef enum {
 #define SYSRAM_SIZE_FD              (20480)
 #define SYSRAM_SIZE_PCA             (720)
 #define SYSRAM_SIZE_EIS             (184)
-#define SYSRAM_SIZE_VIDEO           (20480) // (23040)
+#define SYSRAM_SIZE_VIDEO           (23040)
 #define SYSRAM_SIZE_TVOUT           (98304)
 #define SYSRAM_SIZE_TV_ROT          (32768-SYSRAM_SIZE_PCA)
 #define SYSRAM_SIZE_JPEG_DMA        (98304)
 #define SYSRAM_SIZE_JPEG_CODEC      (4096)
 #define SYSRAM_SIZE_BRZ             (52800)
-#define SYSRAM_SIZE_VRZ0            (7680) //(7680) or (0x3300)   //Vent@20120627: Increased because of HDR MDP two out. VRZ0 will be used to resize SmallImg, so need more SYSRAM. 0x3300: 1362 x 8. 1632: width of resized image (2M).
+#define SYSRAM_SIZE_VRZ0            (0x3300)//(7680)    //Vent@20120627: Increased because of HDR MDP two out. VRZ0 will be used to resize SmallImg, so need more SYSRAM. 0x3300: 1362 x 8. 1632: width of resized image (2M).
 #define SYSRAM_SIZE_VRZ1            (7680)
 #define SYSRAM_SIZE_RGB_ROT0        (34680)
 #define SYSRAM_SIZE_RGB_ROT1        (11560)

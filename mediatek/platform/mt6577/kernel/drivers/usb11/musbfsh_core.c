@@ -132,7 +132,7 @@ MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:" MUSBFSH_DRIVER_NAME);
 
 struct wake_lock musbfsh_suspend_lock;
-
+DEFINE_SPINLOCK(musbfs_io_lock);
 /*-------------------------------------------------------------------------*/
 #ifdef IC_USB
 static ssize_t show_start(struct device *dev,struct device_attribute *attr, char *buf)

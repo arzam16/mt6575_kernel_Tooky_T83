@@ -29,4 +29,3 @@ struct mt_cpu_info{
 	unsigned long long cpu_iowait_start;
 	unsigned long long cpu_iowait_end;		
 };
-// #define PROC_NUM 512

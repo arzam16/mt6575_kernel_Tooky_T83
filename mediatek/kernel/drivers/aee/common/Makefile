@@ -1,1 +1,2 @@
-obj-y				+= aee-common.o aed-process.o reboot-reason.o
+obj-y	+= dummy.o
+obj-$(CONFIG_MTK_AEE_FEATURE)	+= aee-common.o reboot-reason.o wdt-handler.o

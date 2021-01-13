@@ -1,7 +1,8 @@
 deps_config := \
-	../mediatek/platform/mt6577/kernel/Kconfig/Drivers \
-	../mediatek/platform/mt6577/kernel/Kconfig/Board \
-	../mediatek/platform/mt6577/kernel/Kconfig/Kernel \
+	../mediatek/platform/mt6575/kernel/Kconfig/Drivers \
+	../mediatek/platform/mt6575/kernel/Kconfig/Board \
+	../mediatek/platform/mt6575/kernel/Kconfig/Kernel \
+	../mediatek/platform/mt6575/kernel/Kconfig/Platform \
 	../mediatek/kernel/Kconfig \
 	lib/xz/Kconfig \
 	lib/Kconfig \
@@ -775,7 +776,10 @@ deps_config := \
 include/config/auto.conf: \
 	$(deps_config)
 
-ifneq "$(KERNELVERSION)" "3.4.0"
+ifneq "$(ARCH_MTK_PLATFORM)" "mt6575"
+include/config/auto.conf: FORCE
+endif
+ifneq "$(KERNELVERSION)" "3.4.67"
 include/config/auto.conf: FORCE
 endif
 ifneq "$(ARCH)" "arm"

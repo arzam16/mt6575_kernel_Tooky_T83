@@ -6,12 +6,15 @@
 #include "fm_err.h"
 #include "fm_rds.h"
 #include "fm_config.h"
+#include "fm_link.h"
 
 #include "mt6628_fm_reg.h"
-#include "mt6628_fm_link.h"
+//#include "mt6628_fm_link.h"
 #include "mt6628_fm.h"
 #include "mt6628_fm_cmd.h"
+#include "mt6628_fm_cust_cfg.h"
 
+extern fm_cust_cfg mt6628_fm_config;
 
 static fm_s32 fm_bop_write(fm_u8 addr, fm_u16 value, fm_u8 *buf, fm_s32 size)
 {
@@ -129,7 +132,7 @@ static fm_s32 fm_bop_msleep(fm_u32 value, fm_u8 *buf, fm_s32 size)
 }
 #endif
 
-
+/*
 inline fm_s32 fm_get_channel_space(fm_s32 freq)
 {
     if ((freq >= 760) && (freq <= 1080)) {
@@ -140,7 +143,7 @@ inline fm_s32 fm_get_channel_space(fm_s32 freq)
         return -1;
     }
 }
-
+*/
 
 fm_s32 mt6628_pwrup_fpga_on(fm_u8 *buf, fm_s32 buf_size)
 {
@@ -271,9 +274,9 @@ fm_s32 mt6628_pwrup_clock_on(fm_u8 *buf, fm_s32 buf_size)
         return (-1);
     }
 
-    de_emphasis = fm_cust_config_fetch(FM_CFG_RX_DEEMPHASIS);
+    de_emphasis = mt6628_fm_config.rx_cfg.deemphasis;//MT6628fm_cust_config_fetch(FM_CFG_RX_DEEMPHASIS);
     de_emphasis &= 0x0001; //rang 0~1
-    osc_freq = fm_cust_config_fetch(FM_CFG_RX_OSC_FREQ);
+    osc_freq = mt6628_fm_config.rx_cfg.osc_freq;//MT6628fm_cust_config_fetch(FM_CFG_RX_OSC_FREQ);
     osc_freq &= 0x0007; //rang 0~5
 
     buf[0] = FM_TASK_COMMAND_PKT_TYPE;
@@ -803,7 +806,6 @@ fm_s32 mt6628_scan(fm_u8 *buf, fm_s32 buf_size, fm_u16 scandir, fm_u16 space, fm
     if (0 == fm_get_channel_space(max_freq)) {
         max_freq *= 10;
     }
-
     if (0 == fm_get_channel_space(min_freq)) {
         min_freq *= 10;
     }

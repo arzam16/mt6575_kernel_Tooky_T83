@@ -1163,6 +1163,12 @@ extern unsigned int __machine_arch_type;
 #define MACH_TYPE_DA850_PQAB           3891
 #define MACH_TYPE_MT6575               6575
 #define MACH_TYPE_MT6577               6577
+#define MACH_TYPE_MT6589               6589
+#define MACH_TYPE_MT6582               6582
+#define MACH_TYPE_MT6572               6572
+#define MACH_TYPE_MT6571               6571
+#define MACH_TYPE_MT8127               8127
+#define MACH_TYPE_MT6592               6592
 
 #ifdef CONFIG_ARCH_EBSA110
 # ifdef machine_arch_type
@@ -14974,6 +14980,78 @@ extern unsigned int __machine_arch_type;
 # define machine_is_mt6577()	(machine_arch_type == MACH_TYPE_MT6577)
 #else
 # define machine_is_mt6577()	(0)
+#endif
+
+#ifdef CONFIG_MACH_MT6589
+# ifdef machine_arch_type
+#  undef machine_arch_type
+#  define machine_arch_type	__machine_arch_type
+# else
+#  define machine_arch_type	MACH_TYPE_MT6589
+# endif
+# define machine_is_mt6589()	(machine_arch_type == MACH_TYPE_MT6589)
+#else
+# define machine_is_mt6589()	(0)
+#endif
+
+#ifdef CONFIG_MACH_MT6582
+# ifdef machine_arch_type
+#  undef machine_arch_type
+#  define machine_arch_type	__machine_arch_type
+# else
+#  define machine_arch_type	MACH_TYPE_MT6582
+# endif
+# define machine_is_mt6582()	(machine_arch_type == MACH_TYPE_MT6582)
+#else
+# define machine_is_mt6582()	(0)
+#endif
+
+#ifdef CONFIG_MACH_MT6572
+# ifdef machine_arch_type
+#  undef machine_arch_type
+#  define machine_arch_type	__machine_arch_type
+# else
+#  define machine_arch_type	MACH_TYPE_MT6572
+# endif
+# define machine_is_mt6572()	(machine_arch_type == MACH_TYPE_MT6572)
+#else
+# define machine_is_mt6572()	(0)
+#endif
+
+#ifdef CONFIG_MACH_MT6571
+# ifdef machine_arch_type
+#  undef machine_arch_type
+#  define machine_arch_type	__machine_arch_type
+# else
+#  define machine_arch_type	MACH_TYPE_MT6571
+# endif
+# define machine_is_mt6571()	(machine_arch_type == MACH_TYPE_MT6571)
+#else
+# define machine_is_mt6571()	(0)
+#endif
+
+#ifdef CONFIG_MACH_MT8127
+# ifdef machine_arch_type
+#  undef machine_arch_type
+#  define machine_arch_type	__machine_arch_type
+# else
+#  define machine_arch_type	MACH_TYPE_MT8127
+# endif
+# define machine_is_mt8127()	(machine_arch_type == MACH_TYPE_MT8127)
+#else
+# define machine_is_mt8127()	(0)
+#endif
+
+#ifdef CONFIG_MACH_MT6592
+# ifdef machine_arch_type
+#  undef machine_arch_type
+#  define machine_arch_type	__machine_arch_type
+# else
+#  define machine_arch_type	MACH_TYPE_MT6592
+# endif
+# define machine_is_mt6592()	(machine_arch_type == MACH_TYPE_MT6592)
+#else
+# define machine_is_mt6592()	(0)
 #endif
 
 /*

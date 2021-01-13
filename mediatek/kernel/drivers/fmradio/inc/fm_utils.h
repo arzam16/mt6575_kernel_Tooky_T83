@@ -196,6 +196,7 @@ struct fm_lock {
 
     //lock methods
     fm_s32(*lock)(struct fm_lock* thiz);
+	fm_s32(*trylock)(struct fm_lock *thiz,fm_s32 retryCnt);
     fm_s32(*unlock)(struct fm_lock* thiz);
 };
 
@@ -204,6 +205,12 @@ extern struct fm_lock* fm_lock_create(const fm_s8 *name);
 extern fm_s32 fm_lock_get(struct fm_lock *thiz);
 
 extern fm_s32 fm_lock_put(struct fm_lock *thiz);
+
+extern struct fm_lock* fm_spin_lock_create(const fm_s8 *name);
+
+extern fm_s32 fm_spin_lock_get(struct fm_lock *thiz);
+
+extern fm_s32 fm_spin_lock_put(struct fm_lock *thiz);
 
 #define FM_LOCK(a)         \
 ({                           \
@@ -242,6 +249,11 @@ struct fm_timer {
     void (*timeout_func)(unsigned long data);		    //  timeout function
     unsigned long data;									// timeout function's parameter
     signed long timeout_ms;							    // timeout tick
+    //Tx parameters
+    volatile fm_u32    count;
+    volatile fm_u8     tx_pwr_ctrl_en;
+    volatile fm_u8     tx_rtc_ctrl_en;
+    volatile fm_u8     tx_desense_en;
 
     //timer methods
     fm_s32(*init)(struct fm_timer *thiz, void (*timeout)(unsigned long data), unsigned long data, signed long time, fm_s32 flag);

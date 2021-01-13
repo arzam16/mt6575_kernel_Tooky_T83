@@ -24,10 +24,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * 02 21 2012 koli.lin
  * [ALPS00240109] [Need Patch] [Volunteer Patch]
@@ -39,7 +35,7 @@
  *                2. Modify the isp gain delay frame with sensor exposure time and gain synchronization.
  *
  * 11 11 2011 koli.lin
- * [ALPS00086510] [Camera] preview?ï¿½v?ï¿½C
+ * [ALPS00086510] [Camera] preview?²v?§C
  * [Camera] Modify the exposure line for flicker enable.
  *
  * 11 11 2011 koli.lin
@@ -53,19 +49,19 @@
  * 10 31 2011 koli.lin
  * [ALPS00081266] [Li Zhen]
 
-P49?ï¿½Oï¿½sï¿½bï¿½ï¿½?ï¿½H
+P49?¬O¦s¦b¦¹?¶H
 
 
 [Wenjing]
 
 Hi,Koli:
 
-tester?ï¿½ï¿½ï¿½ï¿½ï¿½??ï¿½X??ï¿½ï¿½?ï¿½ï¿½Aï¿½ï¿½O?ï¿½yï¿½zï¿½Ý¡A??ï¿½ò¤§«e6573ï¿½Wï¿½ï¿½?ï¿½ï¿½ï¿½bvideo modeï¿½ï¿½ï¿½@?issueï¿½Û¦Pï¿½Aï¿½ï¿½??ï¿½ï¿½check
+tester?¦³§ì¨ì??¥X??ªº?¤ù¡A¦ý¬O?´y­z¬Ý¡A??¸ò¤§«e6573¤W¦ó?´£¦bvideo modeªº¤@?issue¬Û¦P¡A³Â??¦£check
 
 thanks
 
 
-ï¿½ï¿½ï¿½ï¿½  61204
+§õ¬Ã  61204
 
  * [Camera] 1. Modify the preview output speed 648Mbps/lane.
  *                2. Fix the flicker min limitation value. (max 1 fps)
@@ -232,7 +228,7 @@ MSDK_SENSOR_CONFIG_STRUCT IMX073MIPISensorConfigData;
 kal_uint32 IMX073MIPI_FAC_SENSOR_REG;
 kal_uint16 IMX073MIPI_sensor_flip_value; 
 
-MSDK_SCENARIO_ID_ENUM CurrentScenarioId = ACDK_SCENARIO_ID_CAMERA_PREVIEW;
+MSDK_SCENARIO_ID_ENUM CurrentScenarioId = MSDK_SCENARIO_ID_CAMERA_PREVIEW;
 
 #define IMX073MIPI_MaxGainIndex 50																				 // Gain Index
 kal_uint16 IMX073MIPI_sensorGainMapping[IMX073MIPI_MaxGainIndex][2] = {
@@ -1288,22 +1284,6 @@ UINT32 IMX073MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
     if(sensor_config_data->EnableShutterTansfer==KAL_TRUE)
         shutter=sensor_config_data->CaptureShutter;
 
-    if ((image_window->ImageTargetWidth<= IMX073MIPI_IMAGE_SENSOR_PV_WIDTH) &&
-        (image_window->ImageTargetHeight<= IMX073MIPI_IMAGE_SENSOR_PV_HEIGHT)) {
-        spin_lock(&imx073_drv_lock);
-        IMX073MIPI_dummy_pixels= 0;
-        IMX073MIPI_dummy_lines = 0;
-	    spin_unlock(&imx073_drv_lock);
-
-        shutter = (shutter*(IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE + IMX073MIPI_PV_dummy_pixels))/(IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE+IMX073MIPI_dummy_pixels);
-        iStartX = IMX073MIPI_IMAGE_SENSOR_PV_STARTX;
-        iStartY = IMX073MIPI_IMAGE_SENSOR_PV_STARTY;
-        image_window->GrabStartX=iStartX;
-        image_window->GrabStartY=iStartY;
-        image_window->ExposureWindowWidth=IMX073MIPI_IMAGE_SENSOR_PV_WIDTH - 2*iStartX;
-        image_window->ExposureWindowHeight=IMX073MIPI_IMAGE_SENSOR_PV_HEIGHT- 2*iStartY;
-    }
-    else { // 8M  Mode
         spin_lock(&imx073_drv_lock);
         IMX073MIPI_dummy_pixels= 0;
         IMX073MIPI_dummy_lines = 0; 
@@ -1312,12 +1292,6 @@ UINT32 IMX073MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
      
         IMX073MIPISetFlipMirror(sensor_config_data->SensorImageMirror); 
         
-        //SVGA Internal CLK = 1/4 UXGA Internal CLK
-//        shutter = 4* shutter;  // capture 2 lane, preview 1 lane
-//        shutter = 2* shutter;  // AE will handle the binning mode.
-        shutter = ((UINT32)(shutter*(IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE + IMX073MIPI_PV_PERIOD_EXTRA_PIXEL_NUMS + IMX073MIPI_PV_dummy_pixels)))/
-        	                                              (IMX073MIPI_IMAGE_SENSOR_8M_PIXELS_LINE + IMX073MIPI_FULL_PERIOD_EXTRA_PIXEL_NUMS + IMX073MIPI_dummy_pixels);
-        shutter = shutter * IMX073MIPI_CAP_pclk / IMX073MIPI_PV_pclk; 
 
         iStartX = IMX073MIPI_IMAGE_SENSOR_CAP_STARTX;
         iStartY = IMX073MIPI_IMAGE_SENSOR_CAP_STARTY;
@@ -1326,25 +1300,12 @@ UINT32 IMX073MIPICapture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
         image_window->GrabStartY=iStartY;
         image_window->ExposureWindowWidth=IMX073MIPI_IMAGE_SENSOR_FULL_WIDTH -2*iStartX;
         image_window->ExposureWindowHeight=IMX073MIPI_IMAGE_SENSOR_FULL_HEIGHT-2*iStartY;
-    }//8M Capture
-    // config flashlight preview setting
-    if(IMX073MIPI_8M == IMX073MIPI_g_RES) //add start
-    {
-        sensor_config_data->DefaultPclk = 24000000;
-        sensor_config_data->Pixels = IMX073MIPI_IMAGE_SENSOR_8M_PIXELS_LINE + IMX073MIPI_PV_dummy_pixels;
-        sensor_config_data->FrameLines =IMX073MIPI_PV_PERIOD_LINE_NUMS+IMX073MIPI_PV_dummy_lines;
-    }
-    else
-    {
-        sensor_config_data->DefaultPclk = 24000000;
-        sensor_config_data->Pixels = IMX073MIPI_IMAGE_SENSOR_8M_PIXELS_LINE+IMX073MIPI_dummy_pixels;
-        sensor_config_data->FrameLines =IMX073MIPI_FULL_PERIOD_LINE_NUMS+IMX073MIPI_dummy_lines;
-    }
+
     sensor_config_data->Lines = image_window->ExposureWindowHeight;
-    sensor_config_data->Shutter =shutter;
+
 
     IMX073MIPI_SetDummy(IMX073MIPI_dummy_pixels, IMX073MIPI_dummy_lines);
-    IMX073MIPI_SetShutter(shutter);
+
     SENSORDB("Capture Shutter = %d, Gain = %d\n", shutter, read_IMX073MIPI_gain());     
 
     memcpy(&IMX073MIPISensorConfigData, sensor_config_data, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
@@ -1359,6 +1320,8 @@ UINT32 IMX073MIPIGetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolu
     pSensorResolution->SensorPreviewHeight	= IMX073MIPI_REAL_PV_HEIGHT;
     pSensorResolution->SensorFullWidth		= IMX073MIPI_REAL_CAP_WIDTH;
     pSensorResolution->SensorFullHeight		= IMX073MIPI_REAL_CAP_HEIGHT;
+    pSensorResolution->SensorVideoWidth		= IMX073MIPI_REAL_CAP_WIDTH;
+    pSensorResolution->SensorVideoHeight		= IMX073MIPI_REAL_CAP_HEIGHT;
 
 //    SENSORDB("SensorPreviewWidth:  %d.\n", pSensorResolution->SensorPreviewWidth);     
 //    SENSORDB("SensorPreviewHeight: %d.\n", pSensorResolution->SensorPreviewHeight);     
@@ -1400,33 +1363,7 @@ UINT32 IMX073MIPIGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     pSensorInfo->SensorVsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
     pSensorInfo->SensorInterruptDelayLines = 1;
     pSensorInfo->SensroInterfaceType=SENSOR_INTERFACE_TYPE_MIPI;
-    pSensorInfo->SensorDriver3D = 0;   // the sensor driver is 2D
-    
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].ISOSupported=TRUE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].ISOSupported=TRUE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxWidth=CAM_SIZE_2M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxHeight=CAM_SIZE_2M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].BinningEnable=FALSE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxWidth=CAM_SIZE_05M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxHeight=CAM_SIZE_1M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].BinningEnable=TRUE;
-
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxWidth=CAM_SIZE_05M_WIDTH;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxHeight=CAM_SIZE_05M_HEIGHT;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].ISOSupported=FALSE;
-    pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].BinningEnable=TRUE;
-
+ 
     pSensorInfo->CaptureDelayFrame = 2; 
     pSensorInfo->PreviewDelayFrame = 1; 
     pSensorInfo->VideoDelayFrame = 5; 
@@ -1439,8 +1376,8 @@ UINT32 IMX073MIPIGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
     switch (ScenarioId)
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
+        //case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
+        //case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
             pSensorInfo->SensorClockFreq=24;
             pSensorInfo->SensorClockDividCount=	5;
             pSensorInfo->SensorClockRisingCount= 0;
@@ -1458,7 +1395,7 @@ UINT32 IMX073MIPIGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
             pSensorInfo->SensorPacketECCOrder = 1;
             break;
         case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
+        //case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
 				case MSDK_SCENARIO_ID_CAMERA_ZSD:
             pSensorInfo->SensorClockFreq=24;
             pSensorInfo->SensorClockDividCount=	5;
@@ -1502,12 +1439,12 @@ UINT32 IMX073MIPIControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_
     switch (ScenarioId)
     {
         case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-        case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
+
             IMX073MIPIPreview(pImageWindow, pSensorConfigData);
             break;
+	    case MSDK_SCENARIO_ID_VIDEO_PREVIEW:		
         case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
+
 	case MSDK_SCENARIO_ID_CAMERA_ZSD:
             IMX073MIPICapture(pImageWindow, pSensorConfigData);
             break;
@@ -1612,6 +1549,8 @@ UINT32 IMX073MIPISetTestPatternMode(kal_bool bEnable)
     }
     return TRUE;
 }
+// config flashlight preview setting
+
 
 UINT32 IMX073MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
                                                                 UINT8 *pFeaturePara,UINT32 *pFeatureParaLen)
@@ -1640,12 +1579,20 @@ UINT32 IMX073MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
         	switch(CurrentScenarioId)
         	{
         		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+			    case MSDK_SCENARIO_ID_VIDEO_PREVIEW:		
+        		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:					
 		           *pFeatureReturnPara16++=IMX073MIPI_IMAGE_SENSOR_8M_PIXELS_LINE;  
 		           *pFeatureReturnPara16=IMX073MIPI_FULL_PERIOD_LINE_NUMS+IMX073MIPI_dummy_lines;	
 		           SENSORDB("Sensor period:%d %d\n", IMX073MIPI_FULL_PERIOD_PIXEL_NUMS+IMX073MIPI_dummy_pixels, IMX073MIPI_FULL_PERIOD_LINE_NUMS+IMX073MIPI_dummy_lines); 
 		           *pFeatureParaLen=4;        				
         			break;
-        			
+
+				case MSDK_SCENARIO_ID_CAMERA_PREVIEW:	
+		            *pFeatureReturnPara16++=IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE;  
+		            *pFeatureReturnPara16=IMX073MIPI_PV_PERIOD_LINE_NUMS+IMX073MIPI_dummy_lines;	
+		            SENSORDB("Sensor period:%d %d\n", IMX073MIPI_PV_PERIOD_PIXEL_NUMS+IMX073MIPI_dummy_pixels, IMX073MIPI_PV_PERIOD_LINE_NUMS+IMX073MIPI_dummy_lines); 
+		            *pFeatureParaLen=4;
+					break;
         		default:	
 		            *pFeatureReturnPara16++=IMX073MIPI_IMAGE_SENSOR_720P_PIXELS_LINE;  
 		            *pFeatureReturnPara16=IMX073MIPI_PV_PERIOD_LINE_NUMS+IMX073MIPI_dummy_lines;	
@@ -1658,10 +1605,16 @@ UINT32 IMX073MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
         	switch(CurrentScenarioId)
         	{
         		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+			    case MSDK_SCENARIO_ID_VIDEO_PREVIEW:		
+        		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
+
 		           *pFeatureReturnPara32 = 64800000*2 ; // 57600000*2; //19500000;
 		           *pFeatureParaLen=4;		         	
 		       		break;
-		         		
+		        case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
+					*pFeatureReturnPara32 = 64800000;//57600000; //19500000;
+					*pFeatureParaLen=4;
+					break;					
 		    	default:
 		           *pFeatureReturnPara32 = 64800000;//57600000; //19500000;
 		           *pFeatureParaLen=4;

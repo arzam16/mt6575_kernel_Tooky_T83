@@ -54,7 +54,7 @@ FID_PRE_BEGIN = 0,
         FID_EIS, 
         FID_ZSD,
         FID_AWB2PASS,
-        FID_AF_LAMP,        
+        FID_AF_LAMP,
 		FID_FAST_CONTINUOUS_SHOT,
     ), 
     //RAW-only feature id.
@@ -116,7 +116,7 @@ FID_PRE_BEGIN = 0,
     ), 
     //YUV-only feature id.
     ENUM_YUV_ONLY_SD            (
-    
+        FID_YUV_AUTOTEST,
     ), 
   //----------------------------------------------------------------------------
   FID_OVER_LAST_SD = FID_OVER_LAST_YUV_ONLY_SD, 

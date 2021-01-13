@@ -6,7 +6,7 @@
 #include <linux/ioctl.h>
 #include <linux/uaccess.h>
 #include <linux/ftrace_event.h>
-#include "mach/mt65xx_mon.h"
+#include "mach/mt_mon.h"
 
 #define MODULE_NAME "monitor"
 
@@ -18,11 +18,13 @@ static struct mtk_monitor *mtk_mon;
 
 #define	IOCTL_WRITE_PMU			_IOW(DEV_IOCTLID, 1, struct pmu_cfg)
 #define IOCTL_READ_PMU  		_IOR(DEV_IOCTLID, 2, struct pmu_cfg)
+#ifdef CONFIG_CACHE_L2X0
 #define	IOCTL_WRITE_L2C			_IOW(DEV_IOCTLID, 3, struct l2c_cfg)
 #define IOCTL_READ_L2C   		_IOR(DEV_IOCTLID, 4, struct l2c_cfg)
+#endif
 #define IOCTL_WRITE_BM			_IOR(DEV_IOCTLID, 5, int)
 #define IOCTL_CTRL				_IOW(DEV_IOCTLID, 6, int)
-#define IOCTL_PRINTLOG			_IOR(DEV_IOCTLID, 7, struct mt65xx_mon_log)
+#define IOCTL_PRINTLOG			_IOR(DEV_IOCTLID, 7, struct mt_mon_log)
 
 
 #define	MONITOR_START 1
@@ -60,7 +62,9 @@ static long  mpu_dev_ioctl(struct file *filp,
 {
 	u32 index, ret;
 	struct pmu_cfg p_cfg;	
+#ifdef CONFIG_CACHE_L2X0
 	struct l2c_cfg l_cfg;
+#endif
 	
 	if(mtk_mon == NULL) { 
 			printk("Don't Have PMU Resource\n");   	
@@ -86,6 +90,7 @@ static long  mpu_dev_ioctl(struct file *filp,
 			}
 			break;
 	
+#ifdef CONFIG_CACHE_L2X0	
 		case IOCTL_WRITE_L2C:
 			ret = copy_from_user((void * )&l_cfg, (const void *)arg, sizeof(struct l2c_cfg));
 			if(ret != 0) {
@@ -104,6 +109,7 @@ static long  mpu_dev_ioctl(struct file *filp,
 			}
 			break;
 		
+#endif		
 		case IOCTL_WRITE_BM:
 			mtk_mon->set_bm_rw(arg);
 			break;
@@ -127,7 +133,7 @@ static long  mpu_dev_ioctl(struct file *filp,
 			
 		case IOCTL_PRINTLOG:			
 			index = mtk_mon->mon_log(NULL);
-			ret = copy_to_user((void *)arg, (const void * )&mtk_mon->log_buff[index], sizeof(struct mt65xx_mon_log));
+			ret = copy_to_user((void *)arg, (const void * )&mtk_mon->log_buff[index], sizeof(struct mt_mon_log));
 			if(ret != 0) {
 				printk("ERROR: wrong return value [IOCTL_PRINTLOG]\n");
 				return -1;

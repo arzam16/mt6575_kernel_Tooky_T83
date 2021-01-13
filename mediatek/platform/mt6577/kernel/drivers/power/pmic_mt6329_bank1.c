@@ -43,6 +43,7 @@
 #include <linux/aee.h>
 #include <linux/xlog.h>
 #include <linux/proc_fs.h>
+#include "linux/leds-mt65xx.h"
 
 #include <mach/mt_typedefs.h>
 #include <mach/eint.h>
@@ -958,7 +959,7 @@ void PMIC_INIT_SETTING_V1(void)
         //VPROC_DVS00=0.9V
         //bank0 0x57[4:0] = 0x8
         ret=pmic_config_interface(0x57,0x8,0x1F,0x0);
-        #if 0
+        #if 1
         //VCORE_VOSEL_CON1=1.1V
         //bank0 0x58[4:0] = 0x10
         ret=pmic_config_interface(0x58,0x10,0x1F,0x0);
@@ -1075,16 +1076,14 @@ void PMIC_CUSTOM_SETTING_V1(void)
     kal_uint32 ret=0;
     
     xlog_printk(ANDROID_LOG_INFO, "Power/PMIC", "[PMIC_CUSTOM_SETTING_V1] ...............\n");
+
     ret=pmic_config_interface(BANK0_DIGLDO_CON1C, 0x7, BANK_0_RG_VCAMD_VOSEL_MASK, BANK_0_RG_VCAMD_VOSEL_SHIFT);        
     ret=pmic_config_interface(BANK0_DIGLDO_CON1F, 0x2, BANK_0_RG_VCAM_IO_VOSEL_MASK, BANK_0_RG_VCAM_IO_VOSEL_SHIFT);
     ret=pmic_config_interface(BANK0_DIGLDO_CON22, 0x4, BANK_0_RG_VCAM_AF_VOSEL_MASK, BANK_0_RG_VCAM_AF_VOSEL_SHIFT);
     ret=pmic_config_interface(BANK0_DIGLDO_CON29, 0x7, BANK_0_RG_VMCH_VOSEL_MASK, BANK_0_RG_VMCH_VOSEL_SHIFT);
     ret=pmic_config_interface(BANK0_DIGLDO_CON2D, 0x2, BANK_0_RG_VGP_VOSEL_MASK, BANK_0_RG_VGP_VOSEL_SHIFT);
     ret=pmic_config_interface(BANK0_DIGLDO_CON30, 0x4, BANK_0_RG_VGP2_VOSEL_MASK, BANK_0_RG_VGP2_VOSEL_SHIFT);
-
-/*                                                                                           */
     ret=pmic_config_interface(BANK0_DIGLDO_CON33, 0x4, BANK_0_RG_VIBR_VOSEL_MASK, BANK_0_RG_VIBR_VOSEL_SHIFT);
-/*                                                                                           */
 
     #if 0
     //test
@@ -1524,7 +1523,8 @@ static int pmic_thread_kthread(void *x)
             #if defined(CONFIG_POWER_EXT)                
                 xlog_printk(ANDROID_LOG_DEBUG, "Power/PMIC", "[mt6329_pmic_eint_irq] Environment=FPGA/EVB\n");
             #else                                
-               /* if(battery_suspend_lock.flags & WAKE_LOCK_INITIALIZED)
+                #if 0
+                if(battery_suspend_lock.flags & WAKE_LOCK_INITIALIZED)
                 {
                     wake_lock(&battery_suspend_lock);
                     xlog_printk(ANDROID_LOG_DEBUG, "Power/PMIC", "[mt6329_pmic_eint_irq] battery_suspend_lock(%d) inited \r\n", battery_suspend_lock.flags);
@@ -1532,7 +1532,8 @@ static int pmic_thread_kthread(void *x)
                 else
                 {
                     xlog_printk(ANDROID_LOG_DEBUG, "Power/PMIC", "[mt6329_pmic_eint_irq] battery_suspend_lock(%d) not init \r\n", battery_suspend_lock.flags);
-                }  */   
+                }                             
+                #endif
 	       
                 wake_lock(&battery_suspend_lock);
                 g_chr_event = 1;
@@ -1579,7 +1580,8 @@ static int pmic_thread_kthread(void *x)
         }
         
         do_DVT_task(); // VPA and VRF18 OC interrupt
-        
+
+        mt_eint_unmask(CUST_EINT_MT6329_PMIC_NUM);
         //clear int status, read all and write all        
         ret=pmic_config_interface(0x19,0xFF,0xFF,0x0);
         ret=pmic_config_interface(0x1A,0xFF,0xFF,0x0);
@@ -1633,6 +1635,7 @@ static int pmic_thread_kthread(void *x)
                 }
             }
         }
+        mt_eint_unmask(CUST_EINT_MT6329_PMIC_NUM);
 
         //clear int status, read all and write all        
         ret=pmic_config_interface(0x19,0xFF,0xFF,0x0);
@@ -1662,7 +1665,6 @@ static int pmic_thread_kthread(void *x)
         //---------------------------------------------------------
 #endif        
 
-		mt65xx_eint_unmask(CUST_EINT_MT6329_PMIC_NUM);
         mutex_unlock(&pmic_mutex);
 
         wait_event(pmic_thread_wq, pmic_thread_timeout);
@@ -1720,12 +1722,7 @@ void PMIC_EINT_SETTING(void)
     upmu_interrupt_vpa_oc_int_en(0);
     upmu_interrupt_ldo_oc_int_en(0);
 
-    mt65xx_eint_set_sens(        CUST_EINT_MT6329_PMIC_NUM,
-                                CUST_EINT_MT6329_PMIC_SENSITIVE);
-    mt65xx_eint_set_polarity(    CUST_EINT_MT6329_PMIC_NUM,
-                                 CUST_EINT_MT6329_PMIC_POLARITY);// set positive polarity
-    mt65xx_eint_set_hw_debounce(CUST_EINT_MT6329_PMIC_NUM,
-                                CUST_EINT_MT6329_PMIC_DEBOUNCE_CN);     // set debounce time
+    mt_eint_set_hw_debounce(CUST_EINT_MT6329_PMIC_NUM, CUST_EINT_MT6329_PMIC_DEBOUNCE_CN);     // set debounce time
 
 #if 0
     mt_set_gpio_mode(            GPIO_PMIC_EINT_PIN,    0x0);
@@ -1734,13 +1731,9 @@ void PMIC_EINT_SETTING(void)
     mt_set_gpio_mode(            GPIO_PMIC_EINT_PIN,    0x01);    
 #endif
 
-    mt65xx_eint_registration(    CUST_EINT_MT6329_PMIC_NUM,
-                                 CUST_EINT_MT6329_PMIC_DEBOUNCE_EN,
-                                 CUST_EINT_MT6329_PMIC_POLARITY,
-                                 mt6329_pmic_eint_irq,
-                                 0);
+    mt_eint_registration(CUST_EINT_MT6329_PMIC_NUM,CUST_EINT_MT6329_PMIC_TYPE,mt6329_pmic_eint_irq,0);
 
-    mt65xx_eint_unmask(CUST_EINT_MT6329_PMIC_NUM);
+    mt_eint_unmask(CUST_EINT_MT6329_PMIC_NUM);
 
     xlog_printk(ANDROID_LOG_INFO, "Power/PMIC", "[CUST_EINT] CUST_EINT_MT6329_PMIC_NUM=%d\n", CUST_EINT_MT6329_PMIC_NUM);
     xlog_printk(ANDROID_LOG_INFO, "Power/PMIC", "[CUST_EINT] CUST_EINT_MT6329_PMIC_DEBOUNCE_CN=%d\n", CUST_EINT_MT6329_PMIC_DEBOUNCE_CN);
@@ -1759,14 +1752,12 @@ void PMIC_DUMP_ALL_Register(void)
     for (i=0;i<0xFF;i++)
     {
         ret=pmic_read_interface(i,&reg_val,0xFF,0);
-        /*                                                                                    */
         // xlog_printk(ANDROID_LOG_INFO, "Power/PMIC", "[Bank0] Reg[0x%x]=0x%x\n", i, reg_val);        
     }
     
     for (i=0;i<0xFF;i++)
     {
         ret=pmic_bank1_read_interface(i,&reg_val,0xFF,0);
-		/*                                                                                    */
         // xlog_printk(ANDROID_LOG_INFO, "Power/PMIC", "[Bank1] Reg[0x%x]=0x%x\n", i, reg_val);        
     }
 }
@@ -4735,7 +4726,7 @@ static int mt_pmic_probe(struct platform_device *dev)
     
     ret_device_file = device_create_file(&(dev->dev), &dev_attr_pmic_access_bank0);
     ret_device_file = device_create_file(&(dev->dev), &dev_attr_pmic_access_bank1);
-    
+   
     ret_device_file = device_create_file(&(dev->dev), &dev_attr_BUCK_VAPROC_STATUS);
     ret_device_file = device_create_file(&(dev->dev), &dev_attr_BUCK_VCORE_STATUS);    
     ret_device_file = device_create_file(&(dev->dev), &dev_attr_BUCK_VRF18_STATUS);    

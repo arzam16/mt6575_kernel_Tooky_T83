@@ -18,6 +18,7 @@ typedef enum
     MMProfileFlagEnd = 2,
     MMProfileFlagPulse = 4,
     MMProfileFlagEventSeparator = 8,
+    MMProfileFlagSystrace = 0x80000000,
     MMProfileFlagMax = 0xFFFFFFFF
 } MMP_LogType;
 
@@ -80,7 +81,9 @@ typedef struct
 MMP_Event MMProfileRegisterEvent(MMP_Event parent, const char* name);
 MMP_Event MMProfileFindEvent(MMP_Event parent, const char* name);
 void MMProfileEnableEvent(MMP_Event event, int enable);
+void MMProfileEnableFTraceEvent(MMP_Event event, int enable, int ftrace);
 void MMProfileEnableEventRecursive(MMP_Event event, int enable);
+void MMProfileEnableFTraceEventRecursive(MMP_Event event, int enable, int ftrace);
 int  MMProfileQueryEnable(MMP_Event event);
 void MMProfileLog(MMP_Event event, MMP_LogType type);
 void MMProfileLogEx(MMP_Event event, MMP_LogType type, unsigned int data1, unsigned int data2);

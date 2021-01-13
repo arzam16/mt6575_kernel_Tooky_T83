@@ -34,30 +34,13 @@
 #include <linux/hwmsen_helper.h>
 #include <linux/kernel.h>
 
-#include <mach/mt_devs.h>
+//#include <mach/mt_devs.h>
 #include <mach/mt_typedefs.h>
 #include <mach/mt_gpio.h>
 #include <mach/mt_pm_ldo.h>
 #include <mach/mt_boot.h>
 
-
-
-/*-------------------------MT6516&MT6573 define-------------------------------*/
-#ifdef MT6516
-#define POWER_NONE_MACRO MT6516_POWER_NONE
-#endif
-
-#ifdef MT6573
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-
-#ifdef MT6575
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-
-#ifdef MT6577
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
 
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_MPU3000	3000
@@ -176,7 +159,7 @@ static bool sensor_power = false;
 #define GYRO_TAG                  "[Gyroscope] "
 #define GYRO_FUN(f)               printk(KERN_INFO GYRO_TAG"%s\n", __FUNCTION__)
 #define GYRO_ERR(fmt, args...)    printk(KERN_ERR GYRO_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
-#define GYRO_LOG(fmt, args...)    printk(KERN_INFO GYRO_TAG fmt, ##args)
+#define GYRO_LOG(fmt, args...)    printk(KERN_ERR GYRO_TAG fmt, ##args)
 /*----------------------------------------------------------------------------*/
 /*
 
@@ -1646,8 +1629,10 @@ static struct platform_driver mpu3000_gyro_driver = {
 /*----------------------------------------------------------------------------*/
 static int __init mpu3000_init(void)
 {
-	GYRO_FUN();
-	i2c_register_board_info(0, &i2c_mpu3000, 1);
+	//GYRO_FUN();
+	struct gyro_hw *hw = get_cust_gyro_hw();
+	GYRO_LOG("%s: i2c_number=%d\n", __func__,hw->i2c_num); 
+	i2c_register_board_info(hw->i2c_num, &i2c_mpu3000, 1);
 	if(platform_driver_register(&mpu3000_gyro_driver))
 	{
 		GYRO_ERR("failed to register driver");

@@ -1494,7 +1494,6 @@ static void mt6329_battery_update(struct mt6329_battery_data *bat_data)
                 /* SOC only Done when dis-charging */
 	            if ( BMT_status.SOC < bat_volt_check_point ) {
 					bat_volt_check_point = BMT_status.SOC;
-					//bat_volt_check_point =  100 - ((4200 - BMT_status.bat_vol) / 8); // Add Zormax
 	            }
                 bat_data->BAT_CAPACITY = bat_volt_check_point;            
             }
@@ -1505,10 +1504,7 @@ static void mt6329_battery_update(struct mt6329_battery_data *bat_data)
                     xlog_printk(ANDROID_LOG_DEBUG, "Power/Battery", "[Battery_OnlyBattery!] bat_volt_check_point=%d,BMT_status.SOC=%ld\r\n", 
                     bat_volt_check_point, BMT_status.SOC);
 				//}
-				
-				/* add Zormax */ 
-			       // bat_volt_check_point =  100 - ((4200 - BMT_status.bat_vol) / 8);
-                
+				                
                 //if(bat_volt_check_point != BMT_status.SOC)
                 //if(bat_volt_check_point > BMT_status.SOC)
                 if( (bat_volt_check_point>BMT_status.SOC) && ((bat_volt_check_point!=1)) )

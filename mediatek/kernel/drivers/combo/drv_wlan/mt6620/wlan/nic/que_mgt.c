@@ -14,17 +14,6 @@
 
 /*
 ** $Log: que_mgt.c $
-**
-** 04 11 2013 yuche.tsai
-** [ALPS00453161] [SW.Diablo][WIFI direct app]Can't find GO and wifi can't search any AP
-** Drop Probe Response packet during absent.
-** Reaseon:
-** 1. Probe Response is a timing critical frame.
-** 2. Queuing Probe Response won't help anything but west buffer resource.
-**
-** 04 11 2013 yuche.tsai
-** [ALPS00453161] [SW.Diablo][WIFI direct app]Can't find GO and wifi can't search any AP
-** File roll back.
  *
  * 03 02 2012 terry.wu
  * NULL
@@ -2609,6 +2598,7 @@ qmHandleRxPackets(
     P_HIF_RX_HEADER_T   prHifRxHdr;
     QUE_T               rReturnedQue;
     PUINT_8             pucEthDestAddr;
+    BOOLEAN             fgIsBMC;
 
     //DbgPrint("QM: Enter qmHandleRxPackets()\n");
 
@@ -2644,6 +2634,7 @@ qmHandleRxPackets(
         }
 #endif
 
+        fgIsBMC = FALSE;
         if (!HIF_RX_HDR_GET_80211_FLAG(prHifRxHdr)){
 
             UINT_8 ucNetTypeIdx;
@@ -2655,6 +2646,10 @@ qmHandleRxPackets(
             prBssInfo = &(prAdapter->rWifiVar.arBssInfo[ucNetTypeIdx]);
             //DBGLOG_MEM8(QM, TRACE,prCurrSwRfb->pvHeader, 16);
             //
+
+            if (IS_BMCAST_MAC_ADDR(pucEthDestAddr) && (OP_MODE_ACCESS_POINT != prBssInfo->eCurrentOPMode)) {
+                fgIsBMC = TRUE;
+            }
 
             if( prAdapter->rRxCtrl.rFreeSwRfbList.u4NumElem
                     > (CFG_RX_MAX_PKT_NUM - CFG_NUM_OF_QM_RX_PKT_NUM)  ) {
@@ -2695,7 +2690,7 @@ qmHandleRxPackets(
             qmProcessBarFrame(prAdapter, prCurrSwRfb, &rReturnedQue);
         }
         /* Reordering is not required for this packet, return it without buffering */
-        else if(!HIF_RX_HDR_GET_REORDER_FLAG(prHifRxHdr)){
+        else if(!HIF_RX_HDR_GET_REORDER_FLAG(prHifRxHdr) || fgIsBMC){
 #if 0
             if (!HIF_RX_HDR_GET_80211_FLAG(prHifRxHdr)){
                 UINT_8 ucNetTypeIdx;
@@ -3146,12 +3141,12 @@ qmPopOutDueToFallWithin(
                 CHECK_FOR_TIMEOUT(rCurrentTime, (*prMissTimeout),
                                   MSEC_TO_SYSTIME(QM_RX_BA_ENTRY_MISS_TIMEOUT_MS))) {
                 DBGLOG(QM, TRACE, ("QM:RX BA Timout Next Tid %d SSN %d\n", prReorderQueParm->ucTid, prReorderedSwRfb->u2SSN));
-                fgDequeuHead = TRUE;
+				fgDequeuHead = TRUE;
                 prReorderQueParm->u2WinStart =
                     (((prReorderedSwRfb->u2SSN) + 1)% MAX_SEQ_NO_COUNT);
                 
-                fgMissing = FALSE;
-            }
+				fgMissing = FALSE;
+			}
             else break;
         }
 
@@ -3176,7 +3171,7 @@ qmPopOutDueToFallWithin(
     if (QUEUE_IS_EMPTY(prReorderQue)){
 	    *prMissTimeout = 0;
     }
-    else {
+	else {
         if (fgMissing == FALSE) {
             GET_CURRENT_SYSTIME(prMissTimeout);
         }
@@ -4431,7 +4426,7 @@ qmGetFrameAction(
              }
              else if (u2TxFrameCtrl == MAC_FRAME_PROBE_RSP) {
                  if( prBssInfo->fgIsNetAbsent) {
-                     return FRAME_ACTION_DROP_PKT;
+                     break;
                  }
             }
             else if (u2TxFrameCtrl == MAC_FRAME_DEAUTH) {

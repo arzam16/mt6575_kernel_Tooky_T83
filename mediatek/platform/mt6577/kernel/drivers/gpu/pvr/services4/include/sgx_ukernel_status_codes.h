@@ -1,29 +1,45 @@
-/**********************************************************************
- *
- * Copyright (C) Imagination Technologies Ltd. All rights reserved.
- * 
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- * 
- * This program is distributed in the hope it will be useful but, except 
- * as otherwise stated in writing, without any warranty; without even the 
- * implied warranty of merchantability or fitness for a particular purpose. 
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
- * 
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
- * Contact Information:
- * Imagination Technologies Ltd. <gpl-support@imgtec.com>
- * Home Park Estate, Kings Langley, Herts, WD4 8LZ, UK 
- *
+/*************************************************************************/ /*!
+@File           sgx_ukernel_status_codes.h
+@Title          SGX microkernel debug status codes
+@Copyright      Copyright (c) Imagination Technologies Ltd. All Rights Reserved
+@Description    SGX microkernel debug status codes
+@License        Dual MIT/GPLv2
 
-******************************************************************************/
+The contents of this file are subject to the MIT license as set out below.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+Alternatively, the contents of this file may be used under the terms of
+the GNU General Public License Version 2 ("GPL") in which case the provisions
+of GPL are applicable instead of those above.
+
+If you wish to allow use of your version of this file only under the terms of
+GPL, and not to allow others to use your version of this file under the terms
+of the MIT license, indicate your decision by deleting the provisions above
+and replace them with the notice and other provisions required by GPL as set
+out in the file called "GPL-COPYING" included in this distribution. If you do
+not delete the provisions above, a recipient may use your version of this file
+under the terms of either the MIT license or GPL.
+
+This License is also included in this distribution in the file called
+"MIT-COPYING".
+
+EXCEPT AS OTHERWISE STATED IN A NEGOTIATED AGREEMENT: (A) THE SOFTWARE IS
+PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT; AND (B) IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/ /**************************************************************************/
 
 #ifndef __SGX_UKERNEL_STATUS_CODES_H__
 #define __SGX_UKERNEL_STATUS_CODES_H__
@@ -134,6 +150,10 @@ MKTC_ST(MKTC_CRRL_READOPS2BLOCKED)
 MKTC_ST(MKTC_CRRL_SRC_WRITEOPSBLOCKED)
 #define MKTC_CRRL_SRC_READOPSBLOCKED			0xAD000310
 MKTC_ST(MKTC_CRRL_SRC_READOPSBLOCKED)
+#define MKTC_CRRL_TQ_WRITEOPSBLOCKED			0xAD000311
+MKTC_ST(MKTC_CRRL_TQ_WRITEOPSBLOCKED)
+#define MKTC_CRRL_TQ_READOPSBLOCKED				0xAD000312
+MKTC_ST(MKTC_CRRL_TQ_READOPSBLOCKED)
 
 #define MKTC_KICKRENDER_START					0xAD000400
 MKTC_ST(MKTC_KICKRENDER_START)
@@ -219,6 +239,14 @@ MKTC_ST(MKTC_KICKTA_TACMD_DEBUG)
 MKTC_ST(MKTC_KICKTA_FREECONTEXT)
 #define MKTC_KICKTA_PIM_PATCHING				0xAD00080C
 MKTC_ST(MKTC_KICKTA_PIM_PATCHING)
+#define MKTC_KICKTA_TPC_CHECK_START				0xAD00080D
+MKTC_ST(MKTC_KICKTA_TPC_CHECK_START)
+#define MKTC_KICKTA_TPC_CHECK_END				0xAD00080E
+MKTC_ST(MKTC_KICKTA_TPC_CHECK_END)
+#define MKTC_KICKTA_TPC_CHECK_CORE				0xAD00080F
+MKTC_ST(MKTC_KICKTA_TPC_CHECK_CORE)
+#define MKTC_KICKTA_TPC_CHECK_FAIL				0xAD000810
+MKTC_ST(MKTC_KICKTA_TPC_CHECK_FAIL)
 
 #define MKTC_KICKTA_CHKPT_START_DUMMY_CS		0xAD0008A1
 MKTC_ST(MKTC_KICKTA_CHKPT_START_DUMMY_CS)
@@ -377,6 +405,7 @@ MKTC_ST(MKTC_FINDTA_SRC_WRITEOPSBLOCKED)
 #define MKTC_FINDTA_READOPS2BLOCKED				0xAD000E0F
 MKTC_ST(MKTC_FINDTA_READOPS2BLOCKED)
 
+
 #define MKTC_CTRL_SRCREADOPSBLOCKED				0xAD000F00
 MKTC_ST(MKTC_CTRL_SRCREADOPSBLOCKED)
 #define MKTC_CTRL_SRCWRITEOPSBLOCKED			0xAD000F01
@@ -391,6 +420,10 @@ MKTC_ST(MKTC_CTRL_TARC_DIFFERENT)
 MKTC_ST(MKTC_CTRL_CONTEXT_SUSPENDED)
 #define MKTC_CTRL_SRCREADOPS2BLOCKED			0xAD000F06
 MKTC_ST(MKTC_CTRL_SRCREADOPS2BLOCKED)
+#define MKTC_CTRL_3D_WRITEOPSBLOCKED			0xAD000F07
+MKTC_ST(MKTC_CTRL_3D_WRITEOPSBLOCKED)
+#define MKTC_CTRL_3D_READOPSBLOCKED				0xAD000F08
+MKTC_ST(MKTC_CTRL_3D_READOPSBLOCKED)
 
 #define MKTC_DPTA_START							0xAD001000
 MKTC_ST(MKTC_DPTA_START)
@@ -493,6 +526,10 @@ MKTC_ST(MKTC_OOM_SPM_DEADLOCK_MEM_ADDED)
 MKTC_ST(MKTC_RESET)
 #define	MKTC_SPM_INVALID_ZLSCONFIG				0xAD001226
 MKTC_ST(MKTC_SPM_INVALID_ZLSCONFIG)
+#define MKTC_SPM_DEADLOCK_RENDER_FINISHED			0xAD001227
+MKTC_ST(MKTC_SPM_DEADLOCK_RENDER_FINISHED)
+#define MKTC_OOM_BLOCKEDRTDATA					0xAD001228
+MKTC_ST(MKTC_OOM_BLOCKEDRTDATA)
 
 #define MKTC_OOM_TYPE_MT						0xAD00122A
 MKTC_ST(MKTC_OOM_TYPE_MT)
@@ -635,7 +672,7 @@ MKTC_ST(MKTC_TAFINISHED_TERM_COMPLETE_START)
 #define MKTC_TAFINISHED_TERM_COMPLETE_END		0xAD001711
 MKTC_ST(MKTC_TAFINISHED_TERM_COMPLETE_END)
 
-#define MKTC_TAFINISHED_DPMPAGERECYCLING		0xAD001720
+#define MKTC_TAFINISHED_DPMPAGERECYCLING			0xAD001720
 MKTC_ST(MKTC_TAFINISHED_DPMPAGERECYCLING)
 
 #define MKTC_2DEVENT_2DCOMPLETE					0xAD001800
@@ -688,11 +725,21 @@ MKTC_ST(MKTC_FIND2D_ADDR_SPACE_DIFFERENT)
 MKTC_ST(MKTC_FTD_3DOPSBLOCKED)
 #define MKTC_FTD_DSTREADOPS2BLOCKED				0xAD001818
 MKTC_ST(MKTC_FTD_DSTREADOPS2BLOCKED)
+#define MKTC_U2DSO_UPDATESTATUSVALS				0xAD001819
+MKTC_ST(MKTC_U2DSO_UPDATESTATUSVALS)
+#define MKTC_U2DSO_UPDATESTATUSVALS_DONE		0xAD00181A
+MKTC_ST(MKTC_U2DSO_UPDATESTATUSVALS_DONE)
 
 #define MKTC_FCM_START							0xAD001900
 MKTC_ST(MKTC_FCM_START)
 #define MKTC_FCM_END							0xAD001901
 MKTC_ST(MKTC_FCM_END)
+#define MKTC_FCM_PB_SAME						0xAD001902
+MKTC_ST(MKTC_FCM_PB_SAME)
+#define MKTC_FCM_TQ_IN_PROGESS					0xAD001903
+MKTC_ST(MKTC_FCM_TQ_IN_PROGESS)
+#define MKTC_FCM_TQ_MEMCONTEXT_DIFFERENT		0xAD001904
+MKTC_ST(MKTC_FCM_TQ_MEMCONTEXT_DIFFERENT)
 
 #define MKTC_TIMER_ACTIVE_POWER					0xAD001A00
 MKTC_ST(MKTC_TIMER_ACTIVE_POWER)
@@ -757,6 +804,10 @@ MKTC_ST(MKTC_RTA_CHECK_NEXT_SA_PROG)
 MKTC_ST(MKTC_RTA_CORE_COMPLETED)
 #define MKTC_RTA_DEBUG_SAS						0xAD001F07
 MKTC_ST(MKTC_RTA_DEBUG_SAS)
+#define MKTC_RTA_MTE_STATE_RESTORE_TASK			0xAD001F08
+MKTC_ST(MKTC_RTA_MTE_STATE_RESTORE_TASK)
+#define MKTC_RTA_SA_STATE_RESTORE_TASK			0xAD001F09
+MKTC_ST(MKTC_RTA_SA_STATE_RESTORE_TASK)
 #define MKTC_RESUMETA_END						0xAD001F0F
 MKTC_ST(MKTC_RESUMETA_END)
 

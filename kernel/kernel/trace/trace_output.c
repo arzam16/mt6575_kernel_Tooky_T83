@@ -12,7 +12,7 @@
 #include "trace_output.h"
 
 #ifdef CONFIG_MT65XX_TRACER
-#include <mach/mt65xx_mon.h>
+#include <mach/mt_mon.h>
 #include <mach/mt_dcm.h>
 #endif
 /* must be a power of 2 */
@@ -634,11 +634,25 @@ int trace_print_context(struct trace_iterator *iter)
 	unsigned long secs = (unsigned long)t;
 	char comm[TASK_COMM_LEN];
 	int ret;
+	int tgid;
 
 	trace_find_cmdline(entry->pid, comm);
 
-	ret = trace_seq_printf(s, "%16s-%-5d [%03d] ",
-			       comm, entry->pid, iter->cpu);
+	ret = trace_seq_printf(s, "%16s-%-5d ", comm, entry->pid);
+	if (!ret)
+		return 0;
+
+	if (trace_flags & TRACE_ITER_TGID) {
+		tgid = trace_find_tgid(entry->pid);
+		if (tgid < 0)
+			ret = trace_seq_puts(s, "(-----) ");
+		else
+			ret = trace_seq_printf(s, "(%5d) ", tgid);
+		if (!ret)
+			return 0;
+	}
+
+	ret = trace_seq_printf(s, "[%03d] ", iter->cpu);
 	if (!ret)
 		return 0;
 
@@ -976,6 +990,168 @@ static struct trace_event trace_fn_event = {
 	.funcs		= &trace_fn_funcs,
 };
 
+/* TRACE_GRAPH_ENT */
+static enum print_line_t trace_graph_ent_trace(struct trace_iterator *iter, int flags,
+					struct trace_event *event)
+{
+	struct trace_seq *s = &iter->seq;
+	struct ftrace_graph_ent_entry *field;
+
+	trace_assign_type(field, iter->ent);
+
+	if (!trace_seq_puts(s, "graph_ent: func="))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	if (!seq_print_ip_sym(s, field->graph_ent.func, flags))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	if (!trace_seq_puts(s, "\n"))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static enum print_line_t trace_graph_ent_raw(struct trace_iterator *iter, int flags,
+				      struct trace_event *event)
+{
+	struct ftrace_graph_ent_entry *field;
+
+	trace_assign_type(field, iter->ent);
+
+	if (!trace_seq_printf(&iter->seq, "%lx %d\n",
+			      field->graph_ent.func,
+			      field->graph_ent.depth))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static enum print_line_t trace_graph_ent_hex(struct trace_iterator *iter, int flags,
+				      struct trace_event *event)
+{
+	struct ftrace_graph_ent_entry *field;
+	struct trace_seq *s = &iter->seq;
+
+	trace_assign_type(field, iter->ent);
+
+	SEQ_PUT_HEX_FIELD_RET(s, field->graph_ent.func);
+	SEQ_PUT_HEX_FIELD_RET(s, field->graph_ent.depth);
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static enum print_line_t trace_graph_ent_bin(struct trace_iterator *iter, int flags,
+				      struct trace_event *event)
+{
+	struct ftrace_graph_ent_entry *field;
+	struct trace_seq *s = &iter->seq;
+
+	trace_assign_type(field, iter->ent);
+
+	SEQ_PUT_FIELD_RET(s, field->graph_ent.func);
+	SEQ_PUT_FIELD_RET(s, field->graph_ent.depth);
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static struct trace_event_functions trace_graph_ent_funcs = {
+	.trace		= trace_graph_ent_trace,
+	.raw		= trace_graph_ent_raw,
+	.hex		= trace_graph_ent_hex,
+	.binary		= trace_graph_ent_bin,
+};
+
+static struct trace_event trace_graph_ent_event = {
+	.type		= TRACE_GRAPH_ENT,
+	.funcs		= &trace_graph_ent_funcs,
+};
+
+/* TRACE_GRAPH_RET */
+static enum print_line_t trace_graph_ret_trace(struct trace_iterator *iter, int flags,
+					struct trace_event *event)
+{
+	struct trace_seq *s = &iter->seq;
+	struct trace_entry *entry = iter->ent;
+	struct ftrace_graph_ret_entry *field;
+
+	trace_assign_type(field, entry);
+
+	if (!trace_seq_puts(s, "graph_ret: func="))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	if (!seq_print_ip_sym(s, field->ret.func, flags))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	if (!trace_seq_puts(s, "\n"))
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static enum print_line_t trace_graph_ret_raw(struct trace_iterator *iter, int flags,
+				      struct trace_event *event)
+{
+	struct ftrace_graph_ret_entry *field;
+
+	trace_assign_type(field, iter->ent);
+
+	if (!trace_seq_printf(&iter->seq, "%lx %lld %lld %ld %d\n",
+			      field->ret.func,
+			      field->ret.calltime,
+			      field->ret.rettime,
+			      field->ret.overrun,
+			      field->ret.depth));
+		return TRACE_TYPE_PARTIAL_LINE;
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static enum print_line_t trace_graph_ret_hex(struct trace_iterator *iter, int flags,
+				      struct trace_event *event)
+{
+	struct ftrace_graph_ret_entry *field;
+	struct trace_seq *s = &iter->seq;
+
+	trace_assign_type(field, iter->ent);
+
+	SEQ_PUT_HEX_FIELD_RET(s, field->ret.func);
+	SEQ_PUT_HEX_FIELD_RET(s, field->ret.calltime);
+	SEQ_PUT_HEX_FIELD_RET(s, field->ret.rettime);
+	SEQ_PUT_HEX_FIELD_RET(s, field->ret.overrun);
+	SEQ_PUT_HEX_FIELD_RET(s, field->ret.depth);
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static enum print_line_t trace_graph_ret_bin(struct trace_iterator *iter, int flags,
+				      struct trace_event *event)
+{
+	struct ftrace_graph_ret_entry *field;
+	struct trace_seq *s = &iter->seq;
+
+	trace_assign_type(field, iter->ent);
+
+	SEQ_PUT_FIELD_RET(s, field->ret.func);
+	SEQ_PUT_FIELD_RET(s, field->ret.calltime);
+	SEQ_PUT_FIELD_RET(s, field->ret.rettime);
+	SEQ_PUT_FIELD_RET(s, field->ret.overrun);
+	SEQ_PUT_FIELD_RET(s, field->ret.depth);
+
+	return TRACE_TYPE_HANDLED;
+}
+
+static struct trace_event_functions trace_graph_ret_funcs = {
+	.trace		= trace_graph_ret_trace,
+	.raw		= trace_graph_ret_raw,
+	.hex		= trace_graph_ret_hex,
+	.binary		= trace_graph_ret_bin,
+};
+
+static struct trace_event trace_graph_ret_event = {
+	.type		= TRACE_GRAPH_RET,
+	.funcs		= &trace_graph_ret_funcs,
+};
+
 /* TRACE_CTX an TRACE_WAKE */
 static enum print_line_t trace_ctxwake_print(struct trace_iterator *iter,
 					     char *delim)
@@ -1307,110 +1483,7 @@ static struct trace_event trace_print_event = {
 
 
 #ifdef CONFIG_MT65XX_TRACER
-static enum print_line_t mt65xx_mon_print_entry(struct mt65xx_mon_entry *entry, struct trace_iterator *iter){
-    struct trace_seq *s = &iter->seq;
-    int cpu = entry->cpu;
-    struct mt65xx_mon_log *log_entry;
-    unsigned int log = 0;
-    MonitorMode mon_mode_evt = get_mt65xx_mon_mode();
-
-    if(entry == NULL)
-        return TRACE_TYPE_HANDLED;
-    else{
-        log_entry = &entry->field;
-        log = entry->log;
-    }
-
-#if 0
-    if(cpu)
-        trace_seq_printf(s, "cpu1 ");
-    else
-        trace_seq_printf(s, "cpu0 ");
-#endif
-    if (log == 0) {
-        trace_seq_printf(s, "MON_LOG_BUFF_LEN = %d, ", MON_LOG_BUFF_LEN);
-        trace_seq_printf(s, "EMI_CLOCK = %d, ", mt6577_get_bus_freq());
-    }
-    
-    if(!cpu || (mon_mode_evt != MODE_SCHED_SWITCH)){
-	    trace_seq_printf(
-			s,
-			"cpu0_cyc = %d, cpu0_cnt0 = %d, cpu0_cnt1 = %d, cpu0_cnt2 = %d, cpu0_cnt3 = %d, cpu0_cnt4 = %d, cpu0_cnt5 = %d, ",
-			log_entry->cpu_cyc,
-			log_entry->cpu_cnt0,
-			log_entry->cpu_cnt1,
-			log_entry->cpu_cnt2,
-			log_entry->cpu_cnt3,
-			log_entry->cpu_cnt4,
-			log_entry->cpu_cnt5); 
-    }
-#ifdef CONFIG_SMP		
-		if( cpu || (mon_mode_evt != MODE_SCHED_SWITCH) ) {
-			trace_seq_printf(
-				s,
-				"cpu1_cyc = %d, cpu1_cnt0 = %d, cpu1_cnt1 = %d, cpu1_cnt2 = %d, cpu1_cnt3 = %d, cpu1_cnt4 = %d, cpu1_cnt5 = %d, ",
-				log_entry->cpu1_cyc,
-				log_entry->cpu1_cnt0,
-				log_entry->cpu1_cnt1,
-				log_entry->cpu1_cnt2,
-				log_entry->cpu1_cnt3,
-				log_entry->cpu1_cnt4,
-				log_entry->cpu1_cnt5);
-		}
-#endif
-
-        trace_seq_printf(
-            s,
-            "l2c_cnt0 = %d, l2c_cnt1 = %d, ",
-            log_entry->l2c_cnt0,
-            log_entry->l2c_cnt1);
-
-        trace_seq_printf(
-            s,
-            "BM_BCNT = %d, BM_TACT = %d, BM_TSCT = %d, ",
-            log_entry->BM_BCNT,
-            log_entry->BM_TACT,
-            log_entry->BM_TSCT);
-
-        trace_seq_printf(
-            s,
-            "BM_WACT = %d, BM_WSCT = %d, BM_BACT = %d, ",
-            log_entry->BM_WACT,
-            log_entry->BM_WSCT,
-            log_entry->BM_BACT);
-
-        trace_seq_printf(
-            s,
-            "BM_BSCT = %d, ",
-            log_entry->BM_BSCT);
-
-        trace_seq_printf(
-            s,
-            "BM_TSCT2 = %d, BM_WSCT2 = %d, ",
-            log_entry->BM_TSCT2,
-            log_entry->BM_WSCT2);
-
-        trace_seq_printf(
-            s,
-            "BM_TSCT3 = %d, BM_WSCT3 = %d, ",
-            log_entry->BM_TSCT3,
-            log_entry->BM_WSCT3);
-
-        trace_seq_printf(
-            s,
-            "BM_WSCT4 = %d, BM_TPCT1 = %d, ",
-            log_entry->BM_WSCT4,
-            log_entry->BM_TPCT1);
-
-        trace_seq_printf(
-            s,
-            "DRAMC_PageHit = %d, DRAMC_PageMiss = %d, DRAMC_Interbank = %d, DRAMC_Idle = %d\n",
-            log_entry->DRAMC_PageHit,
-            log_entry->DRAMC_PageMiss,
-            log_entry->DRAMC_Interbank,
-            log_entry->DRAMC_Idle);
-    return TRACE_TYPE_HANDLED;
-}
+extern enum print_line_t mt65xx_mon_print_entry(struct mt65xx_mon_entry *entry, struct trace_iterator *iter);
 
 static enum print_line_t trace_mt65xx_mon_print(struct trace_iterator *iter, 
 					   int flags, struct trace_event *event)
@@ -1444,6 +1517,8 @@ static struct trace_event trace_mt65xx_mon_event = {
 #endif
 static struct trace_event *events[] __initdata = {
 	&trace_fn_event,
+	&trace_graph_ent_event,
+	&trace_graph_ret_event,
 	&trace_ctx_event,
 	&trace_wake_event,
 	&trace_stack_event,

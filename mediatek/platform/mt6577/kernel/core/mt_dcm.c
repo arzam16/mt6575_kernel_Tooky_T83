@@ -1,4 +1,3 @@
-
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -73,8 +72,17 @@
 
 
 
+/*
+ ********************************** 
+ *          DCM PART
+ **********************************
+ */
 
 
+/**
+ * dcm_enable - This function will enable DCM
+ * @type: CA9_DCM, TOPAXI_DCM, EMI_DCM, PERI_DCM, MM1_DCM, MM2_DCM, ALL_DCM
+ */
 void dcm_enable(unsigned short type)
 {
     unsigned int temp;
@@ -161,6 +169,10 @@ void dcm_enable(unsigned short type)
 }
 EXPORT_SYMBOL(dcm_enable);
 
+/**
+ * dcm_disable - This function will disable DCM
+ * @type: CA9_DCM, TOPAXI_DCM, EMI_DCM, PERI_DCM, MM1_DCM, MM2_DCM, ALL_DCM
+ */
 void dcm_disable(unsigned short type)
 {
     unsigned int temp;
@@ -240,6 +252,11 @@ void dcm_disable_all(void)
 EXPORT_SYMBOL(dcm_disable_all);
 
 
+/*
+ ********************************** 
+ *          idle/dpidle
+ **********************************
+ */
 #ifdef CONFIG_SMP
 extern volatile u32 cpu1_killed;
 #endif
@@ -398,6 +415,9 @@ do {    \
     DRV_WriteReg32(TOP_CKMUXSEL, temp); \
 } while (0)
 
+/* 
+ * bit = 0, when the clock is on, CPU should keep at high speed
+ */
 static unsigned int hispeed_condition_mask[][MT65XX_CLOCK_CATEGORY_COUNT] = {
     {  
         /* for E2 */ 
@@ -421,6 +441,12 @@ static unsigned int hispeed_condition_mask[][MT65XX_CLOCK_CATEGORY_COUNT] = {
 };
 
 
+/* 
+ * bit = 1, the clock bit can't be skipped, deep idle is skipped
+ *          that is to say, if clock is on, we can't enter deep idle
+ * bit = 0, the clock bit could be skipped or omit to enter deep idle
+ *          not-clock bit will also be set zero
+ */
 static unsigned int dpidle_condition_mask[][MT65XX_CLOCK_CATEGORY_COUNT] = {
     {  
         /* for E2 */ 
@@ -446,6 +472,9 @@ static unsigned int dpidle_condition_mask[][MT65XX_CLOCK_CATEGORY_COUNT] = {
 
 static DEFINE_MUTEX(dpidle_condition);
 
+/*
+ * If the clock bit is on, we should keep CPU at high speed
+ */
 static void enable_hispeed_by_mask(int category, unsigned int mask)
 {
     mutex_lock(&dpidle_condition);
@@ -462,6 +491,9 @@ void enable_hispeed_by_bit(enum mt65xx_clock_id id)
 }
 EXPORT_SYMBOL(enable_hispeed_by_bit);
 
+/*
+ * Even when the clock is on, we no need to keep CPU at high speed 
+ */
 static void disable_hispeed_by_mask(int category, unsigned int mask)
 {
     mutex_lock(&dpidle_condition);
@@ -479,6 +511,9 @@ void disable_hispeed_by_bit(enum mt65xx_clock_id id)
 EXPORT_SYMBOL(disable_hispeed_by_bit);
 
 
+/*
+ * Even when the clock bit is on, we can enter into dpidle
+ */
 static void enable_dpidle_by_mask(int category, unsigned int mask)
 {
     mutex_lock(&dpidle_condition);
@@ -496,6 +531,9 @@ void enable_dpidle_by_bit(enum mt65xx_clock_id id)
 }
 EXPORT_SYMBOL(enable_dpidle_by_bit);
 
+/*
+ * If the clock bit is on, we can't enter into dpidle
+ */
 static void disable_dpidle_by_mask(int category, unsigned int mask)
 {
     mutex_lock(&dpidle_condition);
@@ -513,6 +551,13 @@ void disable_dpidle_by_bit(enum mt65xx_clock_id id)
 }
 EXPORT_SYMBOL(disable_dpidle_by_bit);
 
+/*
+ * true: CPU should keep at high speed 
+ *  scenario when CPU should keep at high speed: 
+ *      1. meet dpidle condition
+ *      2. USB works
+ *      3. Nand works
+ */
 bool clkmgr_high_speed_check(void)
 {
     int i = 0;
@@ -963,7 +1008,7 @@ void arch_idle(void)
     }
 #endif
 
-	aee_rr_rec_idle_jiffies(jiffies);
+	//aee_rr_rec_idle_jiffies(jiffies);
 
 #ifdef CONFIG_SMP
     if (dpidle_switch && (smp_processor_id() == 0) && (num_online_cpus() == 1) && (cpu1_killed == 1)) {
@@ -984,9 +1029,14 @@ void arch_idle(void)
         go_to_idle();
     }
 
-	aee_rr_rec_idle_jiffies(0);
+	//aee_rr_rec_idle_jiffies(0);
 }
 
+/*
+ ********************************** 
+ * dpidle/idle/dcm debug/dump info
+ **********************************
+ */
 
 #define dcm_attr(_name)                         \
 static struct kobj_attribute _name##_attr = {   \

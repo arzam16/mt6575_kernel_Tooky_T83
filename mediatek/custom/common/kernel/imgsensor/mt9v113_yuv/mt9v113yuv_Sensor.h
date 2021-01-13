@@ -25,10 +25,6 @@
  * $Modtime:$
  * $Log:$
  * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
- * 
  *
  *
  *------------------------------------------------------------------------------
@@ -39,15 +35,11 @@
 #ifndef __SENSOR_H
 #define __SENSOR_H
 
-/* Sensor QVGA size */
-#define IMAGE_SENSOR_QVGA_WIDTH					(320)
-#define IMAGE_SENSOR_QVGA_HEIGHT				(240)
+
 /* SENSOR VGA SIZE */
 #define MT9V113_IMAGE_SENSOR_VGA_WIDTH					(640)
 #define MT9V113_IMAGE_SENSOR_VGA_HEIGHT					(480)
-/* SENSOR SXGA SIZE */
-#define IMAGE_SENSOR_SXGA_WIDTH             	(1280)
-#define IMAGE_SENSOR_SXGA_HEIGHT            	(1024)
+
 
 /* Sensor vertical blanking & horizontal blanking, for preview and capture mode. */
 #define MT9V113_DEFUALT_PREVIEW_LINE_LENGTH  0x034A  //842

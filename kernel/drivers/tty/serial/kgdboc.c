@@ -272,14 +272,7 @@ static int param_set_kgdboc_var(const char *kmessage, struct kernel_param *kp)
 int mtk_set_kgdboc_var(void)
 {
 	struct console *con = NULL;
-	
-	for_each_console(con) {
-		if (!strcmp(con->name, "ttyMT")) {
-			snprintf(config, strlen(con->name)+2, "%s%d", con->name, con->index);
-			printk("mtk_set_kgdboc_var=%s\n", config);
-		}
-	}
-	
+
 	if (configured == 1)
 		return 0;
 	/* Only copy in the string if the init function has not run yet */
@@ -291,8 +284,16 @@ int mtk_set_kgdboc_var(void)
 		return -EBUSY;
 	}
 
-	/* Go and configure with the new params. */
-	return configure_kgdboc();
+	for_each_console(con) {
+		if (!strcmp(con->name, "ttyMT")) {
+			snprintf(config, strlen("ttyMT")+2, "%s%d", con->name, con->index);
+			printk(KERN_INFO "mtk_set_kgdboc_var=%s\n", config);
+
+			/* Go and configure with the new params. */
+			return configure_kgdboc();
+		}
+	}
+	return 0;
 }
 
 static int dbg_restore_graphics;

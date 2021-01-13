@@ -1,3 +1,25 @@
+/* fm_event.c
+ *
+ * (C) Copyright 2011
+ * MediaTek <www.MediaTek.com>
+ * Hongcheng <hongcheng.xia@MediaTek.com>
+ *
+ * FM Radio Driver -- a common event
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/version.h>
@@ -6,6 +28,7 @@
 #include <asm/uaccess.h>
 #include <linux/semaphore.h>
 #include <linux/timer.h>
+#include <linux/delay.h>
 
 #include "fm_typedef.h"
 #include "fm_dbg.h"
@@ -27,6 +50,18 @@ static fm_s32 fm_event_wait(struct fm_flag_event* thiz, fm_u32 mask)
     return wait_event_interruptible(*(wait_queue_head_t*)(thiz->priv), ((thiz->flag & mask) == mask));
 }
 
+/**
+ * fm_event_check - sleep until a condition gets true or a timeout elapses
+ * @thiz: the pointer of current object
+ * @mask: bitmap in fm_u32
+ * @timeout: timeout, in jiffies
+ *
+ * fm_event_set() has to be called after changing any variable that could
+ * change the result of the wait condition.
+ *
+ * The function returns 0 if the @timeout elapsed, and the remaining
+ * jiffies if the condition evaluated to true before the timeout elapsed.
+ */
 long fm_event_wait_timeout(struct fm_flag_event* thiz, fm_u32 mask, long timeout)
 {
     return wait_event_timeout(*((wait_queue_head_t*)(thiz->priv)), ((thiz->flag & mask) == mask), timeout*HZ);
@@ -66,7 +101,7 @@ struct fm_flag_event* fm_flag_event_create(const fm_s8 *name)
         return NULL;
     }
 
-    fm_memcpy(tmp->name, name, FM_NAME_MAX);
+    fm_memcpy(tmp->name, name, (strlen(name)>FM_NAME_MAX)?(FM_NAME_MAX):(strlen(name)));
     tmp->priv = wq;
     init_waitqueue_head(wq);
     tmp->ref = 0;
@@ -107,6 +142,36 @@ fm_s32 fm_flag_event_put(struct fm_flag_event *thiz)
 }
 
 //fm lock methods
+static fm_s32 fm_lock_try(struct fm_lock *thiz,fm_s32 retryCnt)
+{
+    fm_s32 retry_cnt = 0;
+    struct semaphore *sem;
+    struct task_struct *task = current;
+    FMR_ASSERT(thiz);
+    FMR_ASSERT(thiz->priv);
+
+    while(down_trylock((struct semaphore*)thiz->priv))
+    {
+        WCN_DBG(FM_WAR | MAIN, "down_trylock failed\n");
+        if(++retry_cnt < retryCnt)
+        {
+            WCN_DBG(FM_WAR | MAIN,"[retryCnt=%d]\n", retry_cnt);
+            msleep_interruptible(50); 
+            continue;
+        }
+        else
+        {
+            WCN_DBG(FM_CRT | MAIN,"down_trylock retry failed\n");
+			return -FM_ELOCK;
+        }    
+    }
+
+    sem = (struct semaphore*)thiz->priv;
+    FM_LOG_DBG(MAIN, "%s --->trylock, cnt=%d, pid=%d\n", thiz->name, (int)sem->count, task->pid);
+    return 0;
+}
+
+//fm try lock methods
 static fm_s32 fm_lock_lock(struct fm_lock *thiz)
 {
     struct semaphore *sem;
@@ -120,7 +185,7 @@ static fm_s32 fm_lock_lock(struct fm_lock *thiz)
     }
 
     sem = (struct semaphore*)thiz->priv;
-    WCN_DBG(FM_NTC | MAIN, "%s --->lock, cnt=%d, pid=%d\n", thiz->name, (int)sem->count, task->pid);
+    FM_LOG_DBG(MAIN, "%s --->lock, cnt=%d, pid=%d\n", thiz->name, (int)sem->count, task->pid);
     return 0;
 }
 
@@ -131,7 +196,7 @@ static fm_s32 fm_lock_unlock(struct fm_lock *thiz)
     FMR_ASSERT(thiz);
     FMR_ASSERT(thiz->priv);
     sem = (struct semaphore*)thiz->priv;
-    WCN_DBG(FM_NTC | MAIN, "%s <---unlock, cnt=%d, pid=%d\n", thiz->name, (int)sem->count + 1, task->pid);
+    FM_LOG_DBG(MAIN, "%s <---unlock, cnt=%d, pid=%d\n", thiz->name, (int)sem->count + 1, task->pid);
     up((struct semaphore*)thiz->priv);
     return 0;
 }
@@ -155,9 +220,10 @@ struct fm_lock* fm_lock_create(const fm_s8 *name)
     tmp->priv = mutex;
     sema_init(mutex, 1);
     tmp->ref = 0;
-    fm_memcpy(tmp->name, name, FM_NAME_MAX);
+    fm_memcpy(tmp->name, name, (strlen(name)>FM_NAME_MAX)?(FM_NAME_MAX):(strlen(name)));
 
     tmp->lock = fm_lock_lock;
+    tmp->trylock = fm_lock_try;
     tmp->unlock = fm_lock_unlock;
 
     return tmp;
@@ -186,7 +252,85 @@ fm_s32 fm_lock_put(struct fm_lock *thiz)
     }
 }
 
+//fm lock methods
+static fm_s32 fm_spin_lock_lock(struct fm_lock *thiz)
+{
+    struct task_struct *task = current;
+    FMR_ASSERT(thiz);
+    FMR_ASSERT(thiz->priv);
 
+	spin_lock_bh((spinlock_t *)thiz->priv);
+
+    FM_LOG_DBG(MAIN, "%s --->lock pid=%d\n", thiz->name, task->pid);
+    return 0;
+}
+
+static fm_s32 fm_spin_lock_unlock(struct fm_lock *thiz)
+{
+    struct task_struct *task = current;
+    FMR_ASSERT(thiz);
+    FMR_ASSERT(thiz->priv);
+
+    FM_LOG_DBG(MAIN, "%s <---unlock, pid=%d\n", thiz->name, task->pid);
+    spin_unlock_bh((spinlock_t *)thiz->priv);
+    return 0;
+}
+
+struct fm_lock* fm_spin_lock_create(const fm_s8 *name) 
+{
+	struct fm_lock *tmp;
+	spinlock_t *spin_lock;
+
+    if (!(tmp = fm_zalloc(sizeof(struct fm_lock)))) {
+        WCN_DBG(FM_ALT | MAIN, "fm_zalloc(fm_lock) -ENOMEM\n");
+        return NULL;
+    }
+
+    if (!(spin_lock = fm_zalloc(sizeof(spinlock_t)))) {
+        WCN_DBG(FM_ALT | MAIN, "fm_zalloc(spinlock_t) -ENOMEM\n");
+        fm_free(tmp);
+        return NULL;
+    }
+
+    tmp->priv = spin_lock;
+    spin_lock_init(spin_lock);
+    tmp->ref = 0;
+    fm_memcpy(tmp->name, name, (strlen(name)>FM_NAME_MAX)?(FM_NAME_MAX):(strlen(name)));
+
+    tmp->lock = fm_spin_lock_lock;
+    tmp->unlock = fm_spin_lock_unlock;
+
+    return tmp;
+}
+
+
+fm_s32 fm_spin_lock_get(struct fm_lock *thiz)
+{
+    FMR_ASSERT(thiz);
+    thiz->ref++;
+    return 0;
+}
+
+fm_s32 fm_spin_lock_put(struct fm_lock *thiz)
+{
+    FMR_ASSERT(thiz);
+    thiz->ref--;
+
+    if (thiz->ref == 0) {
+        fm_free(thiz->priv);
+        fm_free(thiz);
+        return 0;
+    } else if (thiz->ref > 0) {
+        return -FM_EINUSE;
+    } else {
+        return -FM_EPARA;
+    }
+}
+
+/*
+ * fm timer
+ *
+ */
 static fm_s32 fm_timer_init(struct fm_timer *thiz, void (*timeout)(unsigned long data), unsigned long data, signed long time, fm_s32 flag)
 {
     struct timer_list *timerlist = (struct timer_list*)thiz->priv;
@@ -260,7 +404,7 @@ struct fm_timer* fm_timer_create(const fm_s8 *name)
 
     init_timer(timerlist);
 
-    fm_memcpy(tmp->name, name, FM_NAME_MAX);
+    fm_memcpy(tmp->name, name, (strlen(name)>FM_NAME_MAX)?(FM_NAME_MAX):(strlen(name)));
     tmp->priv = timerlist;
     tmp->ref = 0;
     tmp->init = fm_timer_init;
@@ -296,6 +440,9 @@ fm_s32 fm_timer_put(struct fm_timer *thiz)
 }
 
 
+/*
+ * FM work thread mechanism
+ */
 static fm_s32 fm_work_init(struct fm_work *thiz, void (*work_func)(unsigned long data), unsigned long data)
 {
     struct work_struct *sys_work = (struct work_struct*)thiz->priv;
@@ -327,7 +474,7 @@ struct fm_work* fm_work_create(const fm_s8 *name)
         return NULL;
     }
 
-    fm_memcpy(my_work->name, name, FM_NAME_MAX);
+    fm_memcpy(my_work->name, name, (strlen(name)>FM_NAME_MAX)?(FM_NAME_MAX):(strlen(name)));
     my_work->priv = sys_work;
     my_work->init = fm_work_init;
 
@@ -379,7 +526,7 @@ struct fm_workthread* fm_workthread_create(const fm_s8* name)
 
     sys_thread = create_singlethread_workqueue(name);
 
-    fm_memcpy(my_thread->name, name, FM_NAME_MAX);
+    fm_memcpy(my_thread->name, name, (strlen(name)>FM_NAME_MAX)?(FM_NAME_MAX):(strlen(name)));
     my_thread->priv = sys_thread;
     my_thread->add_work = fm_workthread_add_work;
 

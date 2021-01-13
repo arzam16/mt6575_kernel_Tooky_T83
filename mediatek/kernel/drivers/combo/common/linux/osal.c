@@ -151,11 +151,25 @@ _osal_inline_ char * osal_strsep(char **str, const char *c)
     return strsep(str, c);
 }
 
-
+_osal_inline_ void osal_bug_on(unsigned long val)
+{
+	BUG_ON(val);
+}
 _osal_inline_ LONG osal_strtol(const char *str, char **c, UINT32 adecimal)
 {
     return simple_strtol(str, c, adecimal);
 }
+
+_osal_inline_ char *osal_strstr(char *str1, const char *str2)
+{
+	return strstr(str1,str2);
+}
+
+_osal_inline_ char *osal_strnstr(char *str1, const char *str2, int n)
+{
+	return strnstr(str1,str2, n);
+}
+
 
 INT32 osal_snprintf(char *buf, UINT32 len, const char*fmt, ...)
 {
@@ -195,7 +209,7 @@ INT32 osal_dbg_print(const char *str, ...)
     vsnprintf(tempString, DBG_LOG_STR_SIZE, str, args);
     va_end(args);
 
-    printk(KERN_INFO "%s",tempString);
+    printk(KERN_DEBUG "%s",tempString);
 
     return 0;
 }
@@ -221,12 +235,13 @@ INT32 osal_dbg_assert(INT32 expr, const char *file, INT32 line)
 }
 
 INT32 osal_dbg_assert_aee(const char *module, const char *detail_description){
-	osal_err_print("[WMT-ASSERT]""[E][Module]:%s, [INFO]%s\n", module, detail_description);
-//#ifdef WMT_PLAT_ALPS
+    osal_err_print("[WMT-ASSERT]""[E][Module]:%s, [INFO]%s\n", module, detail_description);
+
+#if WMT_PLAT_ALPS
     aee_kernel_warning(
         module,
         detail_description);
-//#endif
+#endif
     return 0;
 }
 
@@ -269,6 +284,21 @@ _osal_inline_ INT32 osal_memcmp(const VOID *buf1, const VOID *buf2, UINT32 len)
 {
     return memcmp(buf1, buf2, len);
 }
+
+_osal_inline_ UINT16 osal_crc16(const UINT8 *buffer, const UINT32 length)
+{
+    UINT16 crc = 0;
+    UINT32 i = 0;
+
+    //FIXME: Add STP checksum feature
+    crc = 0;
+    for (i = 0; i < length; i++, buffer++)
+    {
+        crc = (crc >> 8) ^ crc16_table[(crc ^ (*buffer)) & 0xff];
+    }
+    return crc;
+}
+
 
 
 
@@ -643,24 +673,24 @@ INT32 _osal_fifo_init(OSAL_FIFO *pFifo, UINT8 *buf, UINT32 size)
         return -1;
     }
 
-	
+    
     #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-		    spin_lock_init(&pFifo->fifoSpinlock);
-		    fifo = kfifo_alloc(size, /*GFP_KERNEL*/GFP_ATOMIC, &pFifo->fifoSpinlock);
-			if (NULL == fifo)
-			{
-			    ret = -2;
-			}else
-			{
-			    ret = 0;
-			}
+            spin_lock_init(&pFifo->fifoSpinlock);
+            fifo = kfifo_alloc(size, /*GFP_KERNEL*/GFP_ATOMIC, &pFifo->fifoSpinlock);
+            if (NULL == fifo)
+            {
+                ret = -2;
+            }else
+            {
+                ret = 0;
+            }
     #else
         fifo = kzalloc(sizeof(struct kfifo), GFP_ATOMIC);
-	    if (!buf){
-	      /*fifo's buffer is not ready, we allocate automatically*/
-	        ret = kfifo_alloc(fifo, size, /*GFP_KERNEL*/GFP_ATOMIC);
-	    }else
-	    {
+        if (!buf){
+          /*fifo's buffer is not ready, we allocate automatically*/
+            ret = kfifo_alloc(fifo, size, /*GFP_KERNEL*/GFP_ATOMIC);
+        }else
+        {
             if(is_power_of_2(size))
             {
                 kfifo_init(fifo, buf, size);
@@ -693,7 +723,7 @@ INT32 _osal_fifo_deinit(OSAL_FIFO *pFifo)
     if(fifo)
     {
         kfifo_free(fifo);
-	
+    
     }
 
     return 0;
@@ -915,7 +945,7 @@ INT32 osal_fifo_init(P_OSAL_FIFO pFifo, UINT8 *buffer, UINT32 size)
         printk("%s:pFifo = NULL, error\n", __func__);
         return -1;
     }
-	
+    
     pFifo->FifoInit = _osal_fifo_init;
     pFifo->FifoDeInit = _osal_fifo_deinit;
     pFifo->FifoSz = _osal_fifo_size;
@@ -931,7 +961,7 @@ INT32 osal_fifo_init(P_OSAL_FIFO pFifo, UINT8 *buffer, UINT32 size)
     {
         printk("%s:Becasue pFifo room is avialable, we clear the room and allocate them again.\n", __func__);
         pFifo->FifoDeInit(pFifo->pFifoBody);
-		pFifo->pFifoBody = NULL;
+        pFifo->pFifoBody = NULL;
     }
 
     pFifo->FifoInit(pFifo, buffer, size);
@@ -1073,7 +1103,7 @@ INT32  osal_wake_lock_init(P_OSAL_WAKE_LOCK pLock)
     else 
     {
         wake_lock_init(&pLock->wake_lock, WAKE_LOCK_SUSPEND, pLock->name);
-        
+        wake_unlock(&pLock->wake_lock);
         return 0;
     }
 }
@@ -1175,7 +1205,7 @@ INT32 osal_sleepable_lock_init (P_OSAL_SLEEPABLE_LOCK pSL)
 
 INT32 osal_lock_sleepable_lock (P_OSAL_SLEEPABLE_LOCK pSL)
 {
-   return mutex_lock_interruptible(&pSL->lock);
+   return mutex_lock_killable(&pSL->lock);
 }
 
 INT32 osal_unlock_sleepable_lock (P_OSAL_SLEEPABLE_LOCK pSL)
@@ -1191,7 +1221,7 @@ INT32 osal_sleepable_lock_deinit (P_OSAL_SLEEPABLE_LOCK pSL)
     return 0;
 }
 
-INT32 osal_msleep(UINT32 ms)
+INT32 osal_sleep_ms(UINT32 ms)
 {
     msleep(ms);
     return 0;
@@ -1275,32 +1305,4 @@ VOID osal_op_raise_signal(P_OSAL_OP pOp, INT32 result)
         osal_raise_signal(&pOp->signal);
     }
 }
-
-/*****************************************************************************
-* FUNCTION
-*  osal_crc16
-* DESCRIPTION
-*  Compute the CRC-16 for the data buffer
-* PARAMETERS
-*  crc         [IN]        previous CRC value
-*  buffer      [IN]        data buffer
-*  length      [IN]        data buffer length
-* RETURNS
-*  the updated CRC value
-*****************************************************************************/
-UINT16 osal_crc16(const UINT8 *buffer, const UINT32 length)
-{
-    UINT32 crc, i;
-
-    //FIXME: Add STP checksum feature
-    crc = 0;
-    for (i = 0; i < length; i++, buffer++)
-    {
-        crc = (crc >> 8) ^ crc16_table[(crc ^ (*buffer)) & 0xff];
-    }
-    return crc;
-}
-
-
-
 

@@ -1,4 +1,4 @@
- /* mediatek/platform/mt6577/kernel/core/include/mach
+ /* 
   *
   *
   * Copyright (C) 2008,2009 MediaTek <www.mediatek.com>
@@ -19,22 +19,9 @@
   * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
   */
 
-#ifndef _MT6577_BOOT_H_
-#define _MT6577_BOOT_H_
-
-/* boot type definitions */
-typedef enum 
-{
-    NORMAL_BOOT = 0,
-    META_BOOT = 1,
-    RECOVERY_BOOT = 2,    
-    SW_REBOOT = 3,
-    FACTORY_BOOT = 4,
-    ADVMETA_BOOT = 5,
-    ATE_FACTORY_BOOT = 6,
-    ALARM_BOOT = 7,
-    UNKNOWN_BOOT
-} BOOTMODE;
+#ifndef __MT_BOOT_H__
+#define __MT_BOOT_H__
+#include <mach/mt_boot_common.h>
 
 /*META COM port type*/
  typedef enum
@@ -43,7 +30,6 @@ typedef enum
     META_UART_COM,
     META_USB_COM
 } META_COM_TYPE;
-
 
 #define BOOT_DEV_NAME           "BOOT"
 #define BOOT_SYSFS              "boot"
@@ -73,13 +59,12 @@ typedef enum
 
 
 
-extern BOOTMODE g_boot_mode;
 extern META_COM_TYPE g_meta_com_type;
 extern unsigned int g_meta_com_id;
 
-extern BOOTMODE get_boot_mode(void);
-extern bool is_meta_mode(void);
-extern bool is_advanced_meta_mode(void);
+extern void set_meta_com(META_COM_TYPE type, unsigned int id);
+extern META_COM_TYPE get_meta_com_type(void);
+extern unsigned int get_meta_com_id(void);
 
 extern void boot_register_md_func(ssize_t (*show)(char*), ssize_t (*store)(const char*,size_t));
 

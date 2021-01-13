@@ -528,6 +528,10 @@ static MSG_HNDL_ENTRY_T arMsgMapTable[] = {
     { MID_MNY_P2P_NET_DEV_REGISTER, p2pFsmRunEventNetDeviceRegister         },
     { MID_MNY_P2P_START_AP,         p2pFsmRunEventStartAP                   },
     { MID_MNY_P2P_MGMT_FRAME_UPDATE,    p2pFsmRunEventUpdateMgmtFrame       },
+#if CFG_SUPPORT_WFD
+    { MID_MNY_P2P_WFD_CFG_UPDATE, p2pFsmRunEventWfdSettingUpdate           },
+#endif
+
 #endif
 
 #if CFG_SUPPORT_ADHOC

@@ -13,6 +13,8 @@ char image_buf[256] = "";
 int  valid_image_info = 0;
 unsigned int ccci_msg_mask = 0x0;
 
+static int    masp_inited = 0;
+
 struct image_info *pImg_info;
 static CCCI_REGION_LAYOUT ccci_layout;
 static MD_CHECK_HEADER head;
@@ -20,13 +22,18 @@ static GFH_CHECK_CFG_v1 gfh_check_head;
 //static bool sign_check = false; // Using sec lib v3, mask this. 2012-2-3
 static unsigned int sec_tail_length=0;
 
+#define IMG_NAME_LEN	32
+
 static char * product_str[] = {[INVALID_VARSION]=INVALID_STR, 
 							   [DEBUG_VERSION]=DEBUG_STR, 
 							   [RELEASE_VERSION]=RELEASE_STR};
 
-static char * type_str[] = {[AP_IMG_INVALID]=VER_INVALID_STR, 
-							[AP_IMG_2G]=VER_2G_STR, 
-							[AP_IMG_3G]=VER_3G_STR};
+static char * type_str[] = {[md_type_invalid]=VER_INVALID_STR, 
+							[modem_2g]=VER_2G_STR, 
+							[modem_3g]=VER_3G_STR,
+							[modem_wg]=VER_WG_STR,
+							[modem_tg]=VER_TG_STR};
+static char	md_image_post_fix[12];
 
 char ap_platform[16]="";
 
@@ -40,8 +47,6 @@ unsigned int shr_mem_phy;
 unsigned int shr_mem_len;
 unsigned int kernel_base;
 unsigned int dram_size;
-
-
 
 void platform_set_runtime_data(struct modem_runtime_t *runtime)
 {
@@ -151,14 +156,12 @@ static int check_dsp_header(struct file *filp,struct image_info *image, unsigned
 	//GFH_CHECK_CFG_v1 gfh_check_head;
 	unsigned int dsp_ver = DSP_VER_INVALID;
 	unsigned int ap_ver = DSP_VER_INVALID;
-	//char *ap_platform = "";
-
 	bool file_info_check = false;
 	bool header_check = false;
 	bool ver_check = false;
 	bool image_check = false;
 	bool platform_check = false;
-	
+	int md_id=0;
 	if (gfh_head == NULL) {
 		CCCI_MSG_INF("ctl", "ioremap DSP image failed!\n");
 		ret = -ENOMEM;
@@ -180,9 +183,9 @@ static int check_dsp_header(struct file *filp,struct image_info *image, unsigned
 			header_check = true;
 
 			//check image version: 2G or 3G
-			if(gfh_check_head.m_image_type == get_ap_img_ver())
+			if(gfh_check_head.m_image_type == get_modem_support(md_id))
 				ver_check = true;
-			image->ap_info.image_type = type_str[get_ap_img_ver()];
+			image->ap_info.image_type = type_str[get_modem_support(md_id)];
         	image->img_info.image_type = type_str[gfh_check_head.m_image_type];
 
 			//get dsp product version: debug or release
@@ -221,7 +224,7 @@ static int check_dsp_header(struct file *filp,struct image_info *image, unsigned
 		//check the image version from file_info structure
 		dsp_ver = (gfh_file_head->m_file_ver >> DSP_2G_BIT)& 0x1;
 		dsp_ver = dsp_ver? AP_IMG_2G:AP_IMG_3G;
-		ap_ver = get_ap_img_ver();
+		ap_ver = get_modem_support(md_id);
 
 		if(dsp_ver == ap_ver)
 			ver_check = true;
@@ -314,7 +317,7 @@ static int check_md_header(struct file *filp, struct image_info *image, unsigned
 	//MD_CHECK_HEADER head;
 	bool md_type_check = false;
 	bool md_plat_check = false;
-	//char *ap_platform;
+	int md_id=0;
 
 	head = *(MD_CHECK_HEADER *)(addr - sizeof(MD_CHECK_HEADER));
 
@@ -331,19 +334,16 @@ static int check_md_header(struct file *filp, struct image_info *image, unsigned
 				head.header_verno);
 		}
 		else {
-			if((head.image_type != AP_IMG_INVALID) && (head.image_type == get_ap_img_ver())) {
+			if((head.image_type != md_type_invalid) && (head.image_type == get_modem_support(md_id))) {
 				md_type_check = true;
 			}
 
-			//ap_platform = ccci_get_platform_ver();
 			ccci_get_platform_ver(ap_platform);
-			
-			//if(!strcmp(head.platform, ap_platform)) {
-                        if(!strncmp(head.platform, ap_platform, strlen(ap_platform))) {
+            if(!strncmp(head.platform, ap_platform, strlen(ap_platform))) {
 				md_plat_check = true;
 			}
 
-			image->ap_info.image_type = type_str[get_ap_img_ver()];
+			image->ap_info.image_type = type_str[get_modem_support(md_id)];
 			image->img_info.image_type = type_str[head.image_type];
 			image->ap_info.platform = ap_platform;
 			image->img_info.platform = head.platform;
@@ -378,103 +378,6 @@ static int check_md_header(struct file *filp, struct image_info *image, unsigned
 	return ret;
 }
 
-#if 0
-static int load_cipher_firmware(struct file *filp,struct image_info *img,CIPHER_HEADER *header)
-{
-	int ret;
-	void *addr = ioremap_nocache(img->address,header->image_length);
-	void *o_addr = addr;
-	int len = header->image_length;
-	loff_t offset = header->image_offset;
-	char buff[CIPHER_BLOCK_SIZE];
-	unsigned long start;
-
-	if (addr==NULL) {
-		CCCI_MSG_INF("ctl", "ioremap image fialed!\n");
-		ret = -E_NO_ADDR;
-		goto out;
-	}
-	
-	if (header->cipher_offset) {
-		ret = kernel_read(filp,offset,addr,header->cipher_offset);
-		if (ret != header->cipher_offset) {
-			CCCI_MSG_INF("ctl", "kernel_read cipher_offset failed:ret=%d!\n",ret);
-			ret = -E_KERN_READ;
-			goto unmap_out;
-		}
-		offset +=header->cipher_offset;
-		addr +=header->cipher_offset;
-		len -=header->cipher_offset;
-	}
-	
-	if (header->cipher_length) {
-		loff_t end=offset+((header->cipher_length+CIPHER_BLOCK_SIZE-1)/CIPHER_BLOCK_SIZE)*CIPHER_BLOCK_SIZE;	
-		ret = sec_aes_init();	
-		if (ret) {
-			CCCI_MSG_INF("ctl", "sec_aes_init fialed ret=%d\n",ret);
-			ret = -E_CIPHER_FAIL;
-			goto unmap_out;
-		}
-		
-		start=jiffies;
-		while (offset < end) { 
-			ret=kernel_read(filp,offset,buff,CIPHER_BLOCK_SIZE);
-			if (ret<0) {
-				CCCI_MSG_INF("ctl", "kernel_read failed:ret=%d!\n",ret);
-				ret = -E_KERN_READ;
-				goto unmap_out;
-			}
-			
-			if (ret!=CIPHER_BLOCK_SIZE)  
-				CCCI_MSG_INF("ctl", "ret=%d offset=%lld\n",ret,offset);
-			offset +=ret;
-			
-			ret=lib_aes_dec(buff,CIPHER_BLOCK_SIZE,addr,CIPHER_BLOCK_SIZE);	
-			if (ret) {
-				CCCI_MSG("<ctl> lib_aes_dec failed:ret=%d!\n",ret);
-				ret = -E_CIPHER_FAIL;
-				goto unmap_out;
-			}
-			
-			addr += CIPHER_BLOCK_SIZE;
-			len -= CIPHER_BLOCK_SIZE;
-		}
-		CCCI_MSG_INF("ctl", "decrypt consumed time: %dms tail_len:%d offset:%lld CIPHER_BLOCK_SIZE:%d\n",
-			jiffies_to_msecs(jiffies-start),len<0?0:len,offset,CIPHER_BLOCK_SIZE);
-	}
-	
-	if (len>0) {
-		ret=kernel_read(filp,offset,addr,len);
-		if (ret!=len) {
-			CCCI_MSG_INF("ctl", "read tail len(%d) failed:ret=%d!\n",len,ret);
-			ret = -E_KERN_READ;
-			goto unmap_out;
-		}
-		offset +=len;
-		addr +=len;
-		len -=len;
-	}
-	
-	ret = header->image_length - len;
-	img->size = header->image_length;
-	img->offset += sizeof(CIPHER_HEADER);	
-
-	//if(!strcmp(img->file_name, MOEDM_IMAGE_PATH))
-	//{
-		ret=check_md_header(filp, img, ((unsigned int)addr));
-	//}
-	//else if(!strcmp(img->file_name, DSP_IMAGE_PATH))
-	//{
-	//	ret=check_dsp_header(filp, img, ((unsigned int)o_addr));
-	//}
-	
-unmap_out:
-	iounmap(o_addr);
-out:
-	return ret;
-}
-#endif
-
 static int load_cipher_firmware_v2(int fp_id,struct image_info *img,unsigned int cipher_img_offset, unsigned int cipher_img_len)
 {
 	int ret;
@@ -508,83 +411,6 @@ unmap_out:
 out:
 	return ret;
 }
-
-#if 0 // Using sec lib v3, mask this. 2012-2-3
-static int signature_check(struct file *filp)
-{
-	int ret=0;
-	SEC_IMG_HEADER head;
-	int sec_check;
-	unsigned char key[RSA_KEY_SIZE];
-        int size;
-	SEC_IMG_HEADER *head_p;
-
-	ret=kernel_read(filp,0,(char*)&head,sizeof(SEC_IMG_HEADER));
-	if (ret != sizeof(SEC_IMG_HEADER)) {
-		CCCI_MSG_INF("ctl", "read sec header failed: ret=%d\n",ret);
-		ret = -E_KERN_READ;
-		goto out;
-	}
-	
-	sec_check=(head.magic_number==SEC_IMG_MAGIC);
-	if(!sec_check) {
-		//if((sec_modem_auth_enabled() == 0) && (sec_schip_enabled() == 0)) {
-		if((sec_modem_auth_enabled() == 0)) {
-			CCCI_MSG_INF("ctl", "mage has no sec header!\n");
-			ret = 0;
-			goto out;
-		}
-		else {
-			CCCI_MSG_INF("ctl", "sec_modem_auth_enabled()=%d,sec_schip_enabled()=%d,sec_check=0\n",
-				sec_modem_auth_enabled(), sec_schip_enabled());
-			ret = -E_SIGN_FAIL;
-			goto out;
-		}
-	}
-
-		size=head.sign_length+sizeof(SEC_IMG_HEADER);
-		head_p=kmalloc(size,GFP_KERNEL);	
-		if (head_p==NULL) {
-			CCCI_MSG_INF("ctl", "kmalloc for SEC_IMG_HEADER failed!\n");
-			ret = -E_NOMEM;
-			goto out;
-		}
-
-		*head_p=head;
-		CCCI_MSG_INF("ctl", "custom_name:%s signature header:sign_offset(%d) sign_length(%d)\n",
-			head_p->cust_name[0]?head_p->cust_name:"Unknown",head_p->sign_offset,head_p->sign_length);
-
-		ret=kernel_read(filp,sizeof(SEC_IMG_HEADER)+head_p->sign_offset,
-			(char*)(head_p+1),head_p->sign_length);
-		if (ret!=head_p->sign_length) {
-			CCCI_MSG_INF("ctl", "kernel_read failed ret=%d\n",ret);
-			ret = -E_KERN_READ;
-			goto out_free;
-		}
-		
-		ret=kernel_read(filp,head_p->signature_offset,(char*)key,sizeof(key));
-		if (ret!=sizeof(key)) {
-			CCCI_MSG_INF("ctl", "kernel_read for key failed ret=%d\n",ret);
-			ret = -E_KERN_READ;
-			goto out_free;
-		}
-		
-		ret=sec_verify((unsigned char*)head_p,size,key,sizeof(key));
-		if (ret) {
-			CCCI_MSG_INF("ctl", "lib_verify failed ret=%d\n",ret);
-			ret = -E_SIGN_FAIL;
-			goto out_free;
-		}
-		
-		ret=sizeof(SEC_IMG_HEADER);
-		
-	out_free:
-		kfree(head_p);
-		
-out:
-	return ret;
-}
-#endif
 
 
 /***************************************************************************************************************************
@@ -677,7 +503,7 @@ static int load_firmware(struct file *filp, struct image_info *img)
     }
 	
 	#ifndef android_bring_up_prepare  
-	if(img->idx == MD_INDEX) {
+	if(img->type == MD_INDEX) {
 		start = ioremap_nocache((img->size - size), size);
 		end_addr = ((unsigned int)start + size);
 		//CCCI_MSG_INF("ctl", "VM address of %s is:0x%x - 0x%x\n", img->file_name, (unsigned int)start,end_addr);
@@ -688,7 +514,7 @@ static int load_firmware(struct file *filp, struct image_info *img)
 		}
 		iounmap(start);
 	}
-	else if(img->idx == DSP_INDEX) {
+	else if(img->type == DSP_INDEX) {
 		start = ioremap_nocache(load_addr, size);
 		//CCCI_MSG_INF("ctl", "start VM address of %s is:0x%x\n", img->file_name, (unsigned int)start);
 		if((check_ret = check_dsp_header(filp, img, (unsigned int)start))<0){
@@ -711,6 +537,80 @@ error:
 	
 }
 
+static int find_img_to_open(int md_id,int img_type, char found_name[])
+{
+	char			img_name[3][IMG_NAME_LEN];
+	char			full_path[64];
+	int				i,j;
+	char			post_fix[12];
+	char			post_fix_ex[12];
+	struct file		*filp = NULL;
+	char 			*img_path_list[]={CONFIG_MODEM_FIRMWARE_CIP_PATH,CONFIG_MODEM_FIRMWARE_PATH};
+	// Gen file name
+	get_md_post_fix(md_id,post_fix, post_fix_ex);
+
+	if(img_type == MD_INDEX){ // Gen MD image name
+		snprintf(img_name[0], IMG_NAME_LEN, "modem_%s.img", post_fix_ex); 
+		snprintf(img_name[1], IMG_NAME_LEN, "modem_%s.img", post_fix);
+		snprintf(img_name[2], IMG_NAME_LEN, "%s", MOEDM_IMAGE_NAME); 
+	} else if (img_type == DSP_INDEX) { // Gen DSP image name
+		snprintf(img_name[0], IMG_NAME_LEN, "DSP_ROM_%s", post_fix_ex); 
+		snprintf(img_name[1], IMG_NAME_LEN, "DSP_ROM_%s", post_fix);
+		snprintf(img_name[2], IMG_NAME_LEN, "%s", DSP_IMAGE_NAME);
+	} else {
+		CCCI_MSG_INF("ctl", "[Error]Invalid img type%d\n", img_type);
+		return -1;
+	}	
+	for(j=0;j<sizeof(img_path_list);j++)
+	{
+		CCCI_MSG_INF("ctl","Find img in %s\n",img_path_list[j]);
+		for(i=0; i<3; i++)
+		{
+			CCCI_MSG_INF("ctl","try to open %s ...\n", img_name[i]);
+			snprintf(full_path, 64, "%s%s", img_path_list[j], img_name[i]);
+			filp = filp_open(full_path, O_RDONLY, 0644);
+			CCCI_MSG_INF("ctl","opened %s ,err=%d\n", img_name[i],IS_ERR(filp));
+			if (IS_ERR(filp)==0) 
+			{
+				snprintf(found_name, 64, full_path);
+				filp_close(filp, current->files);
+				if(i==1) {
+					snprintf(md_image_post_fix, sizeof(md_image_post_fix), "%s", post_fix);
+				} else if(i==0) {
+					snprintf(md_image_post_fix, sizeof(md_image_post_fix), "%s", post_fix_ex);
+				} else {
+					md_image_post_fix[0] = '\0';
+				}
+				return 0;
+			}
+		}
+	}
+	md_image_post_fix[0] = '\0';
+	CCCI_MSG_INF("ctl","[Error] No Image file found, Orz...\n");
+	return -1;
+}
+
+#ifndef android_bring_up_prepare
+//extern char sec_emmc_project(void);
+int sec_lib_version_check(void)
+{
+	int ret = 0;
+	/* Note here, must sync with sec lib, if ccci and sec has dependency change */
+	#define CURR_SEC_CCCI_SYNC_VER		(1)
+	int sec_lib_ver = sec_ccci_version_info();
+	if(sec_lib_ver != CURR_SEC_CCCI_SYNC_VER){
+		CCCI_MSG_INF("ctl", "sec lib for ccci mismatch! sec ver:%d, ccci:%d\n", sec_lib_ver, CURR_SEC_CCCI_SYNC_VER);
+		ret = -1;
+	}
+
+//	if(sec_emmc_project() == 0){
+//		CCCI_MSG_INF("ctl", "ccci using nand sec lib\n");
+//	} else {
+//		CCCI_MSG_INF("ctl", "ccci using emmc sec lib\n");
+//	}
+	return ret;
+}
+#endif
 
 static int load_firmware_func(struct image_info *img)
 {
@@ -721,20 +621,32 @@ static int load_firmware_func(struct image_info *img)
     int offset=0;
     unsigned int img_len=0;
 	
+	CCCI_MSG_INF("ctl","load_firmware_func() masp_inited:%d\n", masp_inited);
+	if (!masp_inited) {
+		#ifndef android_bring_up_prepare  
+		if ((ret=sec_boot_init()) !=0) {
+			CCCI_MSG_INF("ctl", "sec_boot_init failed ret=%d\n",ret);
+			ret= -EIO;
+      return ret;
+		}
+	
+		if(sec_lib_version_check()!= 0) {
+			CCCI_MSG_INF("ctl", "sec lib version check error\n");
+			ret= -EIO;
+      return ret;
+		}	
+		#endif
+		masp_inited = 1;
+	}
+
     //get modem&dsp image name with E1&E2 
-    if(get_chip_version() == CHIP_E1) {
-    	snprintf(img->file_name,sizeof(img->file_name),
-		CONFIG_MODEM_FIRMWARE_PATH "%s",(img->idx?DSP_IMAGE_E1_NAME:MOEDM_IMAGE_E1_NAME));
-		CCCI_MSG_INF("ctl", "open %s \n",img->file_name);
-    }
-    else if(get_chip_version() == CHIP_E2) {		
-    	snprintf(img->file_name,sizeof(img->file_name),
-		CONFIG_MODEM_FIRMWARE_PATH "%s",(img->idx?DSP_IMAGE_E2_NAME:MOEDM_IMAGE_E2_NAME));
-		CCCI_MSG_INF("ctl", "open %s \n",img->file_name);
-    }
+	if(find_img_to_open(0,img->type, img->file_name)<0) {
+		CCCI_MSG_INF("ctl", "Find image  %s failed\n",img->file_name);
+		filp = NULL;
+		goto out;
+	}
 
     fp_id = osal_filp_open_read_only(img->file_name);  
-    //filp = filp_open(img->file_name, O_RDONLY, 0777);
     filp = (struct file *)osal_get_filp_struct(fp_id);
     if (IS_ERR(filp)) {
         CCCI_MSG_INF("ctl","open %s fail(%ld), try to open modem.img/DSP_ROM\n",
@@ -747,7 +659,7 @@ static int load_firmware_func(struct image_info *img)
 open_file:
     //get default modem&dsp image name (modem.img & DSP_ROM)
     snprintf(img->file_name,sizeof(img->file_name),
-			CONFIG_MODEM_FIRMWARE_PATH "%s",(img->idx?DSP_IMAGE_NAME:MOEDM_IMAGE_NAME));	
+			CONFIG_MODEM_FIRMWARE_PATH "%s",(img->type?DSP_IMAGE_NAME:MOEDM_IMAGE_NAME));	
 	
     CCCI_MSG_INF("ctl", "open %s \n",img->file_name);
     fp_id = osal_filp_open_read_only(img->file_name);
@@ -764,7 +676,7 @@ check_head:
     //only modem.img need check signature and cipher header
     //sign_check = false;
     sec_tail_length = 0;
-    if(img->idx == MD_INDEX) {
+    if(img->type == MD_INDEX) {
         //step1:check if need to signature
         //offset=signature_check(filp);
         
@@ -822,7 +734,7 @@ check_head:
 		#endif        
 	}
 	//dsp image check signature during uboot, and ccci not need check for dsp.
-	else if(img->idx == DSP_INDEX) {
+	else if(img->type == DSP_INDEX) {
 		ret=load_firmware(filp,img);
 		if(ret<0) {
    			CCCI_MSG_INF("ctl", "load_firmware for %s failed:ret=%d!\n",img->file_name,ret);
@@ -839,7 +751,11 @@ out:
 	return ret;
 }
 
-
+enum {
+	MD_DEBUG_REL_INFO_NOT_READY = 0,
+	MD_IS_DEBUG_VERSION,
+	MD_IS_RELEASE_VERSION
+};
 static int modem_is_debug_ver = MD_DEBUG_REL_INFO_NOT_READY;
 static void store_modem_dbg_rel_info(char *str)
 {
@@ -850,8 +766,6 @@ static void store_modem_dbg_rel_info(char *str)
 	else
 		modem_is_debug_ver = MD_IS_RELEASE_VERSION;
 }
-
-
 int is_modem_debug_ver(void)
 {
 	return modem_is_debug_ver;
@@ -893,8 +807,8 @@ int  ccci_load_firmware(unsigned int load_flag)
     	}
     }
 
-    pImg_info[MD_INDEX].idx = MD_INDEX;
-    pImg_info[DSP_INDEX].idx = DSP_INDEX;
+    pImg_info[MD_INDEX].type = MD_INDEX;
+    pImg_info[DSP_INDEX].type = DSP_INDEX;
     pImg_info[MD_INDEX].address = ccci_layout.modem_region_base;
     pImg_info[MD_INDEX].offset = pImg_info[DSP_INDEX].offset = 0;
     pImg_info[DSP_INDEX].address = ccci_layout.dsp_region_base;
@@ -1046,11 +960,11 @@ void ccci_md_wdt_notify_register(int_func_void_t funcp)
 	}
 }
 
-
 /* Notice this workaround, this is for hardware limitation
  * For MT6575 and MT6577, Edge interrupt will be loss if CPU is at shut down stage,
  * When system is resume, we check whether interrupt has been lost
  */
+
 static void recover_md_wdt_irq(void)
 {
 	#if 0
@@ -1127,16 +1041,6 @@ static void map_md_side_register(void)
 	ap_infra_sys_base = INFRA_SYS_CFG_BASE;
 	md_ccif_base = 0xF1020000; // MD CCIF Bas;
 }
-
-void get_md_mem_info(void *phy_addr, int *len)
-{
-	unsigned long addr;
-	//addr = (ccci_layout.modem_region_base + pImg_info[MD_INDEX].size + 0xFFFFF)&(~0xFFFFF);
-	addr = ccci_layout.modem_region_base;
-        *(unsigned long *)phy_addr = addr;
-	*len = (int)(ccci_layout.modem_region_base + ccci_layout.modem_region_len - addr);
-}
-
 
 void ungate_md(void)
 {
@@ -1250,30 +1154,6 @@ void gate_md(void)
 	first=0;
 }
 
-
-#ifndef android_bring_up_prepare
-//extern char sec_emmc_project(void);
-int sec_lib_version_check(void)
-{
-	int ret = 0;
-	/* Note here, must sync with sec lib, if ccci and sec has dependency change */
-	#define CURR_SEC_CCCI_SYNC_VER		(1)
-	int sec_lib_ver = sec_ccci_version_info();
-	if(sec_lib_ver != CURR_SEC_CCCI_SYNC_VER){
-		CCCI_MSG_INF("ctl", "sec lib for ccci mismatch! sec ver:%d, ccci:%d\n", sec_lib_ver, CURR_SEC_CCCI_SYNC_VER);
-		ret = -1;
-	}
-
-//	if(sec_emmc_project() == 0){
-//		CCCI_MSG_INF("ctl", "ccci using nand sec lib\n");
-//	} else {
-//		CCCI_MSG_INF("ctl", "ccci using emmc sec lib\n");
-//	}
-	return ret;
-}
-#endif
-
-
 int platform_init(void)
 {
 	int ret=0;
@@ -1326,27 +1206,9 @@ int platform_init(void)
 	CCCI_CTL_MSG("mdconfig_vir=0x%lx, ccif_vir=0x%lx, mdif_vir=0x%lx\n", 
 		mdconfig_base, ccif_base, mdif_base);
 	
-	//if ((ret=ccci_rpc_init()) !=0)
-	//	goto err_out0;
-	
 	if ((ret=md_dsp_irq_init()) != 0) 
 		goto err_out;
 
-	#ifndef android_bring_up_prepare  
-	if ((ret=sec_boot_init()) !=0) {
-		CCCI_MSG_INF("ctl", "sec_boot_init failed ret=%d\n",ret);
-		ret= -EIO;
-		goto err_out_isr;
-	}
-
-	if(sec_lib_version_check()!= 0) {
-		CCCI_MSG_INF("ctl", "sec lib version check error\n");
-		ret= -EIO;
-		goto err_out_isr;
-	}	
-	#endif
-
-    
 	goto out;
 	
 err_out_isr:
@@ -1407,7 +1269,7 @@ extern unsigned int sec_secro_md_get_data(unsigned char *buf, unsigned int offse
 extern unsigned int sec_secro_blk_sz(void);
 #endif
 
-unsigned int res_len = 0;
+
 
 
 void ccci_rpc_work_helper(int *p_pkt_num, RPC_PKT pkt[], RPC_BUF *p_rpc_buf, unsigned int tmp_data[])
@@ -1701,7 +1563,7 @@ void ccci_rpc_work_helper(int *p_pkt_num, RPC_PKT pkt[], RPC_BUF *p_rpc_buf, uns
 	case IPC_RPC_GET_TDD_ADC_NUM_OP:
                 {
                 int get_num = 0;
-		char * name = NULL;
+		unsigned char * name = NULL;
 		unsigned int length = 0;	
 
 		if(pkt_num < 2)	{
@@ -1809,75 +1671,6 @@ void ccci_rpc_work_helper(int *p_pkt_num, RPC_PKT pkt[], RPC_BUF *p_rpc_buf, uns
 			pkt[pkt_num++].buf = (void*) &tmp_data[0];
 			break;
         }
-	
-	case IPC_RPC_GET_EINT_ATTR_OP:
-	{
-		char * eint_name = NULL;
-		unsigned int name_len = 0;
-		unsigned int type = 0;
-		char * res = NULL;
-		//unsigned int res_len = 0;
-		int ret = 0;
-
-		if(pkt_num < 3)	{
-			CCCI_MSG_INF("rpc", "invalid parameter for [0x%X]: pkt_num=%d!\n", 
-                                p_rpc_buf->op_id, pkt_num);
-			tmp_data[0] = FS_PARAM_ERROR;
-			goto err3;
-		}
-
-    if((name_len = pkt[0].len) < 1) {
-			CCCI_MSG_INF("rpc", "invalid parameter for [0x%X]: pkt_num=%d, name_len=%d!\n", 
-				p_rpc_buf->op_id, pkt_num, name_len);
-		tmp_data[0] = FS_PARAM_ERROR;
-			goto err3;
-		}
-
-		eint_name = kmalloc(name_len, GFP_KERNEL);
-		if(eint_name == NULL) {
-			CCCI_MSG_INF("rpc", "Fail alloc Mem for [0x%X]!\n", p_rpc_buf->op_id);
-			tmp_data[0] = FS_ERROR_RESERVED;
-			goto err3;
-		}
-		else {
-			memcpy(eint_name, (unsigned char*)(pkt[0].buf), name_len);
-		}
-						
-		type = *(unsigned int*)(pkt[2].buf);
-		res = p_rpc_buf->buf + 4*sizeof(unsigned int);
-		ret = get_eint_attr(eint_name, name_len, type, res, &res_len);
-		if (ret == 0) {
-			tmp_data[0] = ret;
-			
-			pkt_num = 0;
-			pkt[pkt_num].len = sizeof(unsigned int);
-			pkt[pkt_num++].buf = (void*) &tmp_data[0];
-			pkt[pkt_num].len = res_len;
-			pkt[pkt_num++].buf = (void*) res;
-			
-			CCCI_MSG_INF("rpc", "[0x%08X] OK: name:%s, len:%d, type:%d, res:%d, res_len:%d\n",
-				p_rpc_buf->op_id, eint_name, name_len, type, *res, res_len);	
-			kfree(eint_name);
-		}
-		else {
-			tmp_data[0] = ret;
-			CCCI_MSG_INF("rpc", "[0x%08X] fail: name:%s, len:%d, type:%d, ret:%d\n", p_rpc_buf->op_id,
-				eint_name, name_len, type, ret);	
-			
-			kfree(eint_name);
-			goto err3;
-		}
-		break;
-		
-		err3:
-			pkt_num = 0;
-			pkt[pkt_num].len = sizeof(unsigned int);
-			pkt[pkt_num++].buf = (void*) &tmp_data[0];
-			pkt[pkt_num].len = sizeof(unsigned int);
-			pkt[pkt_num++].buf = (void*) &tmp_data[0];
-			break;
-	}
-	
 	default:
 		CCCI_MSG_INF("rpc", "Unknow Operation ID (0x%x)\n", p_rpc_buf->op_id);			
 		tmp_data[0] = FS_NO_OP;
@@ -1906,7 +1699,6 @@ EXPORT_SYMBOL(is_modem_debug_ver);
 EXPORT_SYMBOL(ungate_md);
 EXPORT_SYMBOL(gate_md);
 EXPORT_SYMBOL(md_img_vir);
-EXPORT_SYMBOL(md_rgu_base);
 EXPORT_SYMBOL(enable_emi_mpu_protection);
 EXPORT_SYMBOL(platform_deinit);
 EXPORT_SYMBOL(platform_init);
@@ -1915,8 +1707,6 @@ EXPORT_SYMBOL(ccci_aed_cb_register);
 EXPORT_SYMBOL(ccci_msg_mask);
 EXPORT_SYMBOL(ccci_rpc_work_helper);
 EXPORT_SYMBOL(platform_set_runtime_data);
-EXPORT_SYMBOL(get_md_mem_info);
-
 
 module_init(ccci_mach_init);
 module_exit(ccci_mach_exit);

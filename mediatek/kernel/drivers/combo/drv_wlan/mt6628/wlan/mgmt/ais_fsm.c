@@ -12,10 +12,6 @@
 
 /*
 ** $Log: ais_fsm.c $
-**
-** 11 29 2012 cp.wu
-** [ALPS00403868] WIFI«ÝÉó?¬y?¤j
-** sync with MT6620 logic to not retry connection when being disconnected by the remote peer.
  *
  * 04 20 2012 cp.wu
  * [WCXRP00000913] [MT6620 Wi-Fi] create repository of source code dedicated for MT6620 E6 ASIC
@@ -949,6 +945,8 @@
 */
 #define AIS_ROAMING_CONNECTION_TRIAL_LIMIT  2
 
+#define CTIA_MAGIC_SSID                     "ctia_test_only_*#*#3646633#*#*"
+#define CTIA_MAGIC_SSID_LEN                 30
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************
@@ -1015,6 +1013,7 @@ aisInitializeConnectionSettings (
     P_CONNECTION_SETTINGS_T prConnSettings;
     UINT_8 aucAnyBSSID[] = BC_BSSID;
     UINT_8 aucZeroMacAddr[] = NULL_MAC_ADDR;
+    int i = 0;
 
     prConnSettings = &(prAdapter->rWifiVar.rConnSettings);
 
@@ -1077,6 +1076,18 @@ aisInitializeConnectionSettings (
     /* Set default bandwidth modes */
     prConnSettings->uc2G4BandwidthMode = CONFIG_BW_20M;
     prConnSettings->uc5GBandwidthMode = CONFIG_BW_20_40M;
+
+    prConnSettings->rRsnInfo.ucElemId = 0x30;
+    prConnSettings->rRsnInfo.u2Version = 0x0001;
+    prConnSettings->rRsnInfo.u4GroupKeyCipherSuite = 0;
+    prConnSettings->rRsnInfo.u4PairwiseKeyCipherSuiteCount = 0;
+    for (i = 0; i < MAX_NUM_SUPPORTED_CIPHER_SUITES; i++)
+        prConnSettings->rRsnInfo.au4PairwiseKeyCipherSuite[i] = 0;
+    prConnSettings->rRsnInfo.u4AuthKeyMgtSuiteCount = 0;
+    for (i = 0; i < MAX_NUM_SUPPORTED_AKM_SUITES; i++)
+        prConnSettings->rRsnInfo.au4AuthKeyMgtSuite[i] = 0;
+    prConnSettings->rRsnInfo.u2RsnCap = 0;
+    prConnSettings->rRsnInfo.fgRsnCapPresent = FALSE;
 
     return;
 } /* end of aisFsmInitializeConnectionSettings() */
@@ -1617,6 +1628,11 @@ aisFsmStateAbort_JOIN (
         return;
     }
 
+    kalIndicateStatusAndComplete(prAdapter->prGlueInfo,
+             WLAN_STATUS_CONNECT_INDICATION,
+             NULL,
+             0);
+
     prJoinAbortMsg->rMsgHdr.eMsgId = MID_AIS_SAA_FSM_ABORT;
     prJoinAbortMsg->ucSeqNum = prAisFsmInfo->ucSeqNumOfReqMsg;
     prJoinAbortMsg->prStaRec = prAisFsmInfo->prTargetStaRec;
@@ -1825,8 +1841,9 @@ aisFsmSteps (
             prAisReq = aisFsmGetNextRequest(prAdapter);
 
             if(prAisReq == NULL || prAisReq->eReqType == AIS_REQUEST_RECONNECT) {
-                //if (prConnSettings->fgIsConnReqIssued) {
-		if (prConnSettings->fgIsConnReqIssued == TRUE && prConnSettings->fgIsDisconnectedByNonRequest == FALSE) {
+                if (prConnSettings->fgIsConnReqIssued == TRUE && 
+                        prConnSettings->fgIsDisconnectedByNonRequest == FALSE) {
+
                     prAisFsmInfo->fgTryScan = TRUE;
 
                     SET_NET_ACTIVE(prAdapter, NETWORK_TYPE_AIS_INDEX);
@@ -2022,12 +2039,12 @@ aisFsmSteps (
                  * CASE III: Normal case, we can't find other candidate to roam
                  * out, so only the current AP will be matched.
                  *
-                 * CASE IV: Avoid roaming between the same BSSID
+                 * CASE VI: Timestamp of the current AP might be reset
                  */
-                 if ((!prBssDesc) || /* CASE I */
-                 (prBssDesc->eBSSType != BSS_TYPE_INFRASTRUCTURE) || /* CASE II */
-                 (prBssDesc->fgIsConnected) || /* CASE III */
-                 (EQUAL_MAC_ADDR(prBssDesc->aucBSSID, prAisBssInfo->aucBSSID)) /* CASE IV */){
+                if ((!prBssDesc) || /* CASE I */
+                    (prBssDesc->eBSSType != BSS_TYPE_INFRASTRUCTURE) || /* CASE II */
+                    (prBssDesc->fgIsConnected) || /* CASE III */
+                    (EQUAL_MAC_ADDR(prBssDesc->aucBSSID, prAisBssInfo->aucBSSID)) /* CASE VI */) {
 #if DBG
                     if ((prBssDesc) &&
                         (prBssDesc->fgIsConnected)) {
@@ -2066,7 +2083,7 @@ aisFsmSteps (
 
         case AIS_STATE_WAIT_FOR_NEXT_SCAN:
 
-            DBGLOG(AIS, LOUD, ("SCAN: Idle Begin - Current Time = %ld\n", kalGetTimeTick()));
+            DBGLOG(AIS, LOUD, ("SCAN: Idle Begin - Current Time = %u\n", kalGetTimeTick()));
 
             cnmTimerStartTimer(prAdapter,
                     &prAisFsmInfo->rBGScanTimer,
@@ -2306,7 +2323,7 @@ aisFsmRunEventScanDone (
     ASSERT(prAdapter);
     ASSERT(prMsgHdr);
 
-    DBGLOG(AIS, LOUD, ("EVENT-SCAN DONE: Current Time = %ld\n", kalGetTimeTick()));
+    DBGLOG(AIS, LOUD, ("EVENT-SCAN DONE: Current Time = %u\n", kalGetTimeTick()));
 
     prAisFsmInfo = &(prAdapter->rWifiVar.rAisFsmInfo);
     prConnSettings = &(prAdapter->rWifiVar.rConnSettings);
@@ -2417,7 +2434,8 @@ aisFsmRunEventAbort (
 #endif
 
     //4 <2> clear previous pending connection request and insert new one
-        if(ucReasonOfDisconnect == DISCONNECT_REASON_CODE_DEAUTHENTICATED || ucReasonOfDisconnect == DISCONNECT_REASON_CODE_DISASSOCIATED) {
+    if(ucReasonOfDisconnect == DISCONNECT_REASON_CODE_DEAUTHENTICATED 
+            || ucReasonOfDisconnect == DISCONNECT_REASON_CODE_DISASSOCIATED) {
         prConnSettings->fgIsDisconnectedByNonRequest = TRUE;
     }
     else {
@@ -2659,6 +2677,15 @@ aisFsmRunEventJoinComplete (
                     //4 <1.6> Indicate Connected Event to Host immediately.
                     /* Require BSSID, Association ID, Beacon Interval.. from AIS_BSS_INFO_T */
                     aisIndicationOfMediaStateToHost(prAdapter, PARAM_MEDIA_STATE_CONNECTED, FALSE);
+					
+                    //add for ctia mode
+                    {
+                        UINT_8 aucP2pSsid[] = CTIA_MAGIC_SSID;
+
+                        if (EQUAL_SSID(aucP2pSsid, CTIA_MAGIC_SSID_LEN, prAisBssInfo->aucSSID, prAisBssInfo->ucSSIDLen)) {
+                            nicEnterCtiaMode(prAdapter, TRUE, FALSE);
+                        }
+                    }
                 }
 
 #if CFG_SUPPORT_ROAMING
@@ -2706,12 +2733,18 @@ aisFsmRunEventJoinComplete (
 #endif /* CFG_SUPPORT_ROAMING */
   	                }
                     else {
-                        /* 4. send reconnect request */
-                        aisFsmInsertRequest(prAdapter, AIS_REQUEST_RECONNECT);
+                        // abort connection trial
+                        prAdapter->rWifiVar.rConnSettings.fgIsConnReqIssued = FALSE;
 
+                        kalIndicateStatusAndComplete(prAdapter->prGlueInfo,
+                                 WLAN_STATUS_CONNECT_INDICATION,
+                                 NULL,
+                                 0);
+                      
                         eNextState = AIS_STATE_IDLE;
                     }
                 }
+
             }
         }
 #if DBG
@@ -3179,9 +3212,6 @@ aisPostponedEventOfDisconnTimeout (
 
     //4 <2> Remove pending connection request
     aisFsmIsRequestPending(prAdapter, AIS_REQUEST_RECONNECT, TRUE);
-
-    //prConnSettings = &(prAdapter->rWifiVar.rConnSettings);
-    //prConnSettings->fgIsConnReqIssued = FALSE;
     prConnSettings->fgIsDisconnectedByNonRequest = TRUE;
 
     //4 <3> Indicate Disconnected Event to Host immediately.
@@ -3699,6 +3729,14 @@ aisFsmDisconnect (
 
     //4 <3> Unset the fgIsConnected flag of BSS_DESC_T and send Deauth if needed.
     if (PARAM_MEDIA_STATE_CONNECTED == prAisBssInfo->eConnectionState) {
+        //add for ctia mode
+        {
+            UINT_8 aucP2pSsid[] = CTIA_MAGIC_SSID;
+
+            if (EQUAL_SSID(aucP2pSsid, CTIA_MAGIC_SSID_LEN, prAisBssInfo->aucSSID, prAisBssInfo->ucSSIDLen)) {
+                nicEnterCtiaMode(prAdapter, FALSE, FALSE);
+            }
+        }
 
         if (prAisBssInfo->ucReasonOfDisconnect == DISCONNECT_REASON_CODE_RADIO_LOST) {
             scanRemoveBssDescByBssid(prAdapter, prAisBssInfo->aucBSSID);
@@ -3792,7 +3830,7 @@ aisFsmRunEventBGSleepTimeOut (
 
     switch (prAisFsmInfo->eCurrentState) {
     case AIS_STATE_WAIT_FOR_NEXT_SCAN:
-        DBGLOG(AIS, LOUD, ("EVENT - SCAN TIMER: Idle End - Current Time = %ld\n", kalGetTimeTick()));
+        DBGLOG(AIS, LOUD, ("EVENT - SCAN TIMER: Idle End - Current Time = %u\n", kalGetTimeTick()));
 
         eNextState = AIS_STATE_LOOKING_FOR;
 
@@ -3901,7 +3939,8 @@ aisFsmRunEventJoinTimeout (
 
         /* 2. Increase Join Failure Count */
         prAisFsmInfo->prTargetStaRec->ucJoinFailureCount++;
-
+// For JB nl802.11
+#if 0
         if(prAisFsmInfo->prTargetStaRec->ucJoinFailureCount < JOIN_MAX_RETRY_FAILURE_COUNT) {
             /* 3.1 Retreat to AIS_STATE_SEARCH state for next try */
             eNextState = AIS_STATE_SEARCH;
@@ -3910,6 +3949,8 @@ aisFsmRunEventJoinTimeout (
             /* 3.2 Retreat to AIS_STATE_WAIT_FOR_NEXT_SCAN state for next try */
             eNextState = AIS_STATE_WAIT_FOR_NEXT_SCAN;
         }
+#endif
+        eNextState = AIS_STATE_IDLE;
         break;
 
     case AIS_STATE_NORMAL_TR:

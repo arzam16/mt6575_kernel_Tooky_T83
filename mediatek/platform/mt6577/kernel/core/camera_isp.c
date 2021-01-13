@@ -31,7 +31,7 @@
 //
 #include <mach/mt_clock_manager.h>
 #include <mach/mt_pqparam.h>
-#include "../drivers/video/disp_drv.h"
+#include "../drivers/videox/disp_drv.h"
 
 /*******************************************************************************
 *
@@ -104,6 +104,7 @@ typedef bool            MBOOL;
 #define ISP_TASKLET_TIMEOUT         500 //ms
 #define ISP_STNR_TIMEOUT_BASE       10  //ms
 #define ISP_STNR_TIMEOUT_COUNT_MIN  2
+
 //
 #define ISP_INTEN_AFDONE_BIT    (6)
 /*******************************************************************************
@@ -527,6 +528,7 @@ static MINT32 mt_isp_dump_reg(void)
     //
     //spin_unlock_irq(&IspSpinlock[ISP_SPINLOCK_IRQ]);
     //
+
     LOG_DBG("End" );
 
     return ret;
@@ -640,7 +642,8 @@ static MINT32 mt_isp_read_reg(mt_isp_reg_io_t *preg_io)
     }
     //
     for (i = 0; i < preg_io->count; i++) {
-        preg[i].val = ISP_RD32(ISP_BASE + preg[i].addr);
+            preg[i].val = ISP_RD32(ISP_BASE + preg[i].addr);
+
         if (IspDebugInfo.LogMask & ISP_DBG_READ_REG) {
             LOG_MSG("addr(0x%08X),val(0x%08X)",
                     (MUINT32)(ISP_BASE + preg[i].addr),
@@ -678,7 +681,7 @@ static MINT32 mt_isp_write_reg_to_hw(
     {
         ISP_WR32(ISP_BASE + preg[i].addr, preg[i].val);
     }
-    //
+   //
     return ret;
 }
 
@@ -1042,7 +1045,7 @@ static MINT32 mt_isp_wait_irq(mt_isp_wait_irq_t* pWaitIrq)
                 irq_status_wait_irq,
                 pWaitIrq->timeout);
         mt_isp_dump_reg();
-        return -EAGAIN;
+       return -EAGAIN;
     }
     //
     if(IspDebugInfo.LogMask & ISP_DBG_INT)

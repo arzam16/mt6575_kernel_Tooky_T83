@@ -552,9 +552,13 @@ static int mtk_cpufreq_keep_max_freq(unsigned int freq_old, unsigned int freq_ne
 {
     if (cpufreq_usb_limit)
     {
+        //                                                                                                
+        #if 0
         /* if usb connected, keep maximum frequency */
         if ((DRV_Reg32(UPLL_CON0) & 0x1) == 0)
-            return 1;
+            return 1;                                                                                              
+        #endif
+        //                                                                                                
     }
 
     if (mtk_cpufreq_pause)
@@ -715,6 +719,7 @@ static int mtk_cpufreq_target(struct cpufreq_policy *policy, unsigned int target
     {
         if (freqs.new > DVFS_F2 && num_online_cpus() == 1)
             freqs.new = DVFS_F2;
+
         if (cpufreq_gov_dbs_get_sum_load() < cpufreq_turbo_threshold)
         {
             cpufreq_turbo_count = 0;
@@ -902,8 +907,7 @@ void mtk_cpufreq_early_suspend(struct early_suspend *h)
 {
     if (!g_enable_dvfs)
         return;
-  
-  struct cpufreq_policy *policy;
+    struct cpufreq_policy *policy;
 
     #ifndef MTK_DVFS_RANDOM_TEST
 
@@ -915,9 +919,6 @@ void mtk_cpufreq_early_suspend(struct early_suspend *h)
     g_is_sreen_off = true;
     
     if (get_chip_ver() >= CHIP_6575_E2 && get_chip_ver() < CHIP_6577_E1)
-        g_limited_min_freq = DVFS_F7;
-    
-    if (get_chip_ver() == CHIP_6575_E2)
         g_limited_min_freq = DVFS_F8;    
 
     cpufreq_state_set(0);
@@ -1091,6 +1092,12 @@ int cpufreq_state_set(int enabled)
     return 0;
 }
 EXPORT_SYMBOL(cpufreq_state_set);
+
+int mt_cpufreq_state_set(int enabled)
+{
+    return cpufreq_state_set(enabled);
+}
+EXPORT_SYMBOL(mt_cpufreq_state_set);
 
 /***************************
 * show current DVFS stauts
@@ -1701,6 +1708,7 @@ static void __exit cpufreq_exit(void)
     cpufreq_unregister_driver(&mtk_cpufreq_driver);
 }
 module_exit(cpufreq_exit);
+
 module_param(cpufreq_turbo_threshold, int, 0644);
 module_param(cpufreq_turbo_max_count, int, 0644);
 

@@ -353,4 +353,12 @@ typedef unsigned long long	llu;
 #define FAT_TAG "FAT"
 #include <linux/sched.h>
 
+int get_fat_dbg(void) ;
+#define fat_printk(level, tag, fmt, args...) do {\
+      if(get_fat_dbg()) {\
+      	xlog_printk( level, tag, fmt, ##args) ;\
+      }\
+} while(0)
+
+
 #endif /* !_FAT_H */

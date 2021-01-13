@@ -34,51 +34,14 @@
 #include <linux/hwmsen_helper.h>
 #include <linux/kernel.h>
 
-#ifdef MT6516
-#include <mach/mt6516_devs.h>
-#include <mach/mt6516_typedefs.h>
-#include <mach/mt6516_gpio.h>
-#include <mach/mt6516_pll.h>
-#endif
+#include <mach/mt_typedefs.h>
+#include <mach/mt_gpio.h>
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_boot.h>
 
-#ifdef MT6573
-#include <mach/mt6573_devs.h>
-#include <mach/mt6573_typedefs.h>
-#include <mach/mt6573_gpio.h>
-#include <mach/mt6573_pll.h>
-#endif
-
-#ifdef MT6575
-#include <mach/mt6575_devs.h>
-#include <mach/mt6575_typedefs.h>
-#include <mach/mt6575_gpio.h>
-#include <mach/mt6575_pm_ldo.h>
-#include <mach/mt6575_boot.h>
-#endif
-
-#ifdef MT6577
-#include <mach/mt6577_devs.h>
-#include <mach/mt6577_typedefs.h>
-#include <mach/mt6577_gpio.h>
-#include <mach/mt6577_pm_ldo.h>
-#include <mach/mt6577_boot.h>
-#endif
 /*-------------------------MT6516&MT6573 define-------------------------------*/
-#ifdef MT6516
-#define POWER_NONE_MACRO MT6516_POWER_NONE
-#endif
 
-#ifdef MT6573
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-
-#ifdef MT6575
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
-
-#ifdef MT6577
-#define POWER_NONE_MACRO MT65XX_POWER_NONE
-#endif
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_L3G4200D	3000
 /*----------------------------------------------------------------------------*/
@@ -1332,7 +1295,7 @@ static int l3g4200d_i2c_probe(struct i2c_client *client, const struct i2c_device
 	
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
-	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
+	obj->early_drv.level    = EARLY_SUSPEND_LEVEL_STOP_DRAWING - 2,
 	obj->early_drv.suspend  = l3g4200d_early_suspend,
 	obj->early_drv.resume   = l3g4200d_late_resume,    
 	register_early_suspend(&obj->early_drv);
@@ -1419,8 +1382,9 @@ static struct platform_driver l3g4200d_gyro_driver = {
 /*----------------------------------------------------------------------------*/
 static int __init l3g4200d_init(void)
 {
-	GYRO_FUN();
-	i2c_register_board_info(0, &i2c_l3g4200d, 1);
+	struct gyro_hw *hw = get_cust_gyro_hw();
+	GYRO_LOG("%s: i2c_number=%d\n", __func__,hw->i2c_num); 
+	i2c_register_board_info(hw->i2c_num, &i2c_l3g4200d, 1);
 	if(platform_driver_register(&l3g4200d_gyro_driver))
 	{
 		GYRO_ERR("failed to register driver");

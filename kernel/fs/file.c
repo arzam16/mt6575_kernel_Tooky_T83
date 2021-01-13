@@ -22,11 +22,11 @@
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 
-/* #define FD_OVER_CHECK */
+#define FD_OVER_CHECK
 #ifdef FD_OVER_CHECK
 #include <linux/xlog.h>
 #define FS_TAG "FS_TAG"
-#define fd_threshold  1024
+/*#define fd_threshold  1024 */
 #endif
 
 struct fdtable_defer {
@@ -436,6 +436,7 @@ struct files_struct init_files = {
 // Declare a radix tree to construct fd set tree
 static RADIX_TREE(over_fd_tree, GFP_KERNEL);
 static LIST_HEAD(fd_listhead);
+static DEFINE_MUTEX(over_fd_mutex);
 struct over_fd_entry
 {
 	int num_of_fd;
@@ -459,8 +460,9 @@ long get_file_name_from_fd(struct files_struct *files, int fd, int procid, struc
         spin_unlock(&files->file_lock);     
         return (long)NULL;
 	}  
-	memcpy(&path, &file->f_path, sizeof(struct path)); 
-	path_get(&file->f_path); 
+	path_get(&file->f_path);
+	path = file->f_path;
+	fput(file);
 	spin_unlock(&files->file_lock);  
 	tmp = (char *)__get_free_page(GFP_TEMPORARY);  
 	if (!tmp) {     
@@ -486,10 +488,12 @@ unsigned int get_hash(char *name)
 {
     return full_name_hash(name, strlen(name));
 }
+
 static struct over_fd_entry* fd_lookup(unsigned int hash)
 {
     return radix_tree_lookup(&over_fd_tree, hash);
 }
+
 static void fd_insert(struct over_fd_entry *entry)
 {	
 	unsigned int hash = get_hash(entry->name);
@@ -513,6 +517,50 @@ static void fd_delete(unsigned int hash)
 {
 	radix_tree_delete(&over_fd_tree, hash);
 }
+
+void fd_show_open_files(pid_t pid, struct files_struct *files, struct fdtable *fdt)
+{
+    int i=0;
+	struct over_fd_entry *lentry;
+	long result;
+	int num_of_entry;
+	int sum_fds_of_pid = 0;
+    
+    mutex_lock(&over_fd_mutex);
+    //printk(KERN_ERR "(PID:%d)Max FD Number:%d", current->pid, fdt->max_fds);
+    for(i=0; i<fdt->max_fds; i++) {
+        struct over_fd_entry *entry = (struct over_fd_entry*)kzalloc(sizeof(struct over_fd_entry), GFP_KERNEL);
+    	if(!entry) {
+    		xlog_printk(ANDROID_LOG_INFO, FS_TAG, "(PID:%d)Empty FD:%d", pid, i);
+    	}
+    	else {
+    		memset(entry->name, 0, sizeof entry->name);
+    		result = get_file_name_from_fd(files, i, pid, entry);
+    		if(result==1) {	
+    	    	fd_insert(entry);
+    	    	sum_fds_of_pid++;
+    		}
+    	}
+    }
+    for(;;) {
+    	if(list_empty(&fd_listhead)) {
+        	break;
+    	}
+    	lentry = list_entry((&fd_listhead)->next, struct over_fd_entry, fd_link);
+    	num_of_entry = lentry->num_of_fd;
+    	if(lentry != NULL && lentry->name!=NULL)
+    		xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d fileName:%s Num:%d)\n", pid, lentry->name, num_of_entry);
+    	else
+    		xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d fileName:%s Num:%d)\n", pid, "NULL", num_of_entry);
+    	list_del((&fd_listhead)->next);
+    	fd_delete(lentry->hash);
+    	kfree(lentry);
+    }
+    if(sum_fds_of_pid) {
+        xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d totalFDs:%d)\n", pid, sum_fds_of_pid);    
+    }
+    mutex_unlock(&over_fd_mutex);
+}
 #endif
 
 /*
@@ -524,13 +572,6 @@ int alloc_fd(unsigned start, unsigned flags)
 	unsigned int fd;
 	int error;
 	struct fdtable *fdt;
-#ifdef FD_OVER_CHECK
-	int i=0;
-	struct over_fd_entry *lentry;
-	long result;
-	int num_of_entry;
-	static DEFINE_MUTEX(over_fd_mutex);
-#endif
 
 	spin_lock(&files->file_lock);
 repeat:
@@ -573,38 +614,14 @@ repeat:
 out:
 	spin_unlock(&files->file_lock);
 #ifdef FD_OVER_CHECK
-	if(fd>=fd_threshold) {
-		// Initialize
-		mutex_lock(&over_fd_mutex);
-		//printk(KERN_ERR "(PID:%d)Max FD Number:%d", current->pid, fdt->max_fds);
-		for(i=0; i<fdt->max_fds; i++) {
-		    struct over_fd_entry *entry = (struct over_fd_entry*)kzalloc(sizeof(struct over_fd_entry), GFP_KERNEL);
-			if(!entry) {
-				xlog_printk(ANDROID_LOG_INFO, FS_TAG, "(PID:%d)Empty FD:%d", current->pid, i);
-			}
-			else {
-				memset(entry->name, 0, sizeof entry->name);
-				result = get_file_name_from_fd(files, i, current->pid, entry);
-				if(result==1) {	
-			    	fd_insert(entry);
-				}
-			}
-		}
-		for(;;) {
-			if(list_empty(&fd_listhead)) {
-		    	break;
-			}
-			lentry = list_entry((&fd_listhead)->next, struct over_fd_entry, fd_link);
-			num_of_entry = lentry->num_of_fd;
-			if(lentry != NULL && lentry->name!=NULL)
-				xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d ProcName:%s Num:%d)\n", current->pid, lentry->name, num_of_entry);
-			else
-				xlog_printk(ANDROID_LOG_INFO, FS_TAG, "OverAllocFDError(PID:%d ProcName:%s Num:%d)\n", current->pid, "NULL", num_of_entry);
-			list_del((&fd_listhead)->next);
-			fd_delete(lentry->hash);
-			kfree(lentry);
-		}	
-		mutex_unlock(&over_fd_mutex);
+	if(error == -EMFILE) {
+	    static int dump_current_open_files = 0;
+	    if(!dump_current_open_files && 
+	        strcmp(current->comm, "Backbone")) { /*add Backbone into FD white list for skype*/
+	        dump_current_open_files = 0x1;
+	        xlog_printk(ANDROID_LOG_INFO, FS_TAG, "(PID:%d)fd over RLIMIT_NOFILE:%d", current->pid, rlimit(RLIMIT_NOFILE));
+	        fd_show_open_files(current->pid, files, fdt);
+        }
 	}
 #endif
 	return error;

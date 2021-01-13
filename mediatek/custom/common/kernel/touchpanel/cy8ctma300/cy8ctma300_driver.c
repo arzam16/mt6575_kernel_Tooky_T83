@@ -19,17 +19,23 @@
 #include <linux/rtpm_prio.h>
 
 #include "tpd_custom_cy8ctma300.h"
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_boot.h>
+#include <mach/mt_gpio.h>
 #include "tpd.h"
 #include <cust_eint.h>
 
 #ifndef TPD_NO_GPIO 
 #include "cust_gpio_usage.h"
 #endif
+//#define POLL_MODE
 
 #define CHR_CON0	(0xF7000000+0x2FA00)
 extern struct tpd_device *tpd;
 extern int tpd_show_version;
 extern int tpd_debuglog;
+extern int tpd_em_log;
 extern int tpd_register_flag;
 extern int tpd_load_status;
 
@@ -54,31 +60,27 @@ static int tpd_def_calmat_local[8] = TPD_CALIBRATION_MATRIX;
 static void tpd_eint_interrupt_handler(void);
 static int touch_event_handler(void *unused);
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
 static int tpd_i2c_remove(struct i2c_client *client);
-extern void mt65xx_eint_unmask(unsigned int line);
-extern void mt65xx_eint_mask(unsigned int line);
-extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
-extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
-extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
-                                     kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
-                                     kal_bool auto_umask);
+extern void i2c_del_driver(struct i2c_driver *);
 
 static struct i2c_client *i2c_client = NULL;
 static const struct i2c_device_id tpd_i2c_id[] = {{"mtk-tpd",0},{}};
 static unsigned short force[] = {0, 0xce, I2C_CLIENT_END,I2C_CLIENT_END};
 static const unsigned short * const forces[] = { force, NULL };
-static struct i2c_client_address_data addr_data = { .forces = forces,};
+//static struct i2c_client_address_data addr_data = { .forces = forces,};
+ static struct i2c_board_info __initdata i2c_tpd={ I2C_BOARD_INFO("mtk-tpd", (0xce>>1))};
 struct i2c_driver tpd_i2c_driver = {                       
     .probe = tpd_i2c_probe,                                   
     .remove = tpd_i2c_remove,                           
     .detect = tpd_i2c_detect,                           
     .driver.name = "mtk-tpd", 
     .id_table = tpd_i2c_id,                             
-    .address_data = &addr_data,                        
+    //.address_data = &addr_data,      
+       .address_list = (const unsigned short*) forces,                   
 }; 
 
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) {
+static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info){
     strcpy(info->type, "mtk-tpd");
     return 0;
 }
@@ -87,15 +89,31 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     int err = 0;
     char buffer[2];
     int status=0;
-    i2c_client = client;    
-    
     #ifdef TPD_NO_GPIO
-    u16 temp;
-    temp = *(volatile u16 *) TPD_RESET_PIN_ADDR;
-    temp = temp | 0x40;
-    *(volatile u16 *) TPD_RESET_PIN_ADDR = temp;
+    u32 temp;
+    
+    temp = *(volatile u32 *) TPD_GPIO_GPO_ADDR;
+    //temp = temp | 0x40;
+    temp = temp |(1<<16) ;
+    temp = temp |(1<<17);
+    //temp = (temp | 1<<16);
+    //mt65xx_reg_sync_write(TPD_GPIO_GPO_ADDR, temp);
+    //*(volatile u32 *) TPD_GPIO_GPO_ADDR = temp;
+    printk("TPD_GPIO_GPO_ADDR:0x%x\n", *(volatile u32 *) TPD_GPIO_GPO_ADDR);
+	
+    temp = *(volatile u32 *) TPD_GPIO_OE_ADDR;
+    //temp = temp | 0x40;
+    temp = temp |(1<<16) ;
+    temp = temp |(1<<17);
+	//temp = (temp | 1<<16) ;
+	//mt65xx_reg_sync_write(TPD_GPIO_OE_ADDR, temp);
+   // *(volatile u32 *) TPD_GPIO_OE_ADDR = temp;
+    printk("TPD_GPIO_OE_ADDR:0x%x\n", *(volatile u32 *) TPD_GPIO_OE_ADDR);
     #endif
     
+    i2c_client = client;    
+    TPD_DMESG("[mtk-tpd], cy8ctma300 tpd_i2c_probe ++++\n");
+	
     #ifndef TPD_NO_GPIO 
     mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
     mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
@@ -120,8 +138,14 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     #endif 
 
     msleep(50);
+   // buffer[0]=0x00;
+   // i2c_client->ext_flag = I2C_WR_FLAG;
+   // status=i2c_master_send(i2c_client ,buffer, 0x101);
+   TPD_DMESG("1...........\n");
     status = i2c_smbus_read_i2c_block_data(i2c_client, 0x00, 1, &(buffer[0]));
-    if(status<0) {
+    if(status<0) 
+    {
+            TPD_DMESG("fwq read error\n");
 		TPD_DMESG("[mtk-tpd], cy8ctma300 tpd_i2c_probe failed!!\n");
 		status = i2c_smbus_read_i2c_block_data(i2c_client, 0x00, 1, &(buffer[0]));
 		if(status<0) {
@@ -129,13 +153,20 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
 			return status;
 		}
     }
+    TPD_DMESG("fwq buffer=%x \n",buffer[0]);
 
-		TPD_DMESG("[mtk-tpd], cy8ctma300 tpd_i2c_probe success!!\n");		
-		tpd_load_status = 1;
+    TPD_DMESG("[mtk-tpd], cy8ctma300 tpd_i2c_probe success!!\n");		
+    tpd_load_status = 1;
         
-    if ((buffer[0] & 0x70) != 0x00) {
+    if ((buffer[0] & 0x70) != 0x00) 
+    {
         buffer[0] = 0x00; // switch to operation mode
+       	
         i2c_smbus_write_i2c_block_data(i2c_client, 0x00, 1, &(buffer[0]));
+        if(status < 0)
+	 {
+	    TPD_DMESG("fwq write error\n");
+	 }
         msleep(50);
     }
 
@@ -143,23 +174,29 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     if (IS_ERR(thread)) { 
         err = PTR_ERR(thread);
         TPD_DMESG(TPD_DEVICE " failed to create kernel thread: %d\n", err);
-    }
-    
-    mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
-    mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
-    mt65xx_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_EN, CUST_EINT_TOUCH_PANEL_POLARITY, tpd_eint_interrupt_handler, 1);
-    mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
-    
+    }    
+#ifndef POLL_MODE //mt6575t fpga debug 0: enable polling mode
+    //mt_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
+    //mt_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_DEBOUNCE_DISABLE);
+    mt_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE, tpd_eint_interrupt_handler, 1);
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+    TPD_DMESG("EINT num=%d\n",CUST_EINT_TOUCH_PANEL_NUM);
+#endif 
+	TPD_DMESG("[mtk-tpd], cy8ctma300 tpd_i2c_probe ----\n");
+
     return 0;
 }
 
 void tpd_eint_interrupt_handler(void) { 
-	if(tpd_debuglog==1) TPD_DMESG("[mtk-tpd], %s\n", __FUNCTION__);
+//	if(tpd_debuglog==1) TPD_DMESG("[mtk-tpd], %s\n", __FUNCTION__);
+	if(1) TPD_DMESG("[mtk-tpd], %s\n", __FUNCTION__);
     TPD_DEBUG_PRINT_INT; tpd_flag=1; wake_up_interruptible(&waiter);
 } 
 static int tpd_i2c_remove(struct i2c_client *client) {return 0;}
 
 void tpd_down(int raw_x, int raw_y, int x, int y, int p) {
+
+    printk("mtk-tpd: D[rx:%4d,ry:%4d, %4d %4d %4d]\n", raw_x, raw_y, x, y, p);
 	if(tpd && tpd->dev && tpd_register_flag==1) {
     input_report_abs(tpd->dev, ABS_PRESSURE, p/PRESSURE_FACTOR);
     input_report_key(tpd->dev, BTN_TOUCH, 1);
@@ -169,20 +206,22 @@ void tpd_down(int raw_x, int raw_y, int x, int y, int p) {
     input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
     input_mt_sync(tpd->dev);
     TPD_DEBUG("D[%4d %4d %4d]\n", x, y, p);
+    printk("mtk-tpd: [%4d %4d %4d]\n", x, y, p);
     TPD_EM_PRINT(raw_x, raw_y, x, y, p, 1);
   }  
 }
 
 void tpd_up(int raw_x, int raw_y, int x, int y, int p) {
 	if(tpd && tpd->dev && tpd_register_flag==1) {
-    input_report_abs(tpd->dev, ABS_PRESSURE, 0);
+    //input_report_abs(tpd->dev, ABS_PRESSURE, 0);
     input_report_key(tpd->dev, BTN_TOUCH, 0);
-    input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 0);
-    input_report_abs(tpd->dev, ABS_MT_WIDTH_MAJOR, 0);
-    input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
-    input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
+    //input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 0);
+    //input_report_abs(tpd->dev, ABS_MT_WIDTH_MAJOR, 0);
+    //input_report_abs(tpd->dev, ABS_MT_POSITION_X, x);
+    //input_report_abs(tpd->dev, ABS_MT_POSITION_Y, y);
     input_mt_sync(tpd->dev);
     TPD_DEBUG("U[%4d %4d %4d]\n", x, y, 0);
+    printk("mtk-tpd:U[%4d %4d %4d]\n", x, y, 0);
     TPD_EM_PRINT(raw_x, raw_y, x, y, p, 0);
   }  
 }
@@ -196,8 +235,7 @@ static int touch_event_handler(void *unused) {
     static char toggle;
     static char buffer[32];//[16];
 //    int pending = 0;
-	u32 temp;
-    
+	//u32 temp;
     sched_setscheduler(current, SCHED_RR, &param); 
     g_temptimerdiff=get_jiffies_64();//jiffies;
     do {
@@ -208,17 +246,21 @@ static int touch_event_handler(void *unused) {
 	if(tpd_debuglog==1)
 		TPD_DMESG("[mtk-tpd], %s, tpd_halt=%d\n", __FUNCTION__, tpd_halt);
         while (tpd_halt) {tpd_flag = 0; msleep(20);}
+        #ifndef POLL_MODE
         wait_event_interruptible(waiter, tpd_flag != 0);
-        //tpd_flag = 0;
+        tpd_flag = 0;
+        #endif
         TPD_DEBUG_SET_TIME;
         set_current_state(TASK_RUNNING); 
-		#ifndef CY8CTMA300_CHARGE			
+	//	#ifndef CY8CTMA300_CHARGE
+		#if 0			
 		temp =  *(volatile u32 *)CHR_CON0;	
 		temp &= (1<<13);
 		if(temp!=0)
 		{
 			   if(tpd_debuglog==1)	
 			   	TPD_DMESG("[mtk-tpd], write 0x01 to 0x1D register!!\n");
+			   buffer[0] = 0x01;
 			   buffer[0] = 0x01;
 			   i2c_smbus_write_i2c_block_data(i2c_client, 0x1D, 1, &(buffer[0]));    		
 		}
@@ -229,7 +271,8 @@ static int touch_event_handler(void *unused) {
 			   buffer[0] = 0x00;
 			   i2c_smbus_write_i2c_block_data(i2c_client, 0x1D, 1, &(buffer[0])); 			
 		} 
-		#endif		        
+		#endif	
+		#ifndef TPD_NO_GPIO 	    // for mt6575T fpga early porting    
         if (tpd_show_version) {
             tpd_show_version = 0;
                         
@@ -265,7 +308,7 @@ static int touch_event_handler(void *unused) {
             mt_set_gpio_pull_select(GPIO1, GPIO_PULL_UP);           
             continue;
         }        
-        
+      #endif  
         i2c_smbus_read_i2c_block_data(i2c_client, 0x00, 8, &(buffer[0]));
         i2c_smbus_read_i2c_block_data(i2c_client, 0x08, 8, &(buffer[8]));
         i2c_smbus_read_i2c_block_data(i2c_client, 0x10, 8, &(buffer[16]));
@@ -286,6 +329,8 @@ static int touch_event_handler(void *unused) {
             msleep(10);
             tpd_flag = 0;
             pre_tt_mode = buffer[1];
+	if(tpd_em_log==1)
+		TPD_DMESG("[mtk-tpd], continue from finger number.\n");        
             continue;   
         }
         
@@ -293,16 +338,18 @@ static int touch_event_handler(void *unused) {
             msleep(5);
             tpd_flag = 0;
             pre_tt_mode = buffer[1];
+	if(tpd_em_log==1)
+		TPD_DMESG("[mtk-tpd], continue from TT MODE.\n");    
             continue;  
         }
         
         if (buffer[1] & 0x20) {
-            TPD_DEBUG("buffer not ready\n");
+	if(tpd_em_log==1)
+		TPD_DMESG("[mtk-tpd], buffer not ready.\n");    
             tpd_flag = 0;
             pre_tt_mode = buffer[1];
             continue; // buffer is not ready for use
-        }
-        
+        }   
         id1 = (buffer[8] & 0xf0) >> 4;
         id2 = (buffer[8] & 0x0f);
 		id3 = (buffer[21] & 0xf0) >> 4;
@@ -477,13 +524,17 @@ static int touch_event_handler(void *unused) {
             toggle = toggle & (~0x80);
         i2c_smbus_write_i2c_block_data(i2c_client, 0x00, 1, &toggle); // switch the read toggle bit to do next sampling 
         tpd_flag = 0;
-   
-    } while (!kthread_should_stop()); 
+    #ifndef POLL_MODE
+    } while (!kthread_should_stop());
+    #else 
+    }while(1);
+    #endif
     return 0;
 }
 
 int tpd_local_init(void) 
 {
+	//tpd_debuglog = 1;
 	if(tpd_debuglog==1) {
 		TPD_DMESG("[mtk-tpd] %s\n", __FUNCTION__); 
 	}
@@ -527,8 +578,8 @@ void tpd_suspend(struct early_suspend *h)
 		if(tpd_flag == 1) msleep(1000);
 		else break;	
 	}
-    mt65xx_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
-
+    mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+#ifndef TPD_NO_GPIO
     #ifdef TPD_HAVE_POWER_ON_OFF
     mt_set_gpio_mode(GPIO_CTP_EN_PIN, GPIO_CTP_EN_PIN_M_GPIO);
     mt_set_gpio_dir(GPIO_CTP_EN_PIN, GPIO_DIR_OUT);
@@ -538,6 +589,7 @@ void tpd_suspend(struct early_suspend *h)
     mt_set_gpio_dir(GPIO_CTP_RST_PIN, GPIO_DIR_OUT);
     mt_set_gpio_out(GPIO_CTP_RST_PIN, GPIO_OUT_ZERO);    
     #endif
+#endif    
 }
 
 /* Function to manage power-on resume */
@@ -546,6 +598,7 @@ void tpd_resume(struct early_suspend *h)
 	if(tpd_debuglog==1) {
 		TPD_DMESG("[mtk-tpd] %s\n", __FUNCTION__); 
 	}
+#ifndef TPD_NO_GPIO	
     #ifdef TPD_HAVE_POWER_ON_OFF
    // msleep(100);
     mt_set_gpio_mode(GPIO_CTP_EN_PIN, GPIO_CTP_EN_PIN_M_GPIO);
@@ -558,8 +611,9 @@ void tpd_resume(struct early_suspend *h)
     msleep(100);
     #endif
 
-    mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM); 
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM); 
     tpd_halt = 0;
+#endif    
 }
 
 static struct tpd_driver_t tpd_device_driver = {
@@ -575,7 +629,8 @@ static struct tpd_driver_t tpd_device_driver = {
 };
 /* called when loaded into kernel */
 static int __init tpd_driver_init(void) {
-    printk("MediaTek cy8ctma300 touch panel driver init\n");
+    printk("fwq MediaTek cy8ctma300 touch panel driver init\n");
+    i2c_register_board_info(TPD_I2C_NUMBER, &i2c_tpd, 1);//modify I2C0 ==> I2C3
 		if(tpd_driver_add(&tpd_device_driver) < 0)
 			TPD_DMESG("add generic driver failed\n");
     return 0;

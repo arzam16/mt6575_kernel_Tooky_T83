@@ -241,6 +241,7 @@ int _g2d_queue_command(unsigned long arg, bool sync)
     if (copy_from_user(&g2d_cmd_buffer[next_cmd].ctx, (void *)arg, sizeof(g2d_context_t)))
     {
         G2D_ERR("copy from user is failed\n");
+		up(&g2d_cmd_buffer[next_cmd].lock);
         spin_unlock(&g2d_cmd_spinlock);
         return -EFAULT;
     }

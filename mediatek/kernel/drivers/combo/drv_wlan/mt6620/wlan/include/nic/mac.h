@@ -740,6 +740,7 @@
 #define ELEM_ID_WPA                                 ELEM_ID_VENDOR /* WPA IE */
 #define ELEM_ID_WMM                                 ELEM_ID_VENDOR /* WMM IE */
 #define ELEM_ID_P2P                                   ELEM_ID_VENDOR /* WiFi Direct */
+#define ELEM_ID_WFD                                   ELEM_ID_VENDOR /* WiFi Direct */
 #define ELEM_ID_WSC                                 ELEM_ID_VENDOR /* WSC IE */
 
 #define ELEM_ID_RESERVED                            255 /* Reserved */
@@ -815,7 +816,7 @@
 
 
 /* 7.3.2.25 RSN information element */
-#define ELEM_MAX_LEN_WPA                            24 /* one pairwise, one AKM suite, one PMKID */
+#define ELEM_MAX_LEN_WPA                            34 /* one pairwise, one AKM suite, one PMKID */
 #define ELEM_MAX_LEN_RSN                            38 /* one pairwise, one AKM suite, one PMKID */
 #define ELEM_MAX_LEN_WAPI                           38 /* one pairwise, one AKM suite, one BKID */
 #define ELEM_MAX_LEN_WSC                            200/* one pairwise, one AKM suite, one BKID */
@@ -1046,6 +1047,7 @@
 #define VENDOR_OUI_TYPE_WMM                         2
 #define VENDOR_OUI_TYPE_WPS                         4
 #define VENDOR_OUI_TYPE_P2P                         9
+#define VENDOR_OUI_TYPE_WFD                         10
 
 #define VENDOR_OUI_TYPE_LEN                         4    /* Length of OUI and Type */
 

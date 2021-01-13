@@ -44,6 +44,10 @@ extern void MT_trace_irq_on(void);
 extern void MT_trace_irq_off(void);
 extern void MT_trace_preempt_on(void);
 extern void MT_trace_preempt_off(void);
+/* [IRQ-disable] White List
+ * Flags for special scenario*/
+DECLARE_PER_CPU(int, MT_trace_in_sched);
+DECLARE_PER_CPU(int, MT_trace_in_resume_console);
 
 extern void mt_aee_dump_sched_traces(void);
 extern void mt_dump_sched_traces(void);

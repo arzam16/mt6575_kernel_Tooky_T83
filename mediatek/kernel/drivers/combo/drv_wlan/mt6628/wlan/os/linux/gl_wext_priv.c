@@ -846,7 +846,7 @@ priv_set_int (
 
     case PRIV_CUSTOM_BWCS_CMD:
 
-        DBGLOG(REQ, INFO, ("pu4IntBuf[1] = %x, size of PTA_IPC_T = %d.\n", pu4IntBuf[1], sizeof(PARAM_PTA_IPC_T)));
+        DBGLOG(REQ, INFO, ("pu4IntBuf[1] = %lx, size of PTA_IPC_T = %d.\n", pu4IntBuf[1], sizeof(PARAM_PTA_IPC_T)));
 
         prPtaIpc = (P_PTA_IPC_T) aucOidBuf;
         prPtaIpc->u.aucBTPParams[0] = (UINT_8) (pu4IntBuf[1] >> 24);
@@ -881,7 +881,7 @@ priv_set_int (
 
     case PRIV_CMD_BAND_CONFIG:
         {
-            DBGLOG(INIT, INFO, ("CMD set_band=%u\n", pu4IntBuf[1]));
+            DBGLOG(INIT, INFO, ("CMD set_band=%lu\n", pu4IntBuf[1]));
         }
         break;
 
@@ -1029,8 +1029,8 @@ priv_get_int (
         kalMemCopy(&prNdisReq->ndisOidContent[0], &pu4IntBuf[1], 8);
 
         prNdisReq->ndisOidCmd = OID_CUSTOM_MEM_DUMP;
-        prNdisReq->inNdisOidlength = 8;
-        prNdisReq->outNdisOidLength = 8;
+        prNdisReq->inNdisOidlength = sizeof(PARAM_CUSTOM_MEM_DUMP_STRUC_T);
+        prNdisReq->outNdisOidLength = sizeof(PARAM_CUSTOM_MEM_DUMP_STRUC_T);
 
         status = priv_get_ndis(prNetDev, prNdisReq, &u4BufLen);
         if (status == 0) {
@@ -1128,6 +1128,33 @@ priv_get_int (
             else
                  return status;
         }
+
+    case PRIV_CMD_GET_BUILD_DATE_CODE:
+        {
+            UINT_8  aucBuffer[16];
+
+            if(kalIoctl(prGlueInfo,
+                        wlanoidQueryBuildDateCode,
+                        (PVOID)aucBuffer,
+                        sizeof(UINT_8) * 16,
+                        TRUE,
+                        TRUE,
+                        TRUE,
+                        FALSE,
+                        &u4BufLen) == WLAN_STATUS_SUCCESS) {
+                prIwReqData->data.length = sizeof(UINT_8) * 16;
+
+                if (copy_to_user(prIwReqData->data.pointer, aucBuffer, prIwReqData->data.length)) {
+                     return -EFAULT;
+                }
+                else
+                     return status;
+            }
+            else {
+                return -EFAULT;
+            }
+        }
+
     default:
         return -EOPNOTSUPP;
     }

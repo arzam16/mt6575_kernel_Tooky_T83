@@ -23,6 +23,34 @@
 #ifndef _PN544_H_
 #define _PN544_H_
 
+//<2014/05/07-samhuang, porting NFC
+#if defined( ARIMA_PROJECT_HAWK40 ) || defined( ARIMA_PROJECT_HAWK35 )
+
+#define PN544_MAGIC	0xE9
+
+/*
+ * PN544 power control via ioctl
+ * PN544_SET_PWR(0): power off
+ * PN544_SET_PWR(1): power on
+ * PN544_SET_PWR(2): reset and power on with firmware download enabled
+ */
+#define PN544_SET_PWR	_IOW(PN544_MAGIC, 0x01, unsigned int)
+//<2012/12/18 Yuting Shih, NFC SIM setting when initialization.
+#define   PN544_SIM_SWP       _IOW(PN544_MAGIC, 0x02, unsigned int)
+#define   PN544_GET_MODEL_ID  _IOW(PN544_MAGIC, 0x03, unsigned int)
+
+#define   NFC_SWP_SIM1      0
+#define   NFC_SWP_SIM2      1
+//>2012/12/18 Yuting Shih.
+
+struct pn544_i2c_platform_data{
+	unsigned int irq_gpio;
+	unsigned int ven_gpio;
+	unsigned int firm_gpio;
+};
+
+#else
+
 #include <linux/i2c.h>
 
 #define PN544_DRIVER_NAME	"pn544"
@@ -93,5 +121,7 @@ struct pn544_nfc_platform_data {
 	void (*disable) (void);
 };
 #endif /* __KERNEL__ */
+
+#endif /* End.. (ARIMA_PROJECT_HAWK40) */
 
 #endif /* _PN544_H_ */

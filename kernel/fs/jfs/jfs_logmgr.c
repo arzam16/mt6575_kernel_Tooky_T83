@@ -1058,7 +1058,8 @@ static int lmLogSync(struct jfs_log * log, int hard_sync)
  */
 void jfs_syncpt(struct jfs_log *log, int hard_sync)
 {	LOG_LOCK(log);
-	lmLogSync(log, hard_sync);
+	if (!test_bit(log_QUIESCE, &log->flag))
+		lmLogSync(log, hard_sync);
 	LOG_UNLOCK(log);
 }
 
@@ -2336,6 +2337,8 @@ static void lbmIODone(struct bio *bio, int error)
 int jfsIOWait(void *arg)
 {
 	struct lbuf *bp;
+
+	set_freezable();
 
 	do {
 		spin_lock_irq(&log_redrive_lock);

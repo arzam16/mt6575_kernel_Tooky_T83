@@ -266,7 +266,7 @@ static unsigned short hid_keycode[256] = {
 	  KEY_BACK,
 	  KEY_FORWARD,
 	  KEY_STOP,
-	  KEY_SEARCH,
+	  KEY_FIND,
 	  KEY_SCROLLUP,
 	  KEY_SCROLLDOWN,
 	  KEY_EDIT,
@@ -290,12 +290,14 @@ static unsigned short hid_keycode[256] = {
 #define HID_KEYBOARD	6
 #define HID_MOUSE	7
 
+
 static struct input_dev *hid_input_dev;
 
 struct hidkeyboard {
     struct input_dev *input;
     unsigned short keymap[ARRAY_SIZE(hid_keycode)];
 };
+
 
 struct hidkeyboard *hidkbd;
 int registered = 0;
@@ -415,6 +417,7 @@ static int hid_kbd_dev_open(struct inode *inode, struct file *file)
 	hid_input_dev->keycodesize = sizeof(unsigned short);
 	//hid_input_dev->keycodemax = ARRAY_SIZE(hid_keycode);
 	hid_input_dev->id.bustype = BUS_HOST;
+
 /*
 	for (i = 0; i < ARRAY_SIZE(hidkbd->keymap); i++)
 		__set_bit(hidkbd->keymap[i], hid_input_dev->keybit);
@@ -524,7 +527,7 @@ static struct platform_driver hid_keyboard_driver = {
     },
 };
 
-static int __devinit hid_keyboard_init(void)
+static int hid_keyboard_init(void)
 {
 	xlog_printk(ANDROID_LOG_INFO,HID_SAY,"hid_keyboard_init OK\n");
 

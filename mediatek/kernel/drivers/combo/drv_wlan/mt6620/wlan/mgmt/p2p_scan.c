@@ -811,8 +811,14 @@ scanP2pSearchDesc (
                                                 prBssDesc->ucSSIDLen));
                 DBGLOG(P2P, TRACE, ("Ignore mismatch SSID, (But BSSID match).\n"));
                 ASSERT(FALSE);
-                break;
+                continue;
             }
+
+            if (!prBssDesc->fgIsP2PPresent) {
+                DBGLOG(P2P, ERROR, ("SSID, BSSID, BSSTYPE match, but no P2P IE present.\n"));
+                continue;
+            }
+
 
             /* Final decision. */
             prCandidateBssDesc = prBssDesc;

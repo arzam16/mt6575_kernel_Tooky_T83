@@ -1,3 +1,25 @@
+/* fm_module.c
+ *
+ * (C) Copyright 2011
+ * MediaTek <www.MediaTek.com>
+ * Hongcheng <hongcheng.xia@MediaTek.com>
+ *
+ * FM Radio Driver -- main functions
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -33,6 +55,7 @@ static loff_t fm_ops_lseek(struct file *filp, loff_t off, fm_s32 whence);
 static ssize_t fm_ops_read(struct file *filp, char *buf, size_t len, loff_t *off);
 static fm_s32  fm_ops_open(struct inode *inode, struct file *filp);
 static fm_s32  fm_ops_release(struct inode *inode, struct file *filp);
+static fm_s32  fm_ops_flush(struct file *filp,fl_owner_t Id);
 static struct file_operations fm_ops = {
     .owner = THIS_MODULE,
     .unlocked_ioctl = fm_ops_ioctl,
@@ -40,11 +63,18 @@ static struct file_operations fm_ops = {
     .read = fm_ops_read,
     .open = fm_ops_open,
     .release = fm_ops_release,
+    .flush = fm_ops_flush,
 };
 
-static fm_s32 fm_proc_read(char *page, char **start, off_t off, fm_s32 count, fm_s32 *eof, void *data);
+//static fm_s32 fm_proc_read(char *page, char **start, off_t off, fm_s32 count, fm_s32 *eof, void *data);
+static ssize_t fm_proc_read(struct file * file, char __user * buf, size_t count, loff_t *ppos);
 static fm_s32 fm_proc_write(struct file *file, const char *buffer, unsigned long count, void *data);
 
+static struct file_operations fm_proc_ops = {
+	.owner = THIS_MODULE,
+	.read = fm_proc_read,
+	.write = fm_proc_write,
+};
 
 static struct fm_scan_t parm = {
     .sr_size = 0,
@@ -68,7 +98,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
     switch (cmd) {
     case FM_IOCTL_POWERUP: {
         struct fm_tune_parm parm;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_POWERUP\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_POWERUP:0\n");
 
         if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_tune_parm))) {
             ret = -EFAULT;
@@ -84,19 +114,28 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
             ret = -EFAULT;
             goto out;
         }
+		WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_POWERUP:1\n");
 
         break;
     }
 
     case FM_IOCTL_POWERDOWN: {
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_POWERDOWN\n");
-        ret = fm_powerdown(fm);
+		int powerdwn_type = 0;
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_POWERDOWN:0\n");
+		
+        if (copy_from_user(&powerdwn_type, (void*)arg, sizeof(int))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        ret = fm_powerdown(fm, powerdwn_type); //0: RX 1: TX
+		WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_POWERDOWN:1\n");
         break;
     }
 
     case FM_IOCTL_TUNE: {
         struct fm_tune_parm parm;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_TUNE\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_TUNE:0\n");
 
         if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_tune_parm))) {
             ret = -EFAULT;
@@ -113,12 +152,46 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
             goto out;
         }
 
+		WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_TUNE:1\n");
         break;
     }
 
-    case FM_IOCTL_SEEK: {
+	case FM_IOCTL_SOFT_MUTE_TUNE:
+	{
+        struct fm_softmute_tune_t parm;
+        fm_cqi_log();//cqi log tool
+        WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_SOFT_MUTE_TUNE......\n");
+        if(copy_from_user(&parm, (void*)arg, sizeof(struct fm_softmute_tune_t)))
+        {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        ret = fm_soft_mute_tune(fm, &parm);
+        if (ret < 0) {
+            goto out;
+        }
+
+        if(copy_to_user((void*)arg, &parm, sizeof(struct fm_softmute_tune_t)))
+        {
+            ret = -EFAULT;
+            goto out;
+        }
+        break;
+	}    
+	case FM_IOCTL_PRE_SEARCH:
+	{
+	    ret = fm_pre_search(fm);
+	    break;
+	}
+	case FM_IOCTL_RESTORE_SEARCH:
+	{
+	    ret = fm_restore_search(fm);
+	    break;
+	}
+	case FM_IOCTL_SEEK: {
         struct fm_seek_parm parm;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_SEEK\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SEEK:0\n");
 
         if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_seek_parm))) {
             ret = -EFAULT;
@@ -134,12 +207,13 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
             ret = -EFAULT;
             goto out;
         }
+		WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SEEK:1\n");
         break;
     }
 
     case FM_IOCTL_SCAN: {
         struct fm_scan_parm parm;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_SCAN\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SCAN start\n");
 
         if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_scan_parm))) {
             WCN_DBG(FM_ALT | MAIN, "copy_from_user failed\n");
@@ -155,13 +229,14 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
             goto out;
         }
 
+		WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SCAN end\n");
         break;
     }
 
     case FM_IOCTL_TUNE_NEW: {
         struct fm_tune_t tune_tmp;
     
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_TUNE_NEW\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_TUNE_NEW\n");
     
         if (copy_from_user(&tune_tmp, (void*)arg, sizeof(struct fm_tune_t))) {
             WCN_DBG(FM_ERR | MAIN, "tune new copy_from_user error\n");
@@ -186,7 +261,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
     case FM_IOCTL_SEEK_NEW: {
         struct fm_seek_t seek_tmp;
 
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_SEEK_NEW\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SEEK_NEW\n");
         
         if (copy_from_user(&seek_tmp, (void*)arg, sizeof(struct fm_seek_t))) {
             WCN_DBG(FM_ERR | MAIN, "seek new copy_from_user error\n");
@@ -211,7 +286,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
     case FM_IOCTL_SCAN_NEW: {
         struct fm_scan_t tmp;
         
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_SCAN_NEW\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SCAN_NEW\n");
 
         if (copy_from_user(&tmp, (void*)arg, sizeof(struct fm_scan_t))) {
             WCN_DBG(FM_ERR | MAIN, "copy_from_user error\n");
@@ -308,7 +383,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
     case FM_IOCTL_GET_HW_INFO: {
         struct fm_hw_info info;
 
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_GET_HW_INFO\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_GET_HW_INFO\n");
 
         ret = fm_get_hw_info(fm, &info);
 
@@ -328,7 +403,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
     case FM_IOCTL_GET_I2S_INFO: {
         struct fm_i2s_info i2sinfo;
 
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_GET_I2S_INFO\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_GET_I2S_INFO\n");
 
         ret = fm_get_i2s_info(fm, &i2sinfo);
 
@@ -348,19 +423,20 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
     case FM_IOCTL_SETVOL: {
         fm_u32 vol;
 
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SETVOL start\n");
         if (copy_from_user(&vol, (void*)arg, sizeof(fm_u32))) {
             WCN_DBG(FM_ALT | MAIN, "copy_from_user failed\n");
             ret = -EFAULT;
             goto out;
         }
 
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_SETVOL:%d\n", vol);
         ret = fm_setvol(fm, vol);
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_SETVOL end:%d\n", vol);
         break;
     }
     case FM_IOCTL_GETVOL: {
         fm_u32 vol;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_GETVOL\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_GETVOL start\n");
         ret = fm_getvol(fm, &vol);
         if (ret < 0) goto out;
 
@@ -369,26 +445,26 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
             goto out;
         }
 
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_GETVOL end=%d\n",vol);
         break;
     }
 
     case FM_IOCTL_MUTE: {
         fm_u32 bmute;
 
+        WCN_DBG(FM_NTC| MAIN, "FM_IOCTL_MUTE start\n");
         if (copy_from_user(&bmute, (void*)arg, sizeof(fm_u32))) {
             ret = -EFAULT;
             goto out;
         }
 
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_MUTE:%d\n", bmute);
-
         ret = fm_mute(fm, bmute);
+        WCN_DBG(FM_NTC| MAIN, "FM_IOCTL_MUTE end-%d\n", bmute);
         break;
     }
 
     case FM_IOCTL_GETRSSI: {
         fm_s32 rssi = 0;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_GETRSSI\n");
 
         ret = fm_getrssi(fm, &rssi);
         if (ret < 0) goto out;
@@ -398,6 +474,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
             goto out;
         }
 
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_GETRSSI:%d\n",rssi);
         break;
     }
 
@@ -419,6 +496,72 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
 
         if ((parm_ctl.rw_flag == 0x01) && (!ret)) {
             if (copy_to_user((void*)arg, &parm_ctl, sizeof(struct fm_ctl_parm))) {
+                ret = -EFAULT;
+                goto out;
+            }
+        }
+
+        break;
+    }
+    case FM_IOCTL_TOP_RDWR: 
+    {
+        struct fm_top_rw_parm parm_ctl;
+        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_TOP_RDWR\n");
+
+        if (copy_from_user(&parm_ctl, (void*)arg, sizeof(struct fm_top_rw_parm))) 
+        {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        if (parm_ctl.rw_flag == 0) 
+        {
+            ret = fm_top_write(fm, parm_ctl.addr, parm_ctl.val);
+        }
+        else 
+        {
+            ret = fm_top_read(fm, parm_ctl.addr, &parm_ctl.val);
+        }
+        if (ret < 0) 
+        	goto out;
+
+        if ((parm_ctl.rw_flag == 0x01) && (!ret)) 
+        {
+            if (copy_to_user((void*)arg, &parm_ctl, sizeof(struct fm_top_rw_parm))) 
+            {
+                ret = -EFAULT;
+                goto out;
+            }
+        }
+
+        break;
+    }
+    case FM_IOCTL_HOST_RDWR: 
+    {
+        struct fm_host_rw_parm parm_ctl;
+        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_TOP_RDWR\n");
+
+        if (copy_from_user(&parm_ctl, (void*)arg, sizeof(struct fm_host_rw_parm))) 
+        {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        if (parm_ctl.rw_flag == 0) 
+        {
+            ret = fm_host_write(fm, parm_ctl.addr, parm_ctl.val);
+        }
+        else 
+        {
+            ret = fm_host_read(fm, parm_ctl.addr, &parm_ctl.val);
+        }
+        if (ret < 0) 
+        	goto out;
+
+        if ((parm_ctl.rw_flag == 0x01) && (!ret)) 
+        {
+            if (copy_to_user((void*)arg, &parm_ctl, sizeof(struct fm_host_rw_parm))) 
+            {
                 ret = -EFAULT;
                 goto out;
             }
@@ -504,7 +647,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
 
     case FM_IOCTL_RDS_SUPPORT: {
         fm_s32 support = FM_RDS_ENABLE;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_RDS_SUPPORT\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_RDS_SUPPORT\n");
 
         if (copy_to_user((void*)arg, &support, sizeof(fm_s32))) {
             ret = -EFAULT;
@@ -532,13 +675,14 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
 
     case FM_IOCTL_RDS_ONOFF: {
         fm_u16 rdson_off = 0;
-        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_RDS_ONOFF\n");
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_RDS_ONOFF start\n");
 
         if (copy_from_user(&rdson_off, (void*)arg, sizeof(fm_u16))) {
             ret = -EFAULT;
             goto out;
         }
         ret = fm_rds_onoff(fm, rdson_off);
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_RDS_ONOFF end:%d\n",rdson_off);
         break;
     }
 
@@ -696,6 +840,299 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
 
         break;
     }
+    case FM_IOCTL_DESENSE_CHECK: 
+    {
+        fm_desense_check_t tmp;
+        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_IS_DESE_CHAN\n");
+
+        if (copy_from_user(&tmp, (void*)arg, sizeof(fm_desense_check_t))) 
+        {
+            WCN_DBG(FM_ALT | MAIN, "desene check, copy_from_user err\n");
+            ret = -EFAULT;
+            goto out;
+        }
+        ret = fm_desense_check(fm, (fm_u16)tmp.freq,tmp.rssi);
+
+        /*if (copy_to_user((void*)arg, &tmp, sizeof(fm_desense_check_t))) {
+            WCN_DBG(FM_ALT | MAIN, "desene check, copy_to_user err\n");
+            ret = -EFAULT;
+            goto out;
+        }*/
+
+        break;
+    }
+	case FM_IOCTL_SCAN_GETRSSI:
+	{
+		/*struct fm_rssi_req *req;
+        WCN_DBG(FM_DBG | MAIN, "FM_IOCTL_SCAN_GETRSSI\n");
+		if(!(req = fm_vmalloc(sizeof(struct fm_rssi_req))))
+		{
+            WCN_DBG(FM_ALT | MAIN, "fm_vmalloc err\n");
+            ret = -EFAULT;
+            goto out;
+		}
+		if(copy_from_user(req, (void*)arg, sizeof(struct fm_rssi_req)))
+		{
+            WCN_DBG(FM_ALT | MAIN, "copy_from_user err\n");
+            ret = -EFAULT;
+			fm_vfree(req);
+            goto out;
+		}
+		ret = fm_get_rssi_after_scan(fm, req);
+		if(-ERR_FW_NORES == ret){
+            WCN_DBG(FM_ALT | MAIN, "fm_get_rssi_after_scan err\n");
+		}
+		if(copy_to_user((void*)arg, req, sizeof(struct fm_rssi_req)))
+		{
+            WCN_DBG(FM_ALT | MAIN, "copy_to_user err\n");
+            ret = -EFAULT;
+			fm_vfree(req);
+            goto out;
+		}
+		*/
+        WCN_DBG(FM_ALT | MAIN, "FM_IOCTL_SCAN_GETRSSI:not support\n");
+		break;
+	}
+
+	case FM_IOCTL_DUMP_REG:
+	{
+		WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_DUMP_REG......\n");
+
+		ret = fm_dump_reg();
+		if(ret)
+		{
+			WCN_DBG(FM_ALT | MAIN, "fm_dump_reg err\n");
+		}
+		break;
+	}
+	case FM_IOCTL_GPS_RTC_DRIFT:{
+		struct fm_gps_rtc_info rtc_info;
+		WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_GPS_RTC_DRIFT......\n");
+	
+		if (fm_false == fm->chipon){
+			WCN_DBG(FM_ERR | MAIN,"ERROR, FM chip is OFF\n");
+            ret = -EFAULT;
+            goto out;
+		}
+		if(copy_from_user(&rtc_info, (void*)arg, sizeof(struct fm_gps_rtc_info))){
+			WCN_DBG(FM_ERR | MAIN,"copy_from_user error\n");
+            ret = -EFAULT;
+            goto out;
+		}
+		
+		ret = fm_get_gps_rtc_info(&rtc_info);
+		if(ret){
+			WCN_DBG(FM_ERR | MAIN,"fm_get_gps_rtc_info error\n");
+            goto out;
+		}
+		break;
+	}
+	case FM_IOCTL_OVER_BT_ENABLE:
+	{
+		fm_s32 fm_via_bt = -1;
+		WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_OVER_BT_ENABLE......\n");
+		
+		if(copy_from_user(&fm_via_bt, (void*)arg, sizeof(int32_t))){
+			WCN_DBG(FM_ERR | MAIN,"copy_from_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+	
+		ret = fm_over_bt(fm, fm_via_bt);
+		if(ret)
+		{
+			WCN_DBG(FM_ERR | MAIN, "fm_over_bt err\n");
+		}
+		break;
+	}
+	
+	case FM_IOCTL_SET_SEARCH_THRESHOLD:
+	{
+		struct fm_search_threshold_t parm;
+		WCN_DBG(FM_NTC | MAIN, "......FM_IOCTL_SET_SEARCH_THRESHOLD......\n");
+
+		if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_search_threshold_t)))
+		{
+			WCN_DBG(FM_ALT | MAIN,"copy_from_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		ret = fm_set_search_th(fm, parm);
+		if(ret < 0){
+			WCN_DBG(FM_ERR | MAIN,"FM_IOCTL_SET_SEARCH_THRESHOLD not supported\n");
+		}
+		break;
+	}
+	case FM_IOCTL_GET_AUDIO_INFO:
+	{
+	    fm_audio_info_t aud_data;
+	    
+		ret = fm_get_aud_info(&aud_data);
+		if(ret)
+		{
+			WCN_DBG(FM_ERR | MAIN, "fm_get_aud_info err\n");
+		}
+		if (copy_to_user((void*)arg, &aud_data, sizeof(fm_audio_info_t)))
+		{
+			WCN_DBG(FM_ERR | MAIN,"copy_to_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		break;
+	}
+    /***************************FM Tx function************************************/
+	case FM_IOCTL_TX_SUPPORT:
+	{
+		fm_s32 tx_support = -1;
+		WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_TX_SUPPORT......\n");
+
+		ret = fm_tx_support(fm,&tx_support);
+		if(ret)
+		{
+			WCN_DBG(FM_ERR | MAIN, "fm_tx_support err\n");
+		}
+		if (copy_to_user((void*)arg, &tx_support, sizeof(fm_s32)))
+		{
+			WCN_DBG(FM_ERR | MAIN,"copy_to_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		break;
+	}
+	case FM_IOCTL_POWERUP_TX:
+	{
+		struct fm_tune_parm parm;
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_POWERUP_TX:0\n");
+        if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_tune_parm))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+		ret = fm_powerup_tx(fm, &parm);
+        if (ret < 0) {
+            goto out;
+        }
+        ret = fm_tune_tx(fm, &parm);
+        if (ret < 0) goto out;
+
+        if (copy_to_user((void*)arg, &parm, sizeof(struct fm_tune_parm))) {
+            ret = -EFAULT;
+            goto out;
+        }
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_POWERUP_TX:1\n");
+		break;
+	}
+	
+	case FM_IOCTL_TUNE_TX:
+	{
+		struct fm_tune_parm parm;
+        WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_TUNE_TX:0\n");
+
+        if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_tune_parm))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        ret = fm_tune_tx(fm, &parm);
+        if (ret < 0) {
+            goto out;
+        }
+
+        if (copy_to_user((void*)arg, &parm, sizeof(struct fm_tune_parm))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+		WCN_DBG(FM_NTC | MAIN, "FM_IOCTL_TUNE_TX:1\n");
+		break;
+	}
+	case FM_IOCTL_RDSTX_SUPPORT:
+	{
+		fm_s32 rds_tx_support = -1;
+		WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_RDSTX_SUPPORT......\n");
+
+		ret = fm_rdstx_support(fm,&rds_tx_support);
+		if(ret)
+		{
+			WCN_DBG(FM_ERR | MAIN, "fm_rdstx_support err\n");
+		}
+		if (copy_to_user((void*)arg, &rds_tx_support, sizeof(fm_s32)))
+		{
+			WCN_DBG(FM_ERR | MAIN,"copy_to_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		break;
+	}	
+	
+	case FM_IOCTL_RDSTX_ENABLE:
+	{
+		fm_s32 onoff = -1;
+		WCN_DBG(FM_NTC | MAIN,"......FM_IOCTL_RDSTX_ENABLE......\n");
+		
+        if (copy_from_user(&onoff, (void*)arg, sizeof(fm_s32))) 
+        {
+            WCN_DBG(FM_ALT | MAIN, "FM_IOCTL_RDSTX_ENABLE, copy_from_user err\n");
+            ret = -EFAULT;
+            goto out;
+        }
+
+		ret = fm_rdstx_enable(fm,onoff);
+		if(ret)
+		{
+			WCN_DBG(FM_ERR | MAIN, "fm_rdstx_enable err\n");
+		}
+
+		break;
+	}	
+	
+	case FM_IOCTL_RDS_TX:
+	{
+		struct fm_rds_tx_parm parm;
+		WCN_DBG(FM_NTC | MAIN, "......FM_IOCTL_RDS_TX......\n");
+
+		if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_rds_tx_parm)))
+		{
+            WCN_DBG(FM_ALT | MAIN, "RDS Tx, copy_from_user err\n");
+			ret = -EFAULT;
+			goto out;
+		}
+
+		ret = fm_rds_tx(fm, &parm);
+		if(ret)
+		{
+            WCN_DBG(FM_ALT | MAIN, "fm_rds_tx err\n");
+		}
+
+		if (copy_to_user((void*)arg, &parm, sizeof(struct fm_rds_tx_parm))){
+            WCN_DBG(FM_ALT | MAIN, "RDS Tx, copy_to_user err\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		break;
+	}
+	
+	case FM_IOCTL_TX_SCAN:
+	{
+		struct fm_tx_scan_parm parm;
+		WCN_DBG(FM_NTC | MAIN, "......FM_IOCTL_TX_SCAN......\n");
+
+		if (copy_from_user(&parm, (void*)arg, sizeof(struct fm_tx_scan_parm))){
+			WCN_DBG(FM_ALT | MAIN,"copy_from_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		ret = fm_tx_scan(fm, &parm);
+		if(ret < 0){
+			WCN_DBG(FM_ERR | MAIN,"FM_IOCTL_TX_SCAN failed\n");
+		}
+		if (copy_to_user((void*)arg, &parm, sizeof(struct fm_tx_scan_parm))){
+			WCN_DBG(FM_ALT | MAIN,"copy_to_user error\n");
+			ret = -EFAULT;
+			goto out;
+		}
+		break;
+	}
 
     default:
         ret = -EPERM;
@@ -704,7 +1141,7 @@ static long fm_ops_ioctl(struct file *filp, fm_u32 cmd, unsigned long arg)
 out:
     if (ret == -FM_EFW) {
         // subsystem reset
-        fm_subsys_reset(fm);
+       fm_subsys_reset(fm);
     }
 
     return ret;
@@ -754,6 +1191,7 @@ static fm_s32 fm_ops_open(struct inode *inode, struct file *filp)
     struct fm_platform *plat = container_of(inode->i_cdev, struct fm_platform, cdev);
     struct fm *fm = container_of(plat, struct fm, platform);
 
+    WCN_DBG(FM_NTC | MAIN, "fm_ops_open:0\n");
     if (fm_sys_state_get(fm) != FM_SUBSYS_RST_OFF) {
         WCN_DBG(FM_ALT| MAIN, "FM subsys is resetting, retry later\n");
         ret = -FM_ESRST;
@@ -763,21 +1201,85 @@ static fm_s32 fm_ops_open(struct inode *inode, struct file *filp)
     ret = fm_open(fm);
     filp->private_data = fm;
 
+    WCN_DBG(FM_NTC | MAIN, "fm_ops_open:1\n");
     return ret;
 }
 
 static fm_s32 fm_ops_release(struct inode *inode, struct file *filp)
 {
-    fm_s32 ret = 0;
-    struct fm_platform *plat = container_of(inode->i_cdev, struct fm_platform, cdev);
-    struct fm *fm = container_of(plat, struct fm, platform);
+//    fm_s32 ret = 0;
+//    struct fm_platform *plat = container_of(inode->i_cdev, struct fm_platform, cdev);
+//    struct fm *fm = container_of(plat, struct fm, platform);
 
-    fm_close(fm);
+//    WCN_DBG(FM_NTC | MAIN, "fm_ops_release:0\n");
+//    fm_close(fm);
     filp->private_data = NULL;
 
+    WCN_DBG(FM_NTC | MAIN, "fm_ops_release\n");
+    return 0;
+}
+
+static fm_s32 fm_ops_flush(struct file *filp,fl_owner_t Id)
+{
+    fm_s32 ret = 0;
+    struct fm *fm = filp->private_data;
+
+    WCN_DBG(FM_NTC | MAIN, "fm_ops_flush:0\n");
+    fm_close(fm);
+    filp->private_data = fm;
+
+    WCN_DBG(FM_NTC | MAIN, "fm_ops_flush:1\n");
     return ret;
 }
 
+static ssize_t fm_proc_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
+{
+    struct fm *fm  = g_fm;
+	ssize_t length = 0;
+	char tmpbuf[3];
+	unsigned long pos = *ppos;
+
+    WCN_DBG(FM_NTC | MAIN, "Enter fm_proc_read.\n");
+    WCN_DBG(FM_NTC | MAIN, "count = %d\n", count);
+    WCN_DBG(FM_NTC | MAIN, "ppos = %d\n", pos);
+    WCN_DBG(FM_NTC | MAIN, "buf address = 0x%x\n", buf);
+
+	if(pos != 0)
+		return 0;
+
+    if (!fm) {
+        WCN_DBG(FM_ALT | MAIN, "para err\n");
+        return 0;
+    }
+	
+    if (fm->chipon && (fm_pwr_state_get(fm) == FM_PWR_RX_ON)) 
+	{
+        length = sprintf(tmpbuf, "1\n");
+		WCN_DBG(FM_NTC | MAIN, " FM_PWR_RX_ON\n");
+    } 
+	else if (fm->chipon && (fm_pwr_state_get(fm) == FM_PWR_TX_ON)) 
+	{
+        length = sprintf(tmpbuf, "2\n");
+		WCN_DBG(FM_NTC | MAIN, " FM_PWR_TX_ON\n");
+    } 
+	else 
+	{
+        length = sprintf(tmpbuf, "0\n");
+		WCN_DBG(FM_NTC | MAIN, " FM POWER OFF\n");
+    }
+
+	if (copy_to_user(buf, tmpbuf, length)) {		
+		WCN_DBG(FM_NTC | MAIN, " Read FM status fail!\n");
+		return 0;
+	}
+
+	pos += length;
+	*ppos = pos;
+    WCN_DBG(FM_NTC | MAIN, "Leave fm_proc_read. length = %d\n", length);
+	
+	return length;
+}
+/*
 static fm_s32 fm_proc_read(char *page, char **start, off_t off, fm_s32 count, fm_s32 *eof, void *data)
 {
     fm_s32 cnt = 0;
@@ -793,11 +1295,18 @@ static fm_s32 fm_proc_read(char *page, char **start, off_t off, fm_s32 count, fm
         return 0;
     }
 
-    if (fm->chipon && (fm_pwr_state_get(fm) == FM_PWR_RX_ON)) {
+    if (fm->chipon && (fm_pwr_state_get(fm) == FM_PWR_RX_ON)) 
+	{
         cnt = sprintf(page, "1\n");
-    } else if (fm->chipon && (fm_pwr_state_get(fm) == FM_PWR_TX_ON)) {
+		WCN_DBG(FM_NTC | MAIN, " FM_PWR_RX_ON\n");
+    } 
+	else if (fm->chipon && (fm_pwr_state_get(fm) == FM_PWR_TX_ON)) 
+	{
+		WCN_DBG(FM_NTC | MAIN, " FM_PWR_TX_ON\n");
         cnt = sprintf(page, "2\n");
-    } else {
+    } 
+	else 
+	{
         cnt = sprintf(page, "0\n");
     }
 
@@ -805,7 +1314,7 @@ static fm_s32 fm_proc_read(char *page, char **start, off_t off, fm_s32 count, fm
     WCN_DBG(FM_NTC | MAIN, "Leave fm_proc_read. cnt = %d\n", cnt);
     return cnt;
 }
-
+*/
 static fm_s32 fm_proc_write(struct file *file, const char *buffer, unsigned long count, void *data)
 {
     fm_s8 tmp_buf[50] = {0};
@@ -813,6 +1322,7 @@ static fm_s32 fm_proc_write(struct file *file, const char *buffer, unsigned long
 
     copysize = (count < (sizeof(tmp_buf) - 1)) ? count : (sizeof(tmp_buf) - 1);
 
+    WCN_DBG(FM_NTC | MAIN, "fm_proc_write:0\n");
     if (copy_from_user(tmp_buf, buffer, copysize)) {
         WCN_DBG(FM_ERR | MAIN, "failed copy_from_user\n");
         return -EFAULT;
@@ -833,7 +1343,7 @@ static fm_s32 fm_proc_write(struct file *file, const char *buffer, unsigned long
         return -EFAULT;
     }
 
-    WCN_DBG(FM_WAR | MAIN, "success g_dbg_level = 0x%x\n", g_dbg_level);
+    WCN_DBG(FM_NTC | MAIN, "fm_proc_write:1 g_dbg_level = 0x%x\n", g_dbg_level);
     return count;
 }
 
@@ -926,15 +1436,13 @@ static fm_s32 fm_mod_init(fm_u32 arg)
     }
 
     //fm proc file create "/proc/fm"
-    g_fm_proc = create_proc_entry(FM_PROC_FILE, 0444, NULL);
+    g_fm_proc = proc_create(FM_PROC_FILE, 0444, NULL, &fm_proc_ops);
 
     if (g_fm_proc == NULL) {
         WCN_DBG(FM_ALT | MAIN, "create_proc_entry failed\n");
         ret = -ENOMEM;
         goto ERR_EXIT;
     } else {
-        g_fm_proc->read_proc = fm_proc_read;
-        g_fm_proc->write_proc = fm_proc_write;
         WCN_DBG(FM_NTC | MAIN, "create_proc_entry success\n");
     }
 
@@ -1006,7 +1514,7 @@ static struct platform_driver mt_fm_dev_drv = {
     }
 };
 
-static fm_s32 __init mt_fm_init(void)
+static fm_s32 mt_fm_init(void)
 {
     fm_s32 ret = 0;
 
@@ -1035,20 +1543,29 @@ static fm_s32 __init mt_fm_init(void)
     return ret;
 }
 
-static void __exit mt_fm_exit(void)
+static void mt_fm_exit(void)
 {
     platform_driver_unregister(&mt_fm_dev_drv);
     fm_env_destroy();
 }
 
+#ifdef MTK_WCN_REMOVE_KERNEL_MODULE
+int mtk_wcn_fm_init(void)
+{
+	return mt_fm_init();
+}
+void mtk_wcn_fm_exit(void)
+{
+	mt_fm_exit();
+}
 
-EXPORT_SYMBOL(g_dbg_level);
-EXPORT_SYMBOL(fm_priv_register);
-EXPORT_SYMBOL(fm_priv_unregister);
-
+EXPORT_SYMBOL(mtk_wcn_fm_init);
+EXPORT_SYMBOL(mtk_wcn_fm_exit);
+#else
 module_init(mt_fm_init);
 module_exit(mt_fm_exit);
-
+#endif
+EXPORT_SYMBOL(g_dbg_level);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("MediaTek FM Driver");
 MODULE_AUTHOR("Hongcheng <hongcheng.xia@MediaTek.com>");

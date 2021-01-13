@@ -16,7 +16,7 @@
 **
 ** 11 15 2012 cp.wu
 ** [ALPS00382763] N820_JB:[WIFI]N820JB WLAN ±K???,«ÝÉó?¬y¥\¯Ó¤j
-** when being disconnected, set flag to stop join retrial.
+** do not try reconnecting when being disconnected by the peer
 ** 
 ** 08 31 2012 yuche.tsai
 ** [ALPS00349585] [6577JB][WiFi direct][KE]Establish p2p connection while both device have connected to AP previously,one device reboots automatically with KE
@@ -738,6 +738,9 @@ typedef struct _CONNECTION_SETTINGS_T {
 
     /* b0~3: trigger-en AC0~3. b4~7: delivery-en AC0~3 */
     UINT_8                          bmfgApsdEnAc;
+
+    /* for RSN info store, when upper layer set rsn info */
+    RSN_INFO_T                      rRsnInfo;
 
 } CONNECTION_SETTINGS_T, *P_CONNECTION_SETTINGS_T;
 

@@ -1498,8 +1498,10 @@ kalRxIndicatePkts (
                 prNetDev = kalP2PGetDevHdlr(prGlueInfo);
             }
 
-            prNetDev->stats.rx_bytes += prSkb->len;
-            prNetDev->stats.rx_packets++;
+            //prNetDev->stats.rx_bytes += prSkb->len;
+            //prNetDev->stats.rx_packets++;
+            prGlueInfo->prP2PInfo->rNetDevStats.rx_bytes += prSkb->len;
+	        prGlueInfo->prP2PInfo->rNetDevStats.rx_packets++;
             
 #else
             prNetDev = prGlueInfo->prDevHandler;
@@ -1739,6 +1741,19 @@ kalIndicateStatusAndComplete (
             cfg80211_scan_done(prScanRequest, FALSE);
         }
         break;
+        case WLAN_STATUS_CONNECT_INDICATION:
+            /* indicate AIS Jion fail  event */
+            if(prGlueInfo->prDevHandler->ieee80211_ptr->sme_state == CFG80211_SME_CONNECTING) {
+            cfg80211_connect_result(prGlueInfo->prDevHandler,
+                    prGlueInfo->prAdapter->rWifiVar.rAisFsmInfo.prTargetBssDesc->aucBSSID,
+                    prGlueInfo->aucReqIe,
+                    prGlueInfo->u4ReqIeLength,
+                    prGlueInfo->aucRspIe,
+                    prGlueInfo->u4RspIeLength,
+                    REASON_CODE_UNSPECIFIED,
+                    GFP_KERNEL);
+                }
+            break;
 
     #if 0
     case WLAN_STATUS_MSDU_OK:
@@ -2020,7 +2035,7 @@ kalSendCompleteAndAwakeQueue (
 
     dev_kfree_skb((struct sk_buff *) pvPacket);
 
-    DBGLOG(TX, EVENT, ("----- pending frame %d -----\n", prGlueInfo->i4TxPendingFrameNum));
+    DBGLOG(TX, EVENT, ("----- pending frame %ld -----\n", prGlueInfo->i4TxPendingFrameNum));
 
     return;
 }
@@ -2132,7 +2147,7 @@ kalQoSFrameClassifierAndPacketInfo (
     u4PacketLen = prSkb->len;
 
     if (u4PacketLen < ETH_HLEN) {
-        DBGLOG(INIT, WARN, ("Invalid Ether packet length: %d\n", u4PacketLen));
+        DBGLOG(INIT, WARN, ("Invalid Ether packet length: %lu\n", u4PacketLen));
         return FALSE;
     }
 
@@ -2308,9 +2323,12 @@ kalIoctl (IN P_GLUE_INFO_T    prGlueInfo,
     P_GL_IO_REQ_T prIoReq = NULL;
     WLAN_STATUS ret = WLAN_STATUS_SUCCESS;
 
+    
     //GLUE_SPIN_LOCK_DECLARATION();
     ASSERT(prGlueInfo);
 
+
+    
     /* <1> Check if driver is halt */
 
     //if (prGlueInfo->u4Flag & GLUE_FLAG_HALT) {
@@ -2356,7 +2374,7 @@ kalIoctl (IN P_GLUE_INFO_T    prGlueInfo,
     /* <5> Reset the status of pending OID */
     prGlueInfo->rPendStatus = WLAN_STATUS_FAILURE;
     //prGlueInfo->u4TimeoutFlag = 0;
-    prGlueInfo->u4OidCompleteFlag = 0;
+    //prGlueInfo->u4OidCompleteFlag = 0;
 
     /* <6> Check if we use the command queue */
     prIoReq->u4Flag = fgCmd;
@@ -2394,6 +2412,8 @@ kalIoctl (IN P_GLUE_INFO_T    prGlueInfo,
     up(&prGlueInfo->ioctl_sem);
     up(&g_halt_sem);
 
+
+    
     return ret;
 }
 
@@ -2728,6 +2748,7 @@ int tx_thread(void *data)
             if (test_and_clear_bit(GLUE_FLAG_OID_BIT, &prGlueInfo->u4Flag)) {
                 /* get current prIoReq */
                 prIoReq = &(prGlueInfo->OidEntry);
+				prGlueInfo->u4OidCompleteFlag = 0;
 #if CFG_ENABLE_WIFI_DIRECT
                 if(prGlueInfo->prAdapter->fgIsP2PRegistered == FALSE
                     && prIoReq->fgIsP2pOid == TRUE) {
@@ -3932,7 +3953,11 @@ kalIndicateBssInfo (
             DBGLOG(REQ, WARN, ("cfg80211_inform_bss_frame() returned with NULL\n"));
         }
         else {
-            cfg80211_put_bss(bss);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+            cfg80211_put_bss(wiphy, bss);
+#else
+			cfg80211_put_bss(bss);
+#endif
         }
     }
 

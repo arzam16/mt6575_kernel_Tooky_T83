@@ -134,7 +134,7 @@ int DumpNativeInfo(void)
 	ret=copy_from_user((void *)(User_Stack), (const void __user *)( userstack_start), length);
 	xlog_printk(ANDROID_LOG_INFO, IPANIC_LOG_TAG, "copy_from_user ret(0x%08x),len:%x\n",ret,length);
 	i=0;
-	while (userstack_start < userstack_end)	{
+	while ( (i< (length/4)) && (userstack_start < userstack_end) )	{
 		_LOG ("0x%08x: 0x%08x\n", userstack_start, User_Stack[i]);
 		userstack_start+=4;
 		i++;
@@ -143,5 +143,22 @@ int DumpNativeInfo(void)
 	xlog_printk(ANDROID_LOG_DEBUG, IPANIC_LOG_TAG, "end dump native stack:\n");
 	_LOG ("end dump native stack:\n");
 	return 0;
+}
+
+void aee_dumpnative(void)
+{
+	char *printk_buf = NativeInfo;
+	int log_length = 0;
+	
+	memset(NativeInfo, 0, MAX_NATIVEINFO);
+	DumpNativeInfo();	
+	log_length = strlen(NativeInfo);
+	printk("\n DumpNativeInfo : %d \n", log_length);
+	/* printk temporary buffer printk_buf[1024]. To avoid char loss, add 4 bytes here */
+	while (log_length > 0) {
+		printk(KERN_ERR "%s", printk_buf);
+		printk_buf += 1020;
+		log_length -= 1020;
+	}	
 }
 

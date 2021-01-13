@@ -17,6 +17,8 @@
 #include <linux/kobj_map.h>
 #include <linux/mutex.h>
 #include <linux/idr.h>
+#include <linux/ctype.h>
+#include <linux/fs_uuid.h>
 #include <linux/log2.h>
 
 #include "blk.h"
@@ -25,7 +27,7 @@ static DEFINE_MUTEX(block_class_lock);
 struct kobject *block_depr;
 
 /* for extended dynamic devt allocation, currently only one major is used */
-#define MAX_EXT_DEVT		(1 << MINORBITS)
+#define NR_EXT_DEVT		(1 << MINORBITS)
 
 /* For extended devt allocation.  ext_devt_mutex prevents look up
  * results from going away underneath its user.
@@ -420,16 +422,17 @@ int blk_alloc_devt(struct hd_struct *part, dev_t *devt)
 	do {
 		if (!idr_pre_get(&ext_devt_idr, GFP_KERNEL))
 			return -ENOMEM;
+		mutex_lock(&ext_devt_mutex);
 		rc = idr_get_new(&ext_devt_idr, part, &idx);
+		if (!rc && idx >= NR_EXT_DEVT) {
+			idr_remove(&ext_devt_idr, idx);
+			rc = -EBUSY;
+		}
+		mutex_unlock(&ext_devt_mutex);
 	} while (rc == -EAGAIN);
 
 	if (rc)
 		return rc;
-
-	if (idx > MAX_EXT_DEVT) {
-		idr_remove(&ext_devt_idr, idx);
-		return -EBUSY;
-	}
 
 	*devt = MKDEV(BLOCK_EXT_MAJOR, blk_mangle_minor(idx));
 	return 0;
@@ -517,7 +520,7 @@ static void register_disk(struct gendisk *disk)
 
 	ddev->parent = disk->driverfs_dev;
 
-	dev_set_name(ddev, disk->disk_name);
+	dev_set_name(ddev, "%s", disk->disk_name);
 
 	/* delay uevents, until we scanned partition table */
 	dev_set_uevent_suppress(ddev, 1);
@@ -644,7 +647,6 @@ void del_gendisk(struct gendisk *disk)
 	disk_part_iter_exit(&piter);
 
 	invalidate_partition(disk, 0);
-	blk_free_devt(disk_to_dev(disk)->devt);
 	set_capacity(disk, 0);
 	disk->flags &= ~GENHD_FL_UP;
 
@@ -662,6 +664,7 @@ void del_gendisk(struct gendisk *disk)
 	if (!sysfs_deprecated)
 		sysfs_remove_link(block_depr, dev_name(disk_to_dev(disk)));
 	device_del(disk_to_dev(disk));
+	blk_free_devt(disk_to_dev(disk)->devt);
 }
 EXPORT_SYMBOL(del_gendisk);
 
@@ -1384,6 +1387,87 @@ int invalidate_partition(struct gendisk *disk, int partno)
 
 EXPORT_SYMBOL(invalidate_partition);
 
+dev_t blk_lookup_fs_info(struct fs_info *seek)
+{
+	dev_t devt = MKDEV(0, 0);
+	struct class_dev_iter iter;
+	struct device *dev;
+	int best_score = 0;
+
+	class_dev_iter_init(&iter, &block_class, NULL, &disk_type);
+	while (best_score < 3 && (dev = class_dev_iter_next(&iter))) {
+		struct gendisk *disk = dev_to_disk(dev);
+		struct disk_part_iter piter;
+		struct hd_struct *part;
+
+		disk_part_iter_init(&piter, disk, DISK_PITER_INCL_PART0);
+
+		while (best_score < 3 && (part = disk_part_iter_next(&piter))) {
+			int score = part_matches_fs_info(part, seek);
+			if (score > best_score) {
+				devt = part_devt(part);
+				best_score = score;
+			}
+		}
+		disk_part_iter_exit(&piter);
+	}
+	class_dev_iter_exit(&iter);
+	return devt;
+}
+EXPORT_SYMBOL_GPL(blk_lookup_fs_info);
+
+/* Caller uses NULL, key to start. For each match found, we return a bdev on
+ * which we have done blkdev_get, and we do the blkdev_put on block devices
+ * that are passed to us. When no more matches are found, we return NULL.
+ */
+struct block_device *next_bdev_of_type(struct block_device *last,
+	const char *key)
+{
+	dev_t devt = MKDEV(0, 0);
+	struct class_dev_iter iter;
+	struct device *dev;
+	struct block_device *next = NULL, *bdev;
+	int got_last = 0;
+
+	if (!key)
+		goto out;
+
+	class_dev_iter_init(&iter, &block_class, NULL, &disk_type);
+	while (!devt && (dev = class_dev_iter_next(&iter))) {
+		struct gendisk *disk = dev_to_disk(dev);
+		struct disk_part_iter piter;
+		struct hd_struct *part;
+
+		disk_part_iter_init(&piter, disk, DISK_PITER_INCL_PART0);
+
+		while ((part = disk_part_iter_next(&piter))) {
+			bdev = bdget(part_devt(part));
+			if (last && !got_last) {
+				if (last == bdev)
+					got_last = 1;
+				continue;
+			}
+
+			if (blkdev_get(bdev, FMODE_READ, 0))
+				continue;
+
+			if (bdev_matches_key(bdev, key)) {
+				next = bdev;
+				break;
+			}
+
+			blkdev_put(bdev, FMODE_READ);
+		}
+		disk_part_iter_exit(&piter);
+	}
+	class_dev_iter_exit(&iter);
+out:
+	if (last)
+		blkdev_put(last, FMODE_READ);
+	return next;
+}
+EXPORT_SYMBOL_GPL(next_bdev_of_type);
+
 /*
  * Disk events - monitor disk events like media change and eject request.
  */
@@ -1404,11 +1488,17 @@ struct disk_events {
 static const char *disk_events_strs[] = {
 	[ilog2(DISK_EVENT_MEDIA_CHANGE)]	= "media_change",
 	[ilog2(DISK_EVENT_EJECT_REQUEST)]	= "eject_request",
+#ifdef MTK_MULTI_PARTITION_MOUNT_ONLY_SUPPORT	
+	[ilog2(DISK_EVENT_MEDIA_DISAPPEAR)]     = "media_disappear",
+#endif
 };
 
 static char *disk_uevents[] = {
 	[ilog2(DISK_EVENT_MEDIA_CHANGE)]	= "DISK_MEDIA_CHANGE=1",
 	[ilog2(DISK_EVENT_EJECT_REQUEST)]	= "DISK_EJECT_REQUEST=1",
+#ifdef MTK_MULTI_PARTITION_MOUNT_ONLY_SUPPORT	
+	[ilog2(DISK_EVENT_MEDIA_DISAPPEAR)] = "DISK_EVENT_MEDIA_DISAPPEAR=1",	
+#endif	
 };
 
 /* list of all disk_events */

@@ -486,6 +486,7 @@ static const struct iw_priv_args rIwPrivTable[] = {
 
     {IOCTL_SET_INTS,            IW_PRIV_TYPE_INT | 4, 0,                        ""},
     {IOCTL_GET_INT,             0, IW_PRIV_TYPE_INT | 50,                       ""},
+    {IOCTL_GET_INT,             0, IW_PRIV_TYPE_CHAR | 16,                      ""},
 
     /* added for set_oid and get_oid */
     {IOCTL_SET_STRUCT,          256,                                    0, ""},
@@ -537,6 +538,7 @@ static const struct iw_priv_args rIwPrivTable[] = {
 #if CFG_ENABLE_WIFI_DIRECT
     {PRIV_CMD_P2P_MODE,         IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 2, 0,   "set_p2p_mode" },
 #endif
+    {PRIV_CMD_GET_BUILD_DATE_CODE,      0, IW_PRIV_TYPE_CHAR | 16,              "get_date_code" },
 };
 
 static const iw_handler rIwPrivHandler[] = {
@@ -3242,7 +3244,7 @@ wext_set_auth (
 */
 /*----------------------------------------------------------------------------*/
 #if CFG_SUPPORT_WAPI
-    UINT_8 keyStructBuf[320];   /* add/remove key shared buffer */
+    UINT_8 keyStructBuf[1024];   /* add/remove key shared buffer */
 #else
     UINT_8 keyStructBuf[100];   /* add/remove key shared buffer */
 #endif
@@ -3317,7 +3319,8 @@ wext_set_encode_ext (
         }
 
         /* PN */
-        memcpy(prWpiKey->aucPN, prIWEncExt->tx_seq, IW_ENCODE_SEQ_MAX_SIZE * 2);
+        memcpy(prWpiKey->aucPN, prIWEncExt->tx_seq, IW_ENCODE_SEQ_MAX_SIZE);
+		memcpy(prWpiKey->aucPN + IW_ENCODE_SEQ_MAX_SIZE, prIWEncExt->rx_seq, IW_ENCODE_SEQ_MAX_SIZE);
 
         /* BSSID */
         memcpy(prWpiKey->aucAddrIndex, prIWEncExt->addr.sa_data, 6);

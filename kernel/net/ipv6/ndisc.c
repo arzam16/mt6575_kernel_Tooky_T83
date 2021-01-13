@@ -48,6 +48,9 @@
 #define ND_PRINTK3 ND_PRINTK
 #endif
 
+/*linklocal addr should be changed or not during tethering*/
+#define MTK_NDP_CHANGE_SRC  1
+
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/types.h>
@@ -441,7 +444,6 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 	int hlen = LL_RESERVED_SPACE(dev);
 	int tlen = dev->needed_tailroom;
 	int len;
-	int err;
 	u8 *opt;
 
 	if (!dev->addr_len)
@@ -451,14 +453,12 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 	if (llinfo)
 		len += ndisc_opt_addr_space(dev);
 
-	skb = sock_alloc_send_skb(sk,
-				  (MAX_HEADER + sizeof(struct ipv6hdr) +
-				   len + hlen + tlen),
-				  1, &err);
+	skb = alloc_skb((MAX_HEADER + sizeof(struct ipv6hdr) +
+			 len + hlen + tlen), GFP_ATOMIC);
 	if (!skb) {
 		ND_PRINTK0(KERN_ERR
-			   "ICMPv6 ND: %s() failed to allocate an skb, err=%d.\n",
-			   __func__, err);
+			   "ICMPv6 ND: %s() failed to allocate an skb.\n",
+			   __func__);
 		return NULL;
 	}
 
@@ -485,6 +485,11 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 					   IPPROTO_ICMPV6,
 					   csum_partial(hdr,
 							len, 0));
+
+	/* Manually assign socket ownership as we avoid calling
+	 * sock_alloc_send_pskb() to bypass wmem buffer limits
+	 */
+	skb_set_owner_w(skb, sk);
 
 	return skb;
 }
@@ -593,7 +598,7 @@ static void ndisc_send_unsol_na(struct net_device *dev)
 {
 	struct inet6_dev *idev;
 	struct inet6_ifaddr *ifa;
-	struct in6_addr mcaddr;
+	struct in6_addr mcaddr = IN6ADDR_LINKLOCAL_ALLNODES_INIT;
 
 	idev = in6_dev_get(dev);
 	if (!idev)
@@ -601,7 +606,6 @@ static void ndisc_send_unsol_na(struct net_device *dev)
 
 	read_lock_bh(&idev->lock);
 	list_for_each_entry(ifa, &idev->addr_list, if_list) {
-		addrconf_addr_solict_mult(&ifa->addr, &mcaddr);
 		ndisc_send_na(dev, NULL, &mcaddr, &ifa->addr,
 			      /*router=*/ !!idev->cnf.forwarding,
 			      /*solicited=*/ false, /*override=*/ true,
@@ -1205,6 +1209,12 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 				(ra_msg->icmph.icmp6_addrconf_other ?
 					IF_RA_OTHERCONF : 0);
 
+	/*MTK_NET*/
+	if (0 == strncmp(in6_dev->dev->name, "ccmni", 2)){
+		printk(KERN_INFO "[mtk_net][ipv6]skip default route for ccmni!\n");
+		in6_dev->cnf.accept_ra_defrtr = 0;
+	}
+
 	if (!in6_dev->cnf.accept_ra_defrtr)
 		goto skip_defrtr;
 
@@ -1400,12 +1410,35 @@ skip_routeinfo:
 		}
 	}
 
+#ifdef MTK_DHCPV6C_WIFI
+	if (in6_dev->if_flags & IF_RA_OTHERCONF){
+		printk(KERN_INFO "[mtk_net][ipv6]receive RA with o bit!\n");
+		in6_dev->cnf.ra_info_flag = 1;
+	} 
+	if(in6_dev->if_flags & IF_RA_MANAGED){
+		printk(KERN_INFO "[mtk_net][ipv6]receive RA with m bit!\n");
+		in6_dev->cnf.ra_info_flag = 2;
+	}
+	if(in6_dev->cnf.ra_info_flag == 0){
+		printk(KERN_INFO "[mtk_net][ipv6]receive RA neither O nor M bit is set!\n");
+		in6_dev->cnf.ra_info_flag = 4;
+	}
+#endif
+
 	if (ndopts.nd_useropts) {
 		struct nd_opt_hdr *p;
 		for (p = ndopts.nd_useropts;
 		     p;
 		     p = ndisc_next_useropt(p, ndopts.nd_useropts_end)) {
 			ndisc_ra_useropt(skb, p);
+#ifdef MTK_DHCPV6C_WIFI
+			/* only clear ra_info_flag when O bit is set */
+			if (p->nd_opt_type == ND_OPT_RDNSS &&
+					in6_dev->if_flags & IF_RA_OTHERCONF) {
+				printk(KERN_INFO "[mtk_net][ipv6]RDNSS, ignore RA with o bit!\n");
+				in6_dev->cnf.ra_info_flag = 0;
+			} 
+#endif
 		}
 	}
 
@@ -1679,14 +1712,13 @@ static void pndisc_redo(struct sk_buff *skb)
 static void ndisc_change_cksum(struct sk_buff *skb)
 {
     struct icmp6hdr *icmph = (struct icmp6hdr *)skb_transport_header(skb);
-    unsigned int hl, pl, len;
+    unsigned int pl, len;
     struct ipv6hdr *ip6h;
 
-    hl = sizeof(*ip6h);
     ip6h = ipv6_hdr(skb);
     pl = ntohs(ip6h->payload_len);
-
-    len = pl + sizeof(*ip6h) - hl;
+    len = pl;
+    printk(KERN_INFO "ndisc_change_cksum, len = %d, skb->len = %d", len, skb->len);
     
     icmph->icmp6_cksum = 0;
     icmph->icmp6_cksum = csum_ipv6_magic(&ipv6_hdr(skb)->saddr, &ipv6_hdr(skb)->daddr,
@@ -1774,8 +1806,14 @@ static void ndisc_change_llsaddr(struct sk_buff *skb, struct net_device *dev)
 
     while (opt_len) {
         int l;
-        if (opt_len < sizeof(struct nd_opt_hdr))
-            return ;
+        if (opt_len < sizeof(struct nd_opt_hdr)){
+            printk(KERN_ERR "ndisc_change_lladdr invalid opt_len");
+			return ;
+		}
+		if (!nd_opt){
+            printk(KERN_ERR "ndisc_change_lladdr invalid nd_opt");
+			return ;
+		}
         l = nd_opt->nd_opt_len << 3;
         printk(KERN_INFO "ndisc_change_llsaddr opt_len= %d, current type =%d, l =%d  ", 
             opt_len, nd_opt->nd_opt_type, l);
@@ -1814,6 +1852,42 @@ static void ndisc_change_llsaddr(struct sk_buff *skb, struct net_device *dev)
     return ;
 }
 
+static int ndisc_change_addr(struct sk_buff *skb, struct net_device *dev)
+{
+	struct in6_addr addr_buf;
+	struct nd_msg *ndmsg = (struct nd_msg *)skb_transport_header(skb);
+	const struct in6_addr in6addr_ll_allnodes = IN6ADDR_LINKLOCAL_ALLNODES_INIT;
+
+	printk(KERN_INFO "ndisc_change_addr for dev: %s, type = %d\n", dev->name, ndmsg->icmph.icmp6_type);
+
+	if (ipv6_get_lladdr(dev, &addr_buf, (IFA_F_TENTATIVE|IFA_F_OPTIMISTIC))){
+		printk(KERN_ERR "ndisc_change_addr: get src addr fail!");
+		return -1;
+	}
+
+	switch (ndmsg->icmph.icmp6_type) {
+	case NDISC_ROUTER_SOLICITATION:
+	    ipv6_hdr(skb)->saddr = addr_buf;  
+		break;		
+	case NDISC_ROUTER_ADVERTISEMENT:
+	    ipv6_hdr(skb)->saddr = addr_buf;  
+		ipv6_hdr(skb)->daddr = in6addr_ll_allnodes;  
+		printk(KERN_INFO "ndisc_change_addr icmp6 type = RA\n");
+		break;
+	case NDISC_NEIGHBOUR_SOLICITATION:	
+		//ipv6_hdr(skb)->saddr = addr_buf;  
+		break;	
+	case NDISC_NEIGHBOUR_ADVERTISEMENT:
+		//ipv6_hdr(skb)->daddr = in6addr_ll_allnodes; 
+		break;
+	case NDISC_REDIRECT:
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
 static int ndp_is_intiface(const char *ifname)
 {
    if(!strncmp(ifname, "ap", 2))
@@ -1829,7 +1903,7 @@ static int ndp_is_extiface(const char *ifname)
 {
    if(!strncmp(ifname, "wlan", 4))
    	return 1;
-   if(!strncmp(ifname, "ccmni", 5))
+   if(!strncmp(ifname, "ccmni", 2))
    	return 1;
    return 0;
 }
@@ -1842,6 +1916,7 @@ int ndp_forward(struct sk_buff *skb)
     struct sk_buff *skb2; 
     struct flowi6 fl6;
     struct icmp6hdr *icmp6h;
+	  int err = 0;
 
     printk(KERN_WARNING ">>-- %s enter",__FUNCTION__);
     
@@ -1849,37 +1924,58 @@ int ndp_forward(struct sk_buff *skb)
     net = dev_net(skb->dev);
     if (net->ipv6.devconf_all->proxy_ndp == 0){
         printk(KERN_WARNING "<<-- %s exit for: proxy_ndp == 0",__FUNCTION__);
-        return 0;
+        return -1;
     }
     if (net->ipv6.devconf_all->forwarding == 0){
         printk(KERN_WARNING "<<-- %s exit for: forwarding == 0",__FUNCTION__);
-        return 0;
+        return -1;
     }
 
     printk(KERN_INFO "ndp_forward %s flags= 0x%x ", skb->dev->name, skb->dev->flags);
-
-    skb2 = skb_clone(skb, GFP_ATOMIC);
-    if (!skb2) {
-        return -1;
-    }
 
     for_each_netdev(net, dev) { 
         if (dev->flags & IFF_UP) {
             if((ndp_is_intiface(dev->name) && ndp_is_extiface(skb->dev->name))
                     || (ndp_is_extiface(dev->name) && ndp_is_intiface(skb->dev->name))){             
-    
+			    skb2 = skb_copy(skb, GFP_ATOMIC);
+			    if (!skb2) {
+					printk(KERN_ERR "ndp_forward: clone skb fail!");
+			        return -1;
+			    }    
                 printk(KERN_INFO "ndp_forward input:%s, output:%s ", skb->dev->name, dev->name);
                 skb2->dev = dev;
+                printk(KERN_INFO "skb len = %d, datalen = %d, header len = %d\n",
+                    skb->len, skb->data_len, skb_headroom(skb));
+          
+                if (skb_network_header(skb2) < skb2->data) {
+                    printk(KERN_INFO "ndp_forward header < data");
+                    skb_push(skb2, skb2->data - skb_network_header(skb2));
+                    skb_reset_network_header(skb2);
+                }
+                if (skb2->network_header > skb2->tail) {
+                    printk(KERN_INFO "ndp_forward header > tail");
+                }
+#if MTK_NDP_CHANGE_SRC				
+                ndisc_change_addr(skb2, dev); 
+#endif
+                ndisc_change_llsaddr(skb2, dev);
+        
                 icmpv6_flow_init(net->ipv6.ndisc_sk, &fl6, icmp6h->icmp6_type,
-                     &ipv6_hdr(skb)->saddr, &ipv6_hdr(skb)->daddr, skb->dev->ifindex);
+                     &ipv6_hdr(skb2)->saddr, &ipv6_hdr(skb2)->daddr, skb2->dev->ifindex);
                 dst = icmp6_dst_alloc(skb2->dev, NULL, &fl6);                
                 if (!dst) {
+                    printk(KERN_ERR "ndp_forward: icmp6_dst_alloc fail!");
                     kfree_skb(skb2);
                     return -1;
                 }
                 skb_dst_set(skb2, dst);
-                ndisc_change_llsaddr(skb2, dev);
-                return dst_output(skb2);                
+                
+                printk(KERN_INFO "skb2 len = %d, datalen = %d, header len = %d\n",
+                    skb2->len, skb2->data_len, skb_headroom(skb2));
+                err = NF_HOOK(NFPROTO_IPV6, NF_INET_LOCAL_OUT, skb2, NULL, dst->dev, dst_output);
+				if (err < 0) {
+                    printk(KERN_ERR "ndp_forward: send return = %d!\n", err);
+				}                
             }
         }
     }
@@ -1914,6 +2010,33 @@ int ndisc_rcv(struct sk_buff *skb)
 
 	memset(NEIGH_CB(skb), 0, sizeof(struct neighbour_cb));
 
+#ifdef MTK_IPV6_TETHER_NDP_MODE
+#if MTK_NDP_CHANGE_SRC
+		switch (msg->icmph.icmp6_type) {
+		case NDISC_ROUTER_SOLICITATION:
+		case NDISC_ROUTER_ADVERTISEMENT:
+			ndp_forward(skb);
+			break;
+		case NDISC_NEIGHBOUR_SOLICITATION:
+		case NDISC_NEIGHBOUR_ADVERTISEMENT:
+		case NDISC_REDIRECT:
+			break;
+		}
+#else
+		switch (msg->icmph.icmp6_type) {
+		case NDISC_NEIGHBOUR_SOLICITATION:
+		case NDISC_NEIGHBOUR_ADVERTISEMENT:
+		case NDISC_ROUTER_SOLICITATION:
+		case NDISC_ROUTER_ADVERTISEMENT:
+			ndp_forward(skb);
+			break;
+		case NDISC_REDIRECT:
+			break;
+		}
+#endif
+#endif
+
+
 	switch (msg->icmph.icmp6_type) {
 	case NDISC_NEIGHBOUR_SOLICITATION:
 		ndisc_recv_ns(skb);
@@ -1936,18 +2059,6 @@ int ndisc_rcv(struct sk_buff *skb)
 		break;
 	}
 
-#ifdef MTK_IPV6_TETHER_NDP_MODE
-    switch (msg->icmph.icmp6_type) {
-    case NDISC_NEIGHBOUR_SOLICITATION:
-    case NDISC_NEIGHBOUR_ADVERTISEMENT:
-    case NDISC_ROUTER_SOLICITATION:
-    case NDISC_ROUTER_ADVERTISEMENT:
-        ndp_forward(skb);
-        break;
-    case NDISC_REDIRECT:
-        break;
-    }
-#endif
 	return 0;
 }
 

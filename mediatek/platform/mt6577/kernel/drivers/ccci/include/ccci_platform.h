@@ -72,6 +72,7 @@
 
 #ifndef CONFIG_MODEM_FIRMWARE_PATH
 #define CONFIG_MODEM_FIRMWARE_PATH "/etc/firmware/"
+#define CONFIG_MODEM_FIRMWARE_CIP_PATH	"/custom/etc/firmware/"
 
 #define MOEDM_IMAGE_PATH "/etc/firmware/modem.img"
 #define DSP_IMAGE_PATH "/etc/firmware/DSP_ROM"
@@ -92,11 +93,14 @@
 
 #define VER_3G_STR  "3G"
 #define VER_2G_STR  "2G"
-#define VER_INVALID_STR  "VER_INVALID"
+#define VER_WG_STR   "WG"
+#define VER_TG_STR   "TG"
+#define VER_INVALID_STR  "INVALID"
+
 
 #define DEBUG_STR   "Debug"
 #define RELEASE_STR  "Release"
-#define INVALID_STR "VER_INVALID"
+#define INVALID_STR  "INVALID"
 
 #define DSP_ROM_TYPE 0x0104
 #define DSP_BL_TYPE  0x0003
@@ -311,7 +315,7 @@ struct IMG_CHECK_INFO{
 #define  NAME_LEN 100
 struct image_info
 {
-	int idx;            /*idx=0,modem image; idx=1, dsp image */
+	int				type;            /*type=0,modem image; type=1, dsp image */
 	char file_name[NAME_LEN];
 	unsigned long address;
 	ssize_t size;
@@ -347,13 +351,6 @@ typedef enum{
 }LOAD_FLAG;
 
 
-typedef enum {
-	MD_DEBUG_REL_INFO_NOT_READY = 0,
-	MD_IS_DEBUG_VERSION,
-	MD_IS_RELEASE_VERSION
-};
-
-
 //*******************external Function definition*****************//
 //extern void start_emi_mpu_protect(void);
 extern void enable_emi_mpu_protection(dma_addr_t, int);
@@ -362,8 +359,6 @@ extern int  platform_init(void);
 extern void platform_deinit(void);
 extern void dump_firmware_info(void);
 extern void ccci_md_wdt_notify_register(int (*funcp)(void));
-extern void get_md_mem_info(void *phy_addr, int *len);
-extern int is_modem_debug_ver(void);
 
 extern unsigned int get_max_DRAM_size (void);
 extern unsigned int get_phys_offset (void);
@@ -390,10 +385,8 @@ extern	unsigned int	md_ccif_base;
 
 static inline void ccci_get_region_layout(CCCI_REGION_LAYOUT *layout)
 {
-	if(get_ap_img_ver() == AP_IMG_2G)
+	if(get_modem_support(0) == modem_2g)
 		layout->dsp_region_base = DSP_REGION_BASE_2G;
-	else if(get_ap_img_ver() == AP_IMG_3G)
-		layout->dsp_region_base = DSP_REGION_BASE_3G;
 	else
 		layout->dsp_region_base = DSP_REGION_BASE_3G;	
 	layout->dsp_region_len = DSP_REGION_LEN;

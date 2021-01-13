@@ -22,6 +22,25 @@
 #include <linux/buffer_head.h>
 #include <linux/namei.h>
 #include "fat.h"
+#include <linux/proc_fs.h>
+
+static int fat_dbg_enable = 0 ;
+int get_fat_dbg(void)
+{
+	return fat_dbg_enable ;
+}
+
+void enable_fat_dbg(void)
+{
+        printk("Enter %s\n",__func__);
+	fat_dbg_enable = 1 ;
+}
+
+void disable_fat_dbg(void)
+{
+        printk("Enter %s\n",__func__);
+	fat_dbg_enable = 0 ;
+}
 
 /*
  * If new entry was created in the parent, it could create the 8.3
@@ -36,7 +55,7 @@ static int vfat_revalidate_shortname(struct dentry *dentry)
 	int ret = 1;
 	spin_lock(&dentry->d_lock);
 	if (dentry->d_time != dentry->d_parent->d_inode->i_version) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : dentry->d_time(%d) != dentry->d_parent->d_inode->i_version(%d), current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			dentry->d_time,
@@ -84,7 +103,7 @@ static int vfat_revalidate_ci(struct dentry *dentry, struct nameidata *nd)
 	 * intent of this. So, since this can be for creation, drop it.
 	 */
 	if (!nd) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : !nd, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			current->pid,
@@ -99,7 +118,7 @@ static int vfat_revalidate_ci(struct dentry *dentry, struct nameidata *nd)
 	 * for creation.
 	 */
 	if (nd->flags & (LOOKUP_CREATE | LOOKUP_RENAME_TARGET)) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : nd->flags = %x, current process is \"(PID=%d)%s\"\n", 
 			__func__,
 			nd->flags,
@@ -693,7 +712,7 @@ static int vfat_add_entry(struct inode *dir, struct qstr *qname, int is_dir,
 
 	len = vfat_striptail_len(qname);
 	if (len == 0) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : vfat_striptail_len(%s) failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			qname->name,
@@ -705,7 +724,7 @@ static int vfat_add_entry(struct inode *dir, struct qstr *qname, int is_dir,
 
 	slots = kmalloc(sizeof(*slots) * MSDOS_SLOTS, GFP_NOFS);
 	if (slots == NULL) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 		"%s() : allocate MSDOS_SLOTS(%d) failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			MSDOS_SLOTS,
@@ -718,7 +737,7 @@ static int vfat_add_entry(struct inode *dir, struct qstr *qname, int is_dir,
 	err = vfat_build_slots(dir, qname->name, len, is_dir, cluster, ts,
 			       slots, &nr_slots);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : calls vfat_build_slots() failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			current->pid,
@@ -729,7 +748,7 @@ static int vfat_add_entry(struct inode *dir, struct qstr *qname, int is_dir,
 
 	err = fat_add_entries(dir, slots, nr_slots, sinfo);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : calls fat_add_entries() failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			current->pid,
@@ -747,7 +766,7 @@ static int vfat_add_entry(struct inode *dir, struct qstr *qname, int is_dir,
 cleanup:
 	kfree(slots);
 
-	xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+	fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() clearup, err = %d, current process is \"(PID=%d)%s\"\n", 
 			__func__,
 			err,
@@ -763,7 +782,7 @@ static int vfat_find(struct inode *dir, struct qstr *qname,
 {
 	unsigned int len = vfat_striptail_len(qname);
 	if (len == 0) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() : vfat_striptail_len(%s) failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			qname->name,
@@ -851,7 +870,7 @@ static int vfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 	struct timespec ts;
 	int err;
 
-	xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
+	fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
 		__func__, 
 		(dentry->d_name).name,
 		current->pid,
@@ -863,7 +882,7 @@ static int vfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 	ts = CURRENT_TIME_SEC;
 	err = vfat_add_entry(dir, &dentry->d_name, 0, 0, &ts, &sinfo);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() calls vfat_add_entry(%s) failed, err=%d, current process is \"(PID=%d)%s\"\n", 
 			__func__,
 			(dentry->d_name).name,
@@ -879,7 +898,7 @@ static int vfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 			"%s() calls fat_build_inode failed, err=%d, current process is \"(PID=%d)%s\"\n", 
 			__func__,
 			err,
@@ -906,7 +925,7 @@ static int vfat_rmdir(struct inode *dir, struct dentry *dentry)
 	struct fat_slot_info sinfo;
 	int err;
 
-	xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
+	fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
 		__func__, 
 		(dentry->d_name).name,
 		current->pid,
@@ -917,7 +936,7 @@ static int vfat_rmdir(struct inode *dir, struct dentry *dentry)
 
 	err = fat_dir_empty(inode);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_dir_empty() failed, err = %d, current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_dir_empty() failed, err = %d, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			err,
 			current->pid,
@@ -927,7 +946,7 @@ static int vfat_rmdir(struct inode *dir, struct dentry *dentry)
 	}
 	err = vfat_find(dir, &dentry->d_name, &sinfo);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls vfat_find(%s) failed, err = %d, current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls vfat_find(%s) failed, err = %d, current process is \"(PID=%d)%s\"\n", 
 			__func__,
 			(dentry->d_name).name,
 			err,
@@ -939,7 +958,7 @@ static int vfat_rmdir(struct inode *dir, struct dentry *dentry)
 
 	err = fat_remove_entries(dir, &sinfo);	/* and releases bh */
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_remove_entries(%s) failed, err = %d, current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_remove_entries(%s) failed, err = %d, current process is \"(PID=%d)%s\"\n", 
 			__func__,
 			(sinfo.de)->name,
 			err,
@@ -966,7 +985,7 @@ static int vfat_unlink(struct inode *dir, struct dentry *dentry)
 	struct fat_slot_info sinfo;
 	int err;
 
-	xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
+	fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
 		__func__, 
 		(dentry->d_name).name,
 		current->pid,
@@ -977,7 +996,7 @@ static int vfat_unlink(struct inode *dir, struct dentry *dentry)
 
 	err = vfat_find(dir, &dentry->d_name, &sinfo);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls vfat_find(%s) failed, current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls vfat_find(%s) failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			(dentry->d_name).name,
 			current->pid,
@@ -988,7 +1007,7 @@ static int vfat_unlink(struct inode *dir, struct dentry *dentry)
 
 	err = fat_remove_entries(dir, &sinfo);	/* and releases bh */
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_remove_entries(%s) failed, current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_remove_entries(%s) failed, current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			(sinfo.de)->name,
 			current->pid,
@@ -1013,7 +1032,7 @@ static int vfat_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	struct timespec ts;
 	int err, cluster;
 
-	xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
+	fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
 		__func__, 
 		(dentry->d_name).name,
 		current->pid,
@@ -1026,7 +1045,7 @@ static int vfat_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	cluster = fat_alloc_new_dir(dir, &ts);
 	if (cluster < 0) {
 		err = cluster;
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_alloc_new_dir() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls fat_alloc_new_dir() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			err,
 			current->pid,
@@ -1036,7 +1055,7 @@ static int vfat_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	}
 	err = vfat_add_entry(dir, &dentry->d_name, 1, cluster, &ts, &sinfo);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls vfat_add_entry(%s) failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s() calls vfat_add_entry(%s) failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			(dentry->d_name).name,
 			err,
@@ -1052,7 +1071,7 @@ static int vfat_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);		
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  line#%d,err = %d,current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  line#%d,err = %d,current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			__LINE__,
 			err,
@@ -1092,7 +1111,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	int err, is_dir, update_dotdot, corrupt = 0;
 	struct super_block *sb = old_dir->i_sb;
 
-	xlog_printk(ANDROID_LOG_INFO, FAT_TAG, 
+	fat_printk(ANDROID_LOG_INFO, FAT_TAG, 
 		"%s() old_dentry->d_name = %s, new_dentry->d_name = %s, current process is \"(PID=%d)%s\"\n", 
 		__func__, 
 		(old_dentry->d_name).name, 
@@ -1107,7 +1126,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	lock_super(sb);
 	err = vfat_find(old_dir, &old_dentry->d_name, &old_sinfo);
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  vfat_find(old_dentry=%s) failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  vfat_find(old_dentry=%s) failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			(old_dentry->d_name).name,
 			err,
@@ -1123,7 +1142,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 		if (fat_get_dotdot_entry(old_inode, &dotdot_bh, &dotdot_de,
 					 &dotdot_i_pos) < 0) {
 			err = -EIO;
-			xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_get_dotdot_entry() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+			fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_get_dotdot_entry() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 				__func__, 
 				err,
 				current->pid,
@@ -1138,7 +1157,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 		if (is_dir) {
 			err = fat_dir_empty(new_inode);
 			if (err) {
-				xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_dir_empty() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+				fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_dir_empty() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 					__func__, 
 					err,
 					current->pid,
@@ -1153,7 +1172,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 		err = vfat_add_entry(new_dir, &new_dentry->d_name, is_dir, 0,
 				     &ts, &sinfo);
 		if (err) {
-			xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  vfat_add_entry(new_dentry = %s) failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+			fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  vfat_add_entry(new_dentry = %s) failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 				__func__, 
 				(new_dentry->d_name).name,
 				err,
@@ -1171,7 +1190,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (IS_DIRSYNC(new_dir)) {
 		err = fat_sync_inode(old_inode);
 		if (err) {
-			xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_sync_inode() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+			fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_sync_inode() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 				__func__, 
 				err,
 				current->pid,
@@ -1190,7 +1209,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 		if (IS_DIRSYNC(new_dir)) {
 			err = sync_dirty_buffer(dotdot_bh);
 			if (err) {
-				xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  sync_dirty_buffer() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+				fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  sync_dirty_buffer() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 					__func__, 
 					err,
 					current->pid,
@@ -1207,7 +1226,7 @@ static int vfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	err = fat_remove_entries(old_dir, &old_sinfo);	/* and releases bh */
 	old_sinfo.bh = NULL;
 	if (err) {
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_remove_entries() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  fat_remove_entries() failed,err = %d,current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			err,
 			current->pid,
@@ -1268,7 +1287,7 @@ error_inode:
 		fat_fs_error(new_dir->i_sb,
 			     "%s: Filesystem corrupted (i_pos %lld)",
 			     __func__, sinfo.i_pos);
-		xlog_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  Filesystem corrupted (i_pos %lld),current process is \"(PID=%d)%s\"\n", 
+		fat_printk(ANDROID_LOG_INFO, FAT_TAG, "%s()  Filesystem corrupted (i_pos %lld),current process is \"(PID=%d)%s\"\n", 
 			__func__, 
 			sinfo.i_pos,
 			current->pid,
@@ -1318,8 +1337,88 @@ static struct file_system_type vfat_fs_type = {
 	.fs_flags	= FS_REQUIRES_DEV,
 };
 
+static int fat_proc_dbgprintk_write(struct file *file, const char *buffer, unsigned long count, void *data)
+{
+        int             ret;
+        char            kbuf[256];
+        unsigned long   len = 0;
+	unsigned int 	enable = 0 ;
+
+        printk("Enter %s\n",__func__);
+
+        len = min(count, (unsigned long)(sizeof(kbuf)-1));
+
+        if (count == 0)return -1;
+        if(count > 255)count = 255;
+
+        ret = copy_from_user(kbuf, buffer, count);
+        if (ret < 0)return -1;
+
+        kbuf[count] = '\0';
+
+        sscanf(kbuf, "%x", &enable);
+
+        if(enable == 0){
+		disable_fat_dbg() ;
+        }
+        else{
+		enable_fat_dbg() ;
+        }
+
+        return count;
+}
+
+static int fat_proc_dbgprintk_read(char *page, char **start, off_t off, int count, int *eof, void *data)
+{
+        char    *p = page;
+        int     len = 0;
+
+        printk("Enter %s\n",__func__);
+
+        p += sprintf(p, "fat dbg printk : %s\n", get_fat_dbg()? "enable" : "disable" );
+
+        *start = page + off;
+
+        len = p - page;
+
+        if (len > off)
+                len -= off;
+        else
+                len = 0;
+
+        return len < count ? len : count;
+}
+
+
+void create_fat_proc(void)
+{
+	struct proc_dir_entry *prDebugEntry;
+	struct proc_dir_entry *fat_proc_dir = NULL;
+
+	fat_proc_dir = proc_mkdir("fat", NULL);
+	if (!fat_proc_dir){
+		printk("proc_fat mkdir fail!\n");
+	}
+	else{
+
+
+		/* /proc/freqhopping/freqhopping_debug */
+		prDebugEntry = create_proc_entry("dbg_printk",  S_IRUGO | S_IWUSR | S_IWGRP, fat_proc_dir);
+		if(prDebugEntry)
+		{
+			prDebugEntry->read_proc  = fat_proc_dbgprintk_read ;
+			prDebugEntry->write_proc = fat_proc_dbgprintk_write ;
+			printk("[%s]: successfully create /proc/fat/dbg_printk\n", __func__);
+		}else{
+			printk("[%s]: failed to create /proc/fat/dbg_printk\n", __func__);
+		}
+	}
+}
+
 static int __init init_vfat_fs(void)
 {
+	create_fat_proc() ;
+
 	return register_filesystem(&vfat_fs_type);
 }
 

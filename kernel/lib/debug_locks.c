@@ -22,7 +22,7 @@
  * shut up after that.
  */
 #ifdef CONFIG_PROVE_LOCKING
-int debug_locks = 0;
+int debug_locks = 1;
 #else
 int debug_locks = 1;
 #endif
@@ -42,7 +42,8 @@ int debug_locks_off(void)
 {
 	if (__debug_locks_off()) {
 		if (!debug_locks_silent) {
-			console_verbose();
+            // console_verbose();
+            // do not output console
 			return 1;
 		}
 	}

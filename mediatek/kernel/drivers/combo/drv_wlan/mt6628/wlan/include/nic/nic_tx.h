@@ -327,6 +327,10 @@
 
 #endif
 
+#if CFG_ENABLE_PKT_LIFETIME_PROFILE
+#define NIC_TX_TIME_THRESHOLD                       100     //in unit of ms
+#endif
+
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************
@@ -430,6 +434,22 @@ typedef WLAN_STATUS (*PFN_TX_DONE_HANDLER) (
     IN ENUM_TX_RESULT_CODE_T    rTxDoneStatus
     );
 
+#if CFG_ENABLE_PKT_LIFETIME_PROFILE
+typedef struct _PKT_PROFILE_T {
+    BOOLEAN fgIsValid;
+#if CFG_PRINT_RTP_PROFILE
+    BOOLEAN fgIsPrinted;
+    UINT_16 u2IpSn;
+    UINT_16 u2RtpSn;
+    UINT_8  ucTcxFreeCount;
+#endif    
+    OS_SYSTIME rHardXmitArrivalTimestamp;
+    OS_SYSTIME rEnqueueTimestamp;
+    OS_SYSTIME rDequeueTimestamp;
+    OS_SYSTIME rHifTxDoneTimestamp;
+}PKT_PROFILE_T, *P_PKT_PROFILE_T;
+#endif
+
 /* TX transactions could be divided into 4 kinds:
  * 
  * 1) 802.1X / Bluetooth-over-Wi-Fi Security Frames
@@ -482,8 +502,11 @@ struct _MSDU_INFO_T {
     /* for TX done tracking */
     UINT_8                      ucTxSeqNum;
     PFN_TX_DONE_HANDLER         pfTxDoneHandler;
-};
 
+#if CFG_ENABLE_PKT_LIFETIME_PROFILE
+    PKT_PROFILE_T               rPktProfile;
+#endif
+};
 
 /*******************************************************************************
 *                            P U B L I C   D A T A
@@ -512,7 +535,33 @@ struct _MSDU_INFO_T {
 #define TX_RESET_ALL_CNTS(prTxCtrl)                 \
     {kalMemZero(&prTxCtrl->au4Statistics[0], sizeof(prTxCtrl->au4Statistics));}
 
+#if CFG_ENABLE_PKT_LIFETIME_PROFILE
+#define PRINT_PKT_PROFILE(_pkt_profile, _note) \
+    { \
+        if(!(_pkt_profile)->fgIsPrinted) { \
+            DBGLOG(TX, TRACE, ("X[%lu] E[%lu] D[%lu] HD[%lu] B[%d] RTP[%d] %s\n", \
+                    (UINT_32)((_pkt_profile)->rHardXmitArrivalTimestamp), \
+                    (UINT_32)((_pkt_profile)->rEnqueueTimestamp), \
+                    (UINT_32)((_pkt_profile)->rDequeueTimestamp), \
+                    (UINT_32)((_pkt_profile)->rHifTxDoneTimestamp), \
+                    (UINT_8)((_pkt_profile)->ucTcxFreeCount), \
+                    (UINT_16)((_pkt_profile)->u2RtpSn), \
+                    (_note))); \
+            (_pkt_profile)->fgIsPrinted = TRUE; \
+        } \
+    }
 
+#define CHK_PROFILES_DELTA(_pkt1, _pkt2, _delta) \
+           (CHECK_FOR_TIMEOUT((_pkt1)->rHardXmitArrivalTimestamp, (_pkt2)->rHardXmitArrivalTimestamp, (_delta)) || \
+            CHECK_FOR_TIMEOUT((_pkt1)->rEnqueueTimestamp, (_pkt2)->rEnqueueTimestamp, (_delta)) || \
+            CHECK_FOR_TIMEOUT((_pkt1)->rDequeueTimestamp, (_pkt2)->rDequeueTimestamp, (_delta)) || \
+            CHECK_FOR_TIMEOUT((_pkt1)->rHifTxDoneTimestamp, (_pkt2)->rHifTxDoneTimestamp, (_delta)))
+
+#define CHK_PROFILE_DELTA(_pkt, _delta) \
+           (CHECK_FOR_TIMEOUT((_pkt)->rEnqueueTimestamp, (_pkt)->rHardXmitArrivalTimestamp, (_delta)) || \
+            CHECK_FOR_TIMEOUT((_pkt)->rDequeueTimestamp, (_pkt)->rEnqueueTimestamp, (_delta)) || \
+            CHECK_FOR_TIMEOUT((_pkt)->rHifTxDoneTimestamp, (_pkt)->rDequeueTimestamp, (_delta))) 
+#endif
 
 /*******************************************************************************
 *                  F U N C T I O N   D E C L A R A T I O N S

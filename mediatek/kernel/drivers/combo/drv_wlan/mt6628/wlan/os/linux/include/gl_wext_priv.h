@@ -199,6 +199,8 @@
 
 #define PRIV_CMD_P2P_MODE               28
 
+#define PRIV_CMD_GET_BUILD_DATE_CODE    29
+
 /* 802.3 Objects (Ethernet) */
 #define OID_802_3_CURRENT_ADDRESS           0x01010102
 

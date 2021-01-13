@@ -1,3 +1,25 @@
+/* mt6620_rds.c
+ *
+ * (C) Copyright 2011
+ * MediaTek <www.MediaTek.com>
+ * hongcheng <hongcheng.xia@MediaTek.com>
+ *
+ * mt6620 FM Radio Driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include "fm_typedef.h"
 #include "fm_dbg.h"
 #include "fm_err.h"
@@ -22,8 +44,7 @@ static fm_u8 BAD_BLK_RATIO = 0;
 static struct fm_callback *fm_cb = NULL;
 static struct fm_basic_interface *fm_bi = NULL;
 
-
-static fm_bool mt6620_RDS_support(void);
+//static fm_bool mt6620_RDS_support(void);
 static fm_s32 mt6620_RDS_enable(void);
 static fm_s32 mt6620_RDS_disable(void);
 static fm_u16 mt6620_RDS_Get_GoodBlock_Counter(void);
@@ -32,13 +53,12 @@ static fm_u8 mt6620_RDS_Get_BadBlock_Ratio(void);
 static fm_u32 mt6620_RDS_Get_BlerCheck_Interval(void);
 static void mt6620_RDS_Init_Data(rds_t *pstRDSData);
 
-
-
+#if 0
 static fm_bool mt6620_RDS_support(void)
 {
     return fm_true;
 }
-
+#endif
 static fm_s32 mt6620_RDS_enable(void)
 {
     fm_u16 page;
@@ -176,7 +196,7 @@ static fm_s32 mt6620_RDS_BlerCheck(rds_t *dst)
     fm_u16 TOTAL_CNT;
     static fm_u16 RDS_Sync_Cnt;
     static fm_u16 RDS_Block_Reset_Cnt;
-
+#if 0
     if (dst->AF_Data.Addr_Cnt == 0xFF) {
         //AF List Finished
         dst->event_status |= RDS_EVENT_AF;  //Need notfiy application
@@ -188,7 +208,7 @@ static fm_s32 mt6620_RDS_BlerCheck(rds_t *dst)
             WCN_DBG(FM_DBG | RDSC, "RDS_EVENT_AF, trigger read\n");
         }
     }
-
+#endif
     gBLER_CHK_INTERVAL = MT6620_RDS_BLER_T1;
     GOOD_BLK_CNT = mt6620_RDS_Get_GoodBlock_Counter();
     BAD_BLK_CNT = mt6620_RDS_Get_BadBlock_Counter();
@@ -258,11 +278,12 @@ static void mt6620_RDS_Init_Data(rds_t *pstRDSData)
 
 fm_bool mt6620_RDS_OnOff(rds_t *dst, fm_bool bFlag)
 {
+#if 0
     if (mt6620_RDS_support() == fm_false) {
         WCN_DBG(FM_ALT | RDSC, "mt6620_RDS_OnOff failed, RDS not support\n");
         return fm_false;
     }
-
+#endif
     if (bFlag) {
         mt6620_RDS_Init_Data(dst);
         mt6620_RDS_enable();
@@ -273,17 +294,21 @@ fm_bool mt6620_RDS_OnOff(rds_t *dst, fm_bool bFlag)
     return fm_true;
 }
 
-DEFINE_RDSLOG(rds_log);
+DEFINE_RDSLOG(mt6620_rds_log);
 
+/* mt6620_RDS_Efm_s32_Handler    -    response FM RDS interrupt
+ * @fm - main data structure of FM driver
+ * This function first get RDS raw data, then call RDS spec parser
+ */
 static fm_s32 mt6620_rds_parser(rds_t *rds_dst, struct rds_rx_t *rds_raw, fm_s32 rds_size, fm_u16(*getfreq)(void))
 {
-    rds_log.log_in(&rds_log, rds_raw, rds_size);
+    mt6620_rds_log.log_in(&mt6620_rds_log, rds_raw, rds_size);
     return rds_parser(rds_dst, rds_raw, rds_size, getfreq);
 }
 
 static fm_s32 mt6620_rds_log_get(struct rds_rx_t *dst, fm_s32 *dst_len)
 {
-    return rds_log.log_out(&rds_log, dst, dst_len);
+    return mt6620_rds_log.log_out(&mt6620_rds_log, dst, dst_len);
 }
 
 static fm_s32 mt6620_rds_gc_get(struct rds_group_cnt_t *dst, rds_t *rdsp)
@@ -296,7 +321,7 @@ static fm_s32 mt6620_rds_gc_reset(rds_t *rdsp)
     return rds_grp_counter_reset(&rdsp->gc);
 }
 
-fm_s32 fm_rds_ops_register(struct fm_lowlevel_ops *ops)
+fm_s32 MT6620fm_rds_ops_register(struct fm_lowlevel_ops *ops)
 {
     fm_s32 ret = 0;
 
@@ -325,7 +350,7 @@ fm_s32 fm_rds_ops_register(struct fm_lowlevel_ops *ops)
     return ret;
 }
 
-fm_s32 fm_rds_ops_unregister(struct fm_lowlevel_ops *ops)
+fm_s32 MT6620fm_rds_ops_unregister(struct fm_lowlevel_ops *ops)
 {
     fm_s32 ret = 0;
 

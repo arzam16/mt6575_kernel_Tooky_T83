@@ -32,6 +32,7 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/cpuidle.h>
 #include <linux/console.h>
+#include <linux/mtk_ram_console.h>
 
 #include <asm/cacheflush.h>
 #include <asm/processor.h>
@@ -292,6 +293,9 @@ EXPORT_SYMBOL(pm_idle);
 void cpu_idle(void)
 {
 	local_fiq_enable();
+#ifdef CONFIG_MT_LOAD_BALANCE_PROFILER
+	mt_lbprof_update_state(smp_processor_id(), MT_LBPROF_NO_TASK_STATE);
+#endif
 
 	/* endless idle loop with no priority at all */
 	while (1) {
@@ -301,7 +305,14 @@ void cpu_idle(void)
 		while (!need_resched()) {
 #ifdef CONFIG_HOTPLUG_CPU
 			if (cpu_is_offline(smp_processor_id()))
+#ifdef CONFIG_MTK_IDLE_TIME_FIX			
+			{
+			  tick_set_cpu_plugoff_flag(1);
 				cpu_die();
+			}
+#else			
+				cpu_die();
+#endif	
 #endif
 
 #ifdef CONFIG_MT_LOAD_BALANCE_PROFILER
@@ -351,26 +362,59 @@ int __init reboot_setup(char *str)
 
 __setup("reboot=", reboot_setup);
 
+extern int reboot_pid;
 void machine_shutdown(void)
 {
 #ifdef CONFIG_SMP
-    printk("machine_shutdown: start, Proess(%s:%d)\n", current->comm, current->pid);
-    dump_stack();
-    preempt_disable();
+  struct task_struct *tsk;
+  if(reboot_pid > 1)
+  {
+    tsk = find_task_by_vpid(reboot_pid);
+	if(tsk == NULL)
+		tsk = current;
+  }
+  else
+  {
+	tsk = current;
+  }
+  
+  if(tsk->real_parent)
+  {
+     if(tsk->real_parent->real_parent)
+     {
+       printk("machine_shutdown: start, Proess(%s:%d). father %s:%d. grandfather %s:%d.\n",
+	   	tsk->comm, tsk->pid,tsk->real_parent->comm,tsk->real_parent->pid,
+	   	tsk->real_parent->real_parent->comm,tsk->real_parent->real_parent->pid);
+	 }
+	 else
+	 {
+       printk("machine_shutdown: start, Proess(%s:%d). father %s:%d.\n", 
+	   	tsk->comm, tsk->pid,tsk->real_parent->comm,tsk->real_parent->pid);
+	 }
+  }
+  else
+  {
+	  printk("machine_shutdown: start, Proess(%s:%d)\n", tsk->comm, tsk->pid);	  
+  }
+  preempt_disable();
 	smp_send_stop();
-    printk("machine_shutdown: done\n");
+  printk("machine_shutdown: done\n");
 #endif
 }
 
 void machine_halt(void)
 {
 	machine_shutdown();
+	local_irq_disable();
 	while (1);
 }
 
 void machine_power_off(void)
 {
 	machine_shutdown();
+#ifdef MTK_EMMC_SUPPORT 
+last_kmsg_store_to_emmc();
+#endif
 	if (pm_power_off)
 		pm_power_off();
 }
@@ -390,6 +434,7 @@ void machine_restart(char *cmd)
 
 	/* Whoops - the platform was unable to reboot. Tell the user! */
 	printk("Reboot failed -- System halted\n");
+	local_irq_disable();
 	while (1);
 }
 
@@ -676,6 +721,9 @@ EXPORT_SYMBOL(kernel_thread);
 unsigned long get_wchan(struct task_struct *p)
 {
 	struct stackframe frame;
+	unsigned long stack_top;
+	unsigned long stack_bottom;
+	int ret;
 	int count = 0;
 	if (!p || p == current || p->state == TASK_RUNNING)
 		return 0;
@@ -684,8 +732,17 @@ unsigned long get_wchan(struct task_struct *p)
 	frame.sp = thread_saved_sp(p);
 	frame.lr = 0;			/* recovered from the stack */
 	frame.pc = thread_saved_pc(p);
+	stack_top = frame.sp;
+	stack_bottom = ALIGN(stack_top, THREAD_SIZE);
 	do {
-		int ret = unwind_frame(&frame);
+	  if (frame.fp < (stack_top + 4) || frame.fp >= (stack_bottom - 4)) {
+	    /* remove stack dump debug info
+	    show_data(task_thread_info(p), THREAD_SIZE, "Stack");
+	    aee_kernel_warning("Kernel", "Stack corruption");
+	    */
+	    return 0;
+	  }
+		ret = unwind_frame(&frame);
 		if (ret < 0)
 			return 0;
 		if (!in_sched_functions(frame.pc))

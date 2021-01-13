@@ -61,6 +61,9 @@
 #include <linux/slab.h>
 #include <asm/div64.h>
 #include "ubi.h"
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+#include <mach/power_loss_test.h>
+#endif
 
 #ifdef CONFIG_MTD_UBI_DEBUG
 static void paranoid_vtbl_check(const struct ubi_device *ubi);
@@ -104,9 +107,19 @@ int ubi_change_vtbl_record(struct ubi_device *ubi, int idx,
 		err = ubi_eba_unmap_leb(ubi, layout_vol, i);
 		if (err)
 			return err;
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+        if(i==0)
+        {
+            PL_RESET_ON_CASE("NAND", "CreateVol_1");
+        }
+        else if(i==1)
+        {
+            PL_RESET_ON_CASE("NAND", "CreateVol_2");
+        }
+#endif
 
 		err = ubi_eba_write_leb(ubi, layout_vol, i, ubi->vtbl, 0,
-					ubi->vtbl_size, UBI_LONGTERM);
+					ubi->vtbl_size);
 		if (err)
 			return err;
 	}
@@ -156,9 +169,19 @@ int ubi_vtbl_rename_volumes(struct ubi_device *ubi,
 		err = ubi_eba_unmap_leb(ubi, layout_vol, i);
 		if (err)
 			return err;
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+        if(i==0)
+        {
+            PL_RESET_ON_CASE("NAND", "ModifyVol_1");
+        }
+        else if(i==1)
+        {
+            PL_RESET_ON_CASE("NAND", "ModifyVol_2");
+        }
+#endif
 
 		err = ubi_eba_write_leb(ubi, layout_vol, i, ubi->vtbl, 0,
-					ubi->vtbl_size, UBI_LONGTERM);
+					ubi->vtbl_size);
 		if (err)
 			return err;
 	}
@@ -346,7 +369,7 @@ retry:
 	 */
 	err = ubi_scan_add_used(ubi, si, new_seb->pnum, new_seb->ec,
 				vid_hdr, 0);
-	kfree(new_seb);
+	kmem_cache_free(si->scan_leb_slab, new_seb);
 	ubi_free_vid_hdr(ubi, vid_hdr);
 	return err;
 
@@ -359,7 +382,7 @@ write_error:
 		list_add(&new_seb->u.list, &si->erase);
 		goto retry;
 	}
-	kfree(new_seb);
+	kmem_cache_free(si->scan_leb_slab, new_seb);
 out_free:
 	ubi_free_vid_hdr(ubi, vid_hdr);
 	return err;
@@ -415,7 +438,7 @@ static struct ubi_vtbl_record *process_lvol(struct ubi_device *ubi,
 
 	/* Read both LEB 0 and LEB 1 into memory */
 	ubi_rb_for_each_entry(rb, seb, &sv->root, u.rb) {
-		leb[seb->lnum] = vzalloc(ubi->vtbl_size);
+		leb[seb->lnum] = kmalloc(ubi->vtbl_size, GFP_KERNEL);
 		if (!leb[seb->lnum]) {
 			err = -ENOMEM;
 			goto out_free;
@@ -460,7 +483,7 @@ static struct ubi_vtbl_record *process_lvol(struct ubi_device *ubi,
 		}
 
 		/* Both LEB 1 and LEB 2 are OK and consistent */
-		vfree(leb[1]);
+		kfree(leb[1]);
 		return leb[0];
 	} else {
 		/* LEB 0 is corrupted or does not exist */
@@ -481,13 +504,13 @@ static struct ubi_vtbl_record *process_lvol(struct ubi_device *ubi,
 			goto out_free;
 		ubi_msg("volume table was restored");
 
-		vfree(leb[0]);
+		kfree(leb[0]);
 		return leb[1];
 	}
 
 out_free:
-	vfree(leb[0]);
-	vfree(leb[1]);
+	kfree(leb[0]);
+	kfree(leb[1]);
 	return ERR_PTR(err);
 }
 
@@ -505,7 +528,7 @@ static struct ubi_vtbl_record *create_empty_lvol(struct ubi_device *ubi,
 	int i;
 	struct ubi_vtbl_record *vtbl;
 
-	vtbl = vzalloc(ubi->vtbl_size);
+	vtbl = kmalloc(ubi->vtbl_size, GFP_KERNEL);
 	if (!vtbl)
 		return ERR_PTR(-ENOMEM);
 
@@ -517,7 +540,7 @@ static struct ubi_vtbl_record *create_empty_lvol(struct ubi_device *ubi,
 
 		err = create_vtbl(ubi, si, i, vtbl);
 		if (err) {
-			vfree(vtbl);
+			kfree(vtbl);
 			return ERR_PTR(err);
 		}
 	}
@@ -649,6 +672,33 @@ static int init_volumes(struct ubi_device *ubi, const struct ubi_scan_info *si,
 	reserved_pebs += vol->reserved_pebs;
 	ubi->vol_count += 1;
 	vol->ubi = ubi;
+
+#ifdef CONFIG_BLB
+	/* And add the backup volume */
+	vol = kzalloc(sizeof(struct ubi_volume), GFP_KERNEL);
+	if (!vol)
+		return -ENOMEM;
+
+	vol->reserved_pebs = UBI_BACKUP_VOLUME_EBS;
+	vol->alignment = 1;
+	vol->vol_type = UBI_DYNAMIC_VOLUME;
+	vol->name_len = sizeof(UBI_BACKUP_VOLUME_NAME) - 1;
+	memcpy(vol->name, UBI_BACKUP_VOLUME_NAME, vol->name_len + 1);
+	vol->usable_leb_size = ubi->leb_size;
+	vol->used_ebs = vol->reserved_pebs;
+	vol->last_eb_bytes = vol->reserved_pebs;
+	vol->used_bytes =
+		(long long)vol->used_ebs * (ubi->leb_size - vol->data_pad);
+	vol->vol_id = UBI_BACKUP_VOLUME_ID;
+	vol->ref_count = 1;
+
+	ubi_assert(!ubi->volumes[vol_id2idx(ubi, vol->vol_id)]);
+	ubi->volumes[vol_id2idx(ubi, vol->vol_id)] = vol;
+	reserved_pebs += vol->reserved_pebs;
+	ubi->vol_count += 1;
+	vol->ubi = ubi;
+#endif
+
 
 	if (reserved_pebs > ubi->avail_pebs) {
 		ubi_err("not enough PEBs, required %d, available %d",
@@ -850,7 +900,7 @@ int ubi_read_volume_table(struct ubi_device *ubi, struct ubi_scan_info *si)
 	return 0;
 
 out_free:
-	vfree(ubi->vtbl);
+	kfree(ubi->vtbl);
 	for (i = 0; i < ubi->vtbl_slots + UBI_INT_VOL_COUNT; i++) {
 		kfree(ubi->volumes[i]);
 		ubi->volumes[i] = NULL;

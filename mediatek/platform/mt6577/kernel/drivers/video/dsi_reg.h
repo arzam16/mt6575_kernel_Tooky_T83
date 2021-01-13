@@ -1,4 +1,3 @@
-
 #ifndef __DSI_REG_H__
 #define __DSI_REG_H__
 
@@ -163,7 +162,7 @@ typedef struct
 
 typedef struct
 {
-	unsigned BIST_PATTERN16_31		: 16;
+	unsigned BIST_PATTERN0_15		: 16;
 	unsigned rsv_16 				: 16;
 } MIPITX_CFGC_REG, *PMIPITX_CFGC_REG;
 

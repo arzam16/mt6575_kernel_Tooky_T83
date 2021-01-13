@@ -27,14 +27,7 @@
 #include <linux/jiffies.h>
 #include "tpd_custom_tangleM32_16.h"
 #include "tpd_calibrate.h"
-
-#ifdef MT6575
-#include <mach/mt6575_pm_ldo.h>
-#endif
-
-#ifdef MT6577
-#include <mach/mt6577_pm_ldo.h>
-#endif
+#include <mach/mt_pm_ldo.h>
 
 #ifndef TPD_NO_GPIO 
 #include "cust_gpio_usage.h"
@@ -69,8 +62,9 @@ static int tpd_def_calmat_local[8] = TPD_CALIBRATION_MATRIX;
 static void tpd_eint_interrupt_handler(void);
 static int touch_event_handler(void *unused);
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+//static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
 static int tpd_i2c_remove(struct i2c_client *client);
+#if 0
 extern void mt65xx_eint_unmask(unsigned int line);
 extern void mt65xx_eint_mask(unsigned int line);
 extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
@@ -78,9 +72,9 @@ extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
 extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
                                      kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
                                      kal_bool auto_umask);
+#endif
 
-
-static int i2c_write_dummy( struct i2c_client *client, u16 addr );
+//static int i2c_write_dummy( struct i2c_client *client, u16 addr );
 
 
 static struct i2c_client *i2c_client = NULL;
@@ -92,7 +86,7 @@ static struct i2c_board_info __initdata i2c_tpd = { I2C_BOARD_INFO("tanglem32_16
 struct i2c_driver tpd_i2c_driver = {                       
     .probe = tpd_i2c_probe,                                   
     .remove = tpd_i2c_remove,                           
-    .detect = tpd_i2c_detect,                           
+    //.detect = tpd_i2c_detect,                           
     .driver.name = "tanglem32_16", 
     .id_table = tpd_i2c_id,                             
     .address_list = (const unsigned short*) forces,
@@ -100,6 +94,7 @@ struct i2c_driver tpd_i2c_driver = {
 
 #define C_I2C_FIFO_SIZE         8       /*according i2c_mt6575.c*/
 
+/*
 static int tangleM32_16_read_byte_sr(struct i2c_client *client, u8 addr, u8 *data)
 {
    u8 buf;
@@ -118,7 +113,7 @@ static int tangleM32_16_read_byte_sr(struct i2c_client *client, u8 addr, u8 *dat
 	client->addr = client->addr& I2C_MASK_FLAG;
     return 0;
 }
-
+*/
 
 static int tangleM32_16_write_byte(struct i2c_client *client, u8 addr, u8 data)
 {
@@ -208,18 +203,18 @@ static int tangleM32_16_read_block(struct i2c_client *client, u8 addr, u8 *data,
 
 
 
-
+/*
 static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) {
     strcpy(info->type, "mtk-tpd");
     return 0;
 }
+*/
 
-
-static int setResolution(struct i2c_client *client)
+static void setResolution(struct i2c_client *client)
 {
-    int err =0;
+    //int err =0;
 	u8 buffer[10]={0};
-	u8 data[10]={0};
+	//u8 data[10]={0};
 	
 	//read eeprom
 	/*
@@ -296,7 +291,7 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     char buffer[2];
 	u8 data[10]={0};
 	int i =0;
-	int ret =0;
+	//int ret =0;
     i2c_client = client;
     
     #ifdef TPD_NO_GPIO
@@ -310,8 +305,15 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
 
     TPD_DMESG(TPD_DEVICE " power on !!\n");
 	  //power on, need confirm with SA
-    hwPowerOn(MT65XX_POWER_LDO_VGP2, VOL_2800, "TP");
-    hwPowerOn(MT65XX_POWER_LDO_VGP, VOL_1800, "TP"); 
+#ifdef TPD_POWER_SOURCE_CUSTOM
+		  hwPowerOn(TPD_POWER_SOURCE_CUSTOM, VOL_2800, "TP");
+#else
+		  hwPowerOn(MT65XX_POWER_LDO_VGP2, VOL_2800, "TP");
+#endif
+#ifdef TPD_POWER_SOURCE_1800
+		  hwPowerOn(TPD_POWER_SOURCE_1800, VOL_1800, "TP");
+#endif
+
 	
 	msleep(100);
 	
@@ -331,10 +333,10 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
 
    // msleep(100);
 	
-	mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
-    mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
-    mt65xx_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_EN, CUST_EINT_TOUCH_PANEL_POLARITY, tpd_eint_interrupt_handler, 1);
-    mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+	//mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
+    //mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
+    mt_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE, tpd_eint_interrupt_handler, 1);
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
 	 msleep(100);
   
 	device_init_wakeup(&client->dev, 1);
@@ -415,24 +417,24 @@ void tpd_up(int raw_x, int raw_y, int x, int y, int p) {
 
 static int touch_event_handler(void *unused) {
     struct sched_param param = { .sched_priority = RTPM_PRIO_TPD }; 
-    int x, y, id, size, finger_num = 0;
+    //int x, y, id, size, finger_num = 0;
     //static u8 buffer[ TPD_POINT_INFO_LEN*TPD_MAX_POINTS ];
-    static char buf_status;
-    static u8 id_mask = 0;
-    u8 cur_mask;
-    int idx;
-	int z = 50;
-	int w = 15;
+    //static char buf_status;
+    //static u8 id_mask = 0;
+    //u8 cur_mask;
+    //int idx;
+	//int z = 50;
+	//int w = 15;
   	//unsigned char Rdbuf[10],Wrbuf[1];
 	int ret;
-	int posx1, posy1, posx2, posy2;
+	int posx1, posy1;
 	//unsigned char touching = 0,fingerid;
 	//struct sched_param param = { .sched_priority = RTPM_PRIO_TPD }; 
-    static int x1, y1, x2, y2, raw_x1, raw_y1, raw_x2, raw_y2;
-    int temp_x1 = x1, temp_y1 = y1, temp_raw_x1 = raw_x1, temp_raw_y1 = raw_y1;
-	int i =0;
+    //static int x1, y1, x2, y2, raw_x1, raw_y1, raw_x2, raw_y2;
+    //int temp_x1 = x1, temp_y1 = y1, temp_raw_x1 = raw_x1, temp_raw_y1 = raw_y1;
+	//int i =0;
 	char buffer[10];
-    int pending = 0,  touching=0, oldtouching=0;
+    int touching=0;
 
 	memset(buffer, 0, sizeof(buffer));
 	//memset(Rdbuf, 0, sizeof(Rdbuf));
@@ -480,7 +482,7 @@ static int touch_event_handler(void *unused) {
 		//fingerid = Rdbuf[0]&0x30;
 	    touching = buffer[0]&0x03;
 
-		printk("touching:%-3d,,x1:%-6d,y1:%-6d,x2:%-6d,y2:%-6d\n",touching, posx1, posy1, posx2, posy2);
+		printk("touching:%-3d,,x1:%-6d,y1:%-6d\n",touching, posx1, posy1);
 	
         if (touching == 1) 
 		{
@@ -549,7 +551,7 @@ void tpd_suspend(struct early_suspend *h)
 		TPD_DMESG("[mtk-tpd] %s\n", __FUNCTION__); 
 	}
     tpd_halt = 1;
-    mt65xx_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+    mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
 
     #ifdef TPD_HAVE_POWER_ON_OFF
     mt_set_gpio_mode(GPIO_CTP_EN_PIN, GPIO_CTP_EN_PIN_M_GPIO);
@@ -578,7 +580,7 @@ void tpd_resume(struct early_suspend *h)
     msleep(100);
     #endif
 
-    mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM); 
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM); 
     tpd_halt = 0;
 }
 

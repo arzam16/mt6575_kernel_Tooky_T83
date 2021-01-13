@@ -24,10 +24,10 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
+ *
+ * 11 16 2012 jianrong.zhang
+ * [ALPS00361874] [Must Resolve][MT6517TD_AST3001][camcorder]preview play the video when set effects as choose your video
+ * Copy from ALPS.ICS2.TDD.FPB.
  *
  * 03 31 2010 jianhua.tang
  * [DUMA00158728]S5K5CAGX YUV sensor driver 
@@ -79,7 +79,7 @@
 #define __SENSOR_H
 
 
-#define MIPI_INTERFACE
+//#define MIPI_INTERFACE
 
 typedef enum _S5K5CAGX_OP_TYPE_ {
         S5K5CAGX_MODE_NONE,
@@ -215,7 +215,7 @@ extern S5K5CAGX_OP_TYPE S5K5CAGX_g_iS5K5CAGX_Mode;
 
 
 /* SENSOR READ/WRITE ID */
-	//#define S5K5CAGX_IIC_ID_HIGH
+	#define S5K5CAGX_IIC_ID_HIGH
 #ifdef S5K5CAGX_IIC_ID_HIGH
 	#define S5K5CAGX_WRITE_ID		0x5A		
 	#define S5K5CAGX_READ_ID		0x5B
@@ -224,6 +224,7 @@ extern S5K5CAGX_OP_TYPE S5K5CAGX_g_iS5K5CAGX_Mode;
 	#define S5K5CAGX_READ_ID		0x79
 #endif
 
+#define S5K5CAGX_CAP_3_7FPS
 
 
 	/* SENSOR CHIP VERSION */

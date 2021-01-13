@@ -422,9 +422,15 @@ APPEND_VAR_IE_ENTRY_T txAssocRespIETable[] = {
 #if CFG_ENABLE_WIFI_DIRECT
     { (ELEM_HDR_LEN + ELEM_MAX_LEN_OBSS_SCAN),  NULL,   rlmRspGenerateObssScanIE   },   /* 74 */
     { (0),         p2pFuncCalculateP2p_IELenForAssocRsp,      p2pFuncGenerateP2p_IEForAssocRsp }, /* 221 */
+#if CFG_SUPPORT_WFD
+    { (0),         wfdFuncCalculateWfdIELenForAssocRsp,     wfdFuncGenerateWfdIEForAssocRsp }, /* 221 */
+#endif
 #endif
     { (ELEM_HDR_LEN + ELEM_MAX_LEN_EXT_CAP),     NULL,     rlmRspGenerateExtCapIE   },      /* 127 */
-    { (ELEM_HDR_LEN + ELEM_MAX_LEN_WMM_PARAM),     NULL,    mqmGenerateWmmParamIE }         /* 221 */
+    { (ELEM_HDR_LEN + ELEM_MAX_LEN_WMM_PARAM),     NULL,    mqmGenerateWmmParamIE },         /* 221 */
+
+    { (0),         p2pFuncCalculateWSC_IELenForAssocRsp,      p2pFuncGenerateWSC_IEForAssocRsp }  /* 221 */
+
 };
 #endif
 
@@ -1583,6 +1589,7 @@ assocProcessRxAssocReqFrame (
             break;
         case ELEM_ID_HT_CAP:
             prStaRec->ucPhyTypeSet |= PHY_TYPE_BIT_HT;
+            kalMemCopy(&prStaRec->u2HtCapInfo, &(HT_CAP_IE(pucIE)->u2HtCapInfo), 2);
             break;
         case ELEM_ID_RSN:
             #if CFG_ENABLE_WIFI_DIRECT && CFG_ENABLE_HOTSPOT_PRIVACY_CHECK
@@ -1747,6 +1754,18 @@ assocProcessRxAssocReqFrame (
         #if 1 /* ICS */
         {
             PUINT_8 cp = (PUINT_8)&prAssocReqFrame->u2CapInfo;
+			P_UINT_8 prNewAssocReqIe = NULL;
+			
+			if (u2IELength) {
+				prNewAssocReqIe= kalMemAlloc(u2IELength, VIR_MEM_TYPE);
+				if (NULL == prNewAssocReqIe) {
+					DBGLOG(AIS, WARN, ("allocate memory for (Re)assocReqIe fail,IELength=%d!\n",u2IELength));
+					u2StatusCode = STATUS_CODE_INVALID_INFO_ELEMENT;
+					return WLAN_STATUS_FAILURE;
+					/*note: if return WLAN_STATUS_FAILURE, we wouldn't reply the GC!so he need wait util timeout
+					   should we change to WLAN_STATUS_SUCCESS? but memory allocate fail may also cause reply fail*/
+				}
+            } 
             if (prStaRec->fgIsReAssoc)
                 cp += 10;
             else
@@ -1757,7 +1776,7 @@ assocProcessRxAssocReqFrame (
             }
             prStaRec->u2AssocReqIeLen = u2IELength;
             if (u2IELength) {
-                prStaRec->pucAssocReqIe = kalMemAlloc(u2IELength, VIR_MEM_TYPE);
+                prStaRec->pucAssocReqIe = prNewAssocReqIe;
                 kalMemCopy(prStaRec->pucAssocReqIe, cp, u2IELength);
             }
         }

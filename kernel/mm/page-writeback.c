@@ -106,6 +106,7 @@ unsigned int dirty_expire_interval = 30 * 100; /* centiseconds */
  * Flag that makes the machine dump writes/reads and block dirtyings.
  */
 int block_dump;
+EXPORT_SYMBOL_GPL(block_dump);
 
 /*
  * Flag that puts the machine in "laptop mode". Doubles as a timeout in jiffies:
@@ -195,6 +196,18 @@ static unsigned long highmem_dirtyable_memory(unsigned long total)
 		//     zone_reclaimable_pages(z) - z->dirty_balance_reserve;
 	}
 	/*
+	 * Unreclaimable memory (kernel memory or anonymous memory
+	 * without swap) can bring down the dirtyable pages below
+	 * the zone's dirty balance reserve and the above calculation
+	 * will underflow.  However we still want to add in nodes
+	 * which are below threshold (negative values) to get a more
+	 * accurate calculation but make sure that the total never
+	 * underflows.
+	 */
+	if ((long)x < 0)
+		x = 0;
+
+	/*
 	 * Make sure that the number of highmem pages is never larger
 	 * than the number of the total dirtyable memory. This can only
 	 * occur in very strange VM situations but we want to make sure
@@ -216,8 +229,8 @@ unsigned long global_dirtyable_memory(void)
 {
 	unsigned long x;
 
-	x = global_page_state(NR_FREE_PAGES) + global_reclaimable_pages() -
-	    dirty_balance_reserve;
+	x = global_page_state(NR_FREE_PAGES) + global_reclaimable_pages();
+	x -= min(x, dirty_balance_reserve);
 
 	if (!vm_highmem_is_dirtyable)
 		x -= highmem_dirtyable_memory(x);
@@ -284,9 +297,12 @@ static unsigned long zone_dirtyable_memory(struct zone *zone)
 	 * highmem zone can hold its share of dirty pages, so we don't
 	 * care about vm_highmem_is_dirtyable here.
 	 */
-	return zone_page_state(zone, NR_FREE_PAGES) +
-	       zone_reclaimable_pages(zone) -
-	       zone->dirty_balance_reserve;
+	unsigned long nr_pages = zone_page_state(zone, NR_FREE_PAGES) +
+		zone_reclaimable_pages(zone);
+
+	/* don't allow this to underflow */
+	nr_pages -= min(nr_pages, zone->dirty_balance_reserve);
+	return nr_pages;
 }
 
 /**
@@ -1189,6 +1205,10 @@ static void balance_dirty_pages(struct address_space *mapping,
 	struct backing_dev_info *bdi = mapping->backing_dev_info;
 	unsigned long start_time = jiffies;
 
+#ifdef CONFIG_MT_ENG_BUILD
+	void add_kmem_status_writeback_counter(void);
+	add_kmem_status_writeback_counter();
+#endif
 	for (;;) {
 		unsigned long now = jiffies;
 
@@ -1943,6 +1963,26 @@ int __set_page_dirty_no_writeback(struct page *page)
  */
 void account_page_dirtied(struct page *page, struct address_space *mapping)
 {
+#ifdef FEATURE_STORAGE_PID_LOGGER
+		struct page_pid_logger *tmp_logger;
+		extern unsigned char *page_logger;
+		extern spinlock_t g_locker;
+		if( page_logger && page) {
+			int page_index;
+	
+			page_index = (unsigned long)((page) - mem_map) ;
+			tmp_logger =((struct page_pid_logger *)page_logger) + page_index;
+			spin_lock(&g_locker);
+			if( page_index < num_physpages) {
+				if( tmp_logger->pid1 == 0XFFFF && tmp_logger->pid2 != current->pid)
+					tmp_logger->pid1 = current->pid;
+				else if( tmp_logger->pid1 != current->pid )
+					tmp_logger->pid2 = current->pid;
+			}
+			spin_unlock(&g_locker);
+			//printk(KERN_INFO"account_page_dirtied pid1:%u pid2:%u pfn:%d \n", tmp_logger->pid1, tmp_logger->pid2, page_index );
+		}
+#endif
 	if (mapping_cap_account_dirty(mapping)) {
 		__inc_zone_page_state(page, NR_FILE_DIRTY);
 		__inc_zone_page_state(page, NR_DIRTIED);

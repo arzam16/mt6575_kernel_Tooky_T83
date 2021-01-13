@@ -13,6 +13,7 @@
 #include <linux/delay.h>
 #include "stp_exp.h"
 #include "wmt_exp.h"
+#include <linux/device.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
 
@@ -27,7 +28,13 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 #define COMBO_IOC_BT_HWVER           6
 
-unsigned int gDbgLevel = BT_LOG_INFO;
+#define COMBO_IOC_MAGIC        0xb0
+#define COMBO_IOCTL_FW_ASSERT  _IOWR(COMBO_IOC_MAGIC, 0, void*)
+#define COMBO_IOCTL_BT_IC_HW_VER  _IOWR(COMBO_IOC_MAGIC, 1, int)
+#define COMBO_IOCTL_BT_IC_FW_VER  _IOWR(COMBO_IOC_MAGIC, 2, int)
+
+
+static unsigned int gDbgLevel = BT_LOG_INFO;
 
 #define BT_DBG_FUNC(fmt, arg...)    if(gDbgLevel >= BT_LOG_DBG){ printk(PFX "%s: "  fmt, __FUNCTION__ ,##arg);}
 #define BT_INFO_FUNC(fmt, arg...)   if(gDbgLevel >= BT_LOG_INFO){ printk(PFX "%s: "  fmt, __FUNCTION__ ,##arg);}
@@ -49,10 +56,10 @@ static struct semaphore wr_mtx, rd_mtx;
 static wait_queue_head_t inq;    /* read queues */
 static DECLARE_WAIT_QUEUE_HEAD(BT_wq);
 static int flag = 0;
-volatile int retflag = 0;
+static volatile int retflag = 0;
 
-unsigned char g_bt_bd_addr[10]={0x01,0x1a,0xfc,0x06,0x00,0x55,0x66,0x77,0x88,0x00};
-unsigned char g_nvram_btdata[8];
+static unsigned char g_bt_bd_addr[10]={0x01,0x1a,0xfc,0x06,0x00,0x55,0x66,0x77,0x88,0x00};
+static unsigned char g_nvram_btdata[8];
 
 static int nvram_read(char *filename, char *buf, ssize_t len, int offset)
 {
@@ -205,12 +212,12 @@ ssize_t BT_write(struct file *filp, const char __user *buf, size_t count, loff_t
         if (retflag == 1) //reset start
         {
             retval = -88;
-            BT_INFO_FUNC("MT6620 reset Write: start\n");
+            BT_INFO_FUNC("MT662x reset Write: start\n");
         }
         else if (retflag == 2) // reset end
         {
           retval = -99;
-            BT_INFO_FUNC("MT6620 reset Write: end\n");
+            BT_INFO_FUNC("MT662x reset Write: end\n");
         }
     goto OUT;
     }
@@ -260,12 +267,12 @@ ssize_t BT_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos
         if (retflag == 1) //reset start
         {
             retval = -88;
-            BT_INFO_FUNC("MT6620 reset Read: start\n");
+            BT_INFO_FUNC("MT662x reset Read: start\n");
         }
         else if (retflag == 2) // reset end
         {
-          retval = -99;
-      BT_INFO_FUNC("MT6620 reset Read: end\n");
+            retval = -99;
+            BT_INFO_FUNC("MT662x reset Read: end\n");
         }
     goto OUT;
     }
@@ -310,7 +317,7 @@ OUT:
 long BT_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int retval = 0;
-
+    MTK_WCN_BOOL bRet = MTK_WCN_BOOL_TRUE;
 
     ENUM_WMTHWVER_TYPE_T hw_ver_sym = WMTHWVER_INVALID;
     BT_DBG_FUNC("BT_ioctl(): cmd (%d)\n", cmd);
@@ -336,6 +343,25 @@ long BT_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                retval = -EFAULT;
             }
             break;
+
+        case COMBO_IOCTL_FW_ASSERT:
+            /* BT trigger fw assert for debug*/
+            BT_INFO_FUNC("BT Set fw assert......, reason:%d\n", arg);
+            bRet = mtk_wcn_wmt_assert(WMTDRV_TYPE_BT, arg);
+            if (bRet == MTK_WCN_BOOL_TRUE) {
+                BT_INFO_FUNC("BT Set fw assert OK\n");
+                retval = 0;
+            } else {
+                BT_INFO_FUNC("BT Set fw assert Failed\n");
+                retval = (-1000);
+            }
+            break;
+        case COMBO_IOCTL_BT_IC_HW_VER:
+			return mtk_wcn_wmt_ic_info_get(WMTCHIN_HWVER);
+			break;
+		case COMBO_IOCTL_BT_IC_FW_VER:
+			return mtk_wcn_wmt_ic_info_get(WMTCHIN_FWVER);
+			break;
         default:
             retval = -EFAULT;
             BT_DBG_FUNC("BT_ioctl(): unknown cmd (%d)\n", cmd);
@@ -352,7 +378,8 @@ static int BT_open(struct inode *inode, struct file *file)
         iminor(inode),
         current->pid
         );
-
+	if(current->pid ==1)
+		return 0;
 #if 1 /* GeorgeKuo: turn on function before check stp ready */
      /* turn on BT */
     if (MTK_WCN_BOOL_FALSE == mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT)) {
@@ -401,6 +428,7 @@ static int BT_open(struct inode *inode, struct file *file)
 //    init_MUTEX(&rd_mtx);
     sema_init(&rd_mtx, 1);
 	BT_INFO_FUNC("finish\n");
+
     return 0;
 }
 
@@ -411,6 +439,8 @@ static int BT_close(struct inode *inode, struct file *file)
         iminor(inode),
         current->pid
         );
+	if(current->pid ==1)
+		return 0;
     retflag = 0;
     mtk_wcn_wmt_msgcb_unreg(WMTDRV_TYPE_BT);
     mtk_wcn_stp_register_event_cb(BT_TASK_INDX, NULL);
@@ -435,12 +465,18 @@ struct file_operations BT_fops = {
     .unlocked_ioctl = BT_unlocked_ioctl,
     .poll = BT_poll
 };
+#if REMOVE_MK_NODE 
+	struct class * stpbt_class = NULL;
+#endif
 
 static int BT_init(void)
 {
     dev_t dev = MKDEV(BT_major, 0);
     int alloc_ret = 0;
     int cdev_err = 0;
+#if REMOVE_MK_NODE
+	struct device * stpbt_dev = NULL;
+#endif
 
     /*static allocate chrdev*/
     alloc_ret = register_chrdev_region(dev, 1, BT_DRIVER_NAME);
@@ -455,6 +491,15 @@ static int BT_init(void)
     cdev_err = cdev_add(&BT_cdev, dev, BT_devs);
     if (cdev_err)
         goto error;
+#if REMOVE_MK_NODE  //mknod replace
+	
+		stpbt_class = class_create(THIS_MODULE,"stpbt");
+		if(IS_ERR(stpbt_class))
+			goto error;
+		stpbt_dev = device_create(stpbt_class,NULL,dev,NULL,"stpbt");
+		if(IS_ERR(stpbt_dev))
+			goto error;
+#endif
 
     BT_INFO_FUNC("%s driver(major %d) installed.\n", BT_DRIVER_NAME, BT_major);
     retflag = 0;
@@ -466,6 +511,15 @@ static int BT_init(void)
     return 0;
 
 error:
+	
+#if REMOVE_MK_NODE
+	if(!IS_ERR(stpbt_dev))
+		device_destroy(stpbt_class,dev);
+	if(!IS_ERR(stpbt_class)){
+		class_destroy(stpbt_class);
+		stpbt_class = NULL;
+	}
+#endif
     if (cdev_err == 0)
         cdev_del(&BT_cdev);
 
@@ -480,6 +534,11 @@ static void BT_exit(void)
     dev_t dev = MKDEV(BT_major, 0);
     retflag = 0;
     mtk_wcn_stp_register_event_cb(BT_TASK_INDX, NULL);  // unregister event callback function
+#if REMOVE_MK_NODE
+	device_destroy(stpbt_class,dev);
+	class_destroy(stpbt_class);
+	stpbt_class = NULL;
+#endif
 
     cdev_del(&BT_cdev);
     unregister_chrdev_region(dev, BT_devs);
@@ -487,7 +546,29 @@ static void BT_exit(void)
     BT_INFO_FUNC("%s driver removed.\n", BT_DRIVER_NAME);
 }
 
+#ifdef MTK_WCN_REMOVE_KERNEL_MODULE
+	
+int mtk_wcn_stpbt_drv_init(void)
+{
+	return BT_init();
+
+}
+
+void mtk_wcn_stpbt_drv_exit (void)
+{
+	return BT_exit();
+}
+
+
+EXPORT_SYMBOL(mtk_wcn_stpbt_drv_init);
+EXPORT_SYMBOL(mtk_wcn_stpbt_drv_exit);
+#else
+	
 module_init(BT_init);
 module_exit(BT_exit);
+
+	
+#endif
+
 
 

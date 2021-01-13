@@ -16,6 +16,14 @@
 
 /*
 ** $Log: scan.c $
+**
+** 01 30 2013 yuche.tsai
+** [ALPS00451578] [JB2][WFD][Case Fail][JE][MR1]?????????[Java (JE),660,-1361051648,99,/data/core/,0,system_server_crash,system_server]JE happens when try to connect WFD.(4/5)
+** Fix possible old scan result indicated to supplicant after formation.
+**
+** 01 16 2013 cp.wu
+** [ALPS00429083] [Need Patch] [Volunteer Patch][MT6620 Wi-Fi] Improve AP-IOT compatibility against AP whose timestamp will reset unexpectedly
+** when BSS-DESC is re-allocated, all information needs to be filled
  *
  * 07 17 2012 yuche.tsai
  * NULL
@@ -1534,6 +1542,7 @@ scanAddToBssDesc (
     BOOLEAN fgIsValidSsid = FALSE, fgEscape = FALSE;
     PARAM_SSID_T rSsid;
     UINT_64 u8Timestamp;
+    BOOLEAN fgIsNewBssDesc = FALSE;
 
     UINT_32 i;
     UINT_8 ucSSIDChar;
@@ -1629,6 +1638,8 @@ scanAddToBssDesc (
                                           fgIsValidSsid == TRUE ? &rSsid : NULL);
 
     if (prBssDesc == (P_BSS_DESC_T)NULL) {
+        fgIsNewBssDesc = TRUE;
+
         do {
             //4 <1.2.1> First trial of allocation
             prBssDesc = scanAllocateBssDesc(prAdapter);
@@ -1677,9 +1688,10 @@ scanAddToBssDesc (
 
         GET_CURRENT_SYSTIME(&rCurrentTime);
 
-        prBssDesc->eBSSType = eBSSType;
-
-        if(HIF_RX_HDR_GET_CHNL_NUM(prSwRfb->prHifRxHdr) != prBssDesc->ucChannelNum &&
+        if (prBssDesc->eBSSType != eBSSType) {
+            prBssDesc->eBSSType = eBSSType;
+        }
+        else if(HIF_RX_HDR_GET_CHNL_NUM(prSwRfb->prHifRxHdr) != prBssDesc->ucChannelNum &&
                 prBssDesc->ucRCPI > prSwRfb->prHifRxHdr->ucRcpi) {
 
             // for signal strength is too much weaker and previous beacon is not stale
@@ -1695,17 +1707,29 @@ scanAddToBssDesc (
 
         /* if Timestamp has been reset, re-generate BSS DESC 'cause AP should have reset itself */
         if(prBssDesc->eBSSType == BSS_TYPE_INFRASTRUCTURE && u8Timestamp < prBssDesc->u8TimeStamp.QuadPart) {
+            BOOLEAN fgIsConnected, fgIsConnecting;
+
+            /* set flag for indicating this is a new BSS-DESC */
+            fgIsNewBssDesc = TRUE;
+
+            /* backup 2 flags for APs which reset timestamp unexpectedly */
+            fgIsConnected = prBssDesc->fgIsConnected;
+            fgIsConnecting = prBssDesc->fgIsConnecting;
             scanRemoveBssDescByBssid(prAdapter, prBssDesc->aucBSSID);
 
             prBssDesc = scanAllocateBssDesc(prAdapter);
             if (!prBssDesc) {
                 return NULL;
             }
+
+            /* restore */
+            prBssDesc->fgIsConnected = fgIsConnected;
+            prBssDesc->fgIsConnecting = fgIsConnecting;
         }
     }
 
     /* NOTE: Keep consistency of Scan Record during JOIN process */
-    if (prBssDesc->fgIsConnecting) {
+    if (fgIsNewBssDesc == FALSE && prBssDesc->fgIsConnecting) {
         return prBssDesc;
     }
 

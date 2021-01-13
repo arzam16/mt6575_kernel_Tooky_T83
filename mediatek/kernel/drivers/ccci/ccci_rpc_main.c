@@ -153,6 +153,8 @@ static bool rpc_write(int buf_idx, RPC_PKT* pkt_src, unsigned int pkt_num)
 _Exit:
 	return ret;
 }
+
+
 static void ccci_rpc_work(struct work_struct *work  __always_unused)
 {
 	int pkt_num = 0;		
@@ -281,7 +283,6 @@ void __exit ccci_rpc_exit(void)
     }
 	//destroy_workqueue(rpc_work_queue);
 #endif
-	
 	kfifo_free(&rpc_fifo);
 	ccci_unregister(CCCI_RPC_RX);
 	ccci_unregister(CCCI_RPC_TX);

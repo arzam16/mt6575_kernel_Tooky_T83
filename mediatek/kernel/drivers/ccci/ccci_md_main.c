@@ -1,3 +1,19 @@
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   ccci_md.c
+ *
+ * Project:
+ * --------
+ *   ALPS
+ *
+ * Description:
+ * ------------
+ *   MT65XX MD initialization and handshake driver
+ *
+ *
+ ****************************************************************************/
 
 #include <linux/module.h>
 #include <linux/device.h>
@@ -17,10 +33,11 @@
 
 
 
+/****************************************************************************
+ * DEBUG UTILITIES
+ ****************************************************************************/
 
-char *ccci_version = "v1.6 20121123";
-//v1.5 20121023: roll back fast dormancy feature and add force to send fd msg
-//v1.6 20121123: add memory dump when md no physical channel
+char *ccci_version = "v1.4 20120618";
 
 #ifdef CCCI_MD_DEBUG_ON
 #define DUMP_CCCI_MD_DATA() dump_ccci_md_data()
@@ -63,21 +80,19 @@ int lock_md_sleep(char *buf, unsigned int len);
 
 struct ccci_cores_exch_data *cores_exch_data;
 static struct ccci_reset_sta reset_sta[NR_CCCI_RESET_USER]; 
-
+static int *md_ex_log;
 
 int is_first_boot = 1;
-int *md_ex_log;
 unsigned int md_ex_type = 0;
 volatile int md_ex_flag = 0;
 
 // Notice:It's for MT6575/MT6577 hardware limitation, that edge irq will be lost at CPU shutdown mode
 static struct wake_lock trm_wake_lock;
 volatile atomic_t data_connect_sta;
-unsigned int force_fd_flag = 0;
 
 volatile unsigned int md_slp_cnt = 0;
-volatile int md_slp_lock_ack = 0;
-volatile int md_slp_unlock_ack = 0;
+volatile unsigned int md_slp_lock_ack = 0;
+volatile unsigned int md_slp_unlock_ack = 0;
 static spinlock_t md_slp_lock;
 
 
@@ -136,8 +151,16 @@ static int ccci_sys_smem_base_virt;
  int ccci_sys_smem_base_phy;
 static int ccci_sys_smem_size;
 
+int get_curr_md_state(void)
+{
+	return md_boot_stage;
+}
 
-
+/** During modem booting, it would occupy much memory bandwidth with high
+    priority which would interfere with DPI display. To prevent from this
+    issue, disable MD high priority bit before modem booting is started 
+    and re-eanble it after modem booting is finished.
+*/
 void md_call_chain(MD_CALL_BACK_HEAD_T *head,unsigned long data)
 {
 	MD_CALL_BACK_QUEUE *queue;
@@ -282,6 +305,12 @@ int ccci_mdlog_base_req(void *addr_phy, int *len)
     return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_pcm_base_reg: get PCM buffer information
+ * @addr: kernel space buffer to store the address of PCM buffer
+ * @len: kernel space buffer to store the length of PCM buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_pcm_base_req(void *addr_phy, int *len)
 {
     if (addr_phy == NULL) {
@@ -297,6 +326,13 @@ int ccci_pcm_base_req(void *addr_phy, int *len)
     return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_uart_setup: setup TTY share buffer
+ * @port: UART port to setup
+ * @addr: physical address of TTY share buffer
+ * @len: length of TTY share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_uart_setup(int port, int *addr_virt, int *addr_phy, int *len)
 {
     if (port >= CCCI_TTY_BUFF_NR) {
@@ -310,6 +346,13 @@ int ccci_uart_setup(int port, int *addr_virt, int *addr_phy, int *len)
     }
 }
 
+/*
+ * ccci_uart_base_req: get TTY share buffer information
+ * @port: UART port to get
+ * @addr: kernel space buffer to store the address of TTY share buffer
+ * @len: kernel space buffer to store the length of TTY share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_uart_base_req(int port, void *addr_phy, int *len)
 {
     if (port >= CCCI_TTY_BUFF_NR) {
@@ -328,6 +371,12 @@ int ccci_uart_base_req(int port, void *addr_phy, int *len)
     return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_fs_setup: setup CCCI_FS share buffer
+ * @addr: physical address of CCCI_FS share buffer
+ * @len: length of CCCI_FS share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_fs_setup(int *addr_virt, int *addr_phy, int *len)
 {
 	*addr_virt = ccci_fs_smem_base_virt;
@@ -336,6 +385,12 @@ int ccci_fs_setup(int *addr_virt, int *addr_phy, int *len)
 	return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_fs_base_req: get CCCI_FS share buffer information
+ * @addr: kernel space buffer to store the address of CCCI_FS share buffer
+ * @len: kernel space buffer to store the length of CCCI_FS share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_fs_base_req(void *addr_phy, int *len)
 {
     if (addr_phy == NULL) {
@@ -350,6 +405,12 @@ int ccci_fs_base_req(void *addr_phy, int *len)
     return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_rpc_setup: setup CCCI_FS share buffer
+ * @addr: physical address of CCCI_FS share buffer
+ * @len: length of CCCI_FS share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_rpc_setup(int *addr_virt, int *addr_phy, int *len)
 {
 	*addr_virt = ccci_rpc_smem_base_virt;
@@ -357,6 +418,12 @@ int ccci_rpc_setup(int *addr_virt, int *addr_phy, int *len)
 	*len = ccci_rpc_smem_size;
 	return CCCI_SUCCESS;
 }
+/*
+ * ccci_rpc_base_req: get CCCI_FS share buffer information
+ * @addr: kernel space buffer to store the address of CCCI_FS share buffer
+ * @len: kernel space buffer to store the length of CCCI_FS share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_rpc_base_req(void *addr_phy, int *len)
 {
     if (addr_phy == NULL) {
@@ -373,6 +440,12 @@ int ccci_rpc_base_req(void *addr_phy, int *len)
 
 
 
+/*
+ * ccci_pmic_setup: setup PMIC share buffer
+ * @addr: physical address of PMIC share buffer
+ * @len: length of PMIC share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_pmic_setup(int *addr_virt, int *addr_phy, int *len)
 {
 	*addr_virt = ccci_pmic_smem_base_virt;
@@ -381,6 +454,12 @@ int ccci_pmic_setup(int *addr_virt, int *addr_phy, int *len)
 	return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_pmic_base_req: get PMIC share buffer information
+ * @addr: kernel space buffer to store the address of PMIC share buffer
+ * @len: kernel space buffer to store the length of PMIC share buffer
+ * return 0 for success; negative value for failure
+ */
 int ccci_pmic_base_req(void *addr_phy, int *len)
 {
     if (addr_phy == NULL) {
@@ -394,6 +473,8 @@ int ccci_pmic_base_req(void *addr_phy, int *len)
 
     return CCCI_SUCCESS;
 }
+
+
 
 
 int ccci_ipc_setup(int *addr_virt, int *addr_phy, int *len)
@@ -418,7 +499,10 @@ int ccci_ipc_base_req( void *addr_phy, int *len)
     return CCCI_SUCCESS;
 }
 
-
+/*
+ * read2boot: check if system is ready to boot up MODEM
+ * return 1 for success; return 0 for failure
+ */
 
 static int ready2boot(void)
 {
@@ -455,8 +539,35 @@ static int ready2boot(void)
 }
 
 #if 0
+/*
+static void dump_firmware(void)
+{
+    int i;
+    printk(KERN_ERR "CCCI_MD: [Exception] Mem dump:\n");
+    for(i = 0; i < (MD_IMG_DUMP_SIZE / 4); i += 4)
+    {
+        printk(KERN_ERR "0x%08X %08X %08X %08X %08X\n", 
+	       (unsigned int)&md_img_vir[i],
+               md_img_vir[i], md_img_vir[i + 1],
+               md_img_vir[i + 2], md_img_vir[i + 3]);
+    }
+#if defined(CONFIG_ARCH_MT6573)
+    printk(KERN_ERR "CCCI_MD: [Exception] DSP dump:\n");
+    for(i = 0; i < (MD_IMG_DUMP_SIZE / 4); i += 4)
+    {
+        printk(KERN_ERR "0x%08X %08X %08X %08X %08X\n", 
+	       (unsigned int)&dsp_img_vir[i],
+               dsp_img_vir[i], dsp_img_vir[i + 1],
+               dsp_img_vir[i + 2], dsp_img_vir[i + 3]);
+    }
+#endif
+}
+*/
 #endif
 
+/*
+ * ccci_md_exception: handle modem exception
+ */
 
 static void ccci_md_exception(unsigned int trusted)
 {
@@ -626,6 +737,11 @@ static void md_boot_up_timeout_func(unsigned long data  __always_unused)
 	ccci_system_message(&sys_msg);
 }
 
+/*
+ * ccci_md_ctrl_cb: CCCI_CONTROL_RX callback function for MODEM
+ * @buff: pointer to a CCCI buffer
+ * @private_data: pointer to private data of CCCI_CONTROL_RX
+ */
 extern void ccif_send_wakeup_md_msg(void);
 static volatile int wakeup_md_is_safe = 0;
 void ccci_md_ctrl_cb(CCCI_BUFF_T *buff, void *private_data)
@@ -721,6 +837,10 @@ void ccci_md_ctrl_cb(CCCI_BUFF_T *buff, void *private_data)
 }
 
 
+/*
+ * set_md_runtime: setup MODEM runtime data
+ * return 0 for success; return negative value for failure
+ */
 static int set_md_runtime(void)
 {
     int i, addr, len;
@@ -827,6 +947,10 @@ static int set_md_runtime(void)
 }
 
 
+/*
+ * boot_md: boot-up MODEM
+ * return 0 for success; return negative values for failure
+ */
 static int boot_md(void)
 {
     int ret=0;
@@ -924,6 +1048,11 @@ static int boot_md(void)
 }
 
 
+/*
+ * ccci_reset_register: register a user for ccci reset
+ * @name: user name
+ * return a handle if success; return negative value if failure
+ */
 int ccci_reset_register(char *name)
 {
     int handle, i;
@@ -967,6 +1096,10 @@ int ccci_reset_register(char *name)
     }
 }
 
+/*
+ * reset_md: reset modem
+ * return 0 if success; return negative value if failure
+ */
 int reset_md(void)
 {
     CCCI_BUFF_T sys_msg;
@@ -1000,6 +1133,10 @@ int reset_md(void)
     return CCCI_SUCCESS;
 }
 
+/*
+ * send_stop_md_request:
+ * return 0 if success; return negative value if failure
+ */
 int send_stop_md_request(void)
 {
 	CCCI_BUFF_T sys_msg;
@@ -1028,6 +1165,10 @@ int send_stop_md_request(void)
 	return CCCI_SUCCESS;
 }
 
+/*
+ * send_start_md_request:
+ * return 0 if success; return negative value if failure
+ */
 int send_start_md_request(void)
 {
 	CCCI_BUFF_T sys_msg;
@@ -1038,6 +1179,11 @@ int send_start_md_request(void)
 	return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_reset_request: request to reset CCCI
+ * @handle: a user handle gotten from ccci_reset_register()
+ * return 0 if CCCI is reset; return negative value for failure
+ */
 int ccci_reset_request(int handle)
 {
     int i;
@@ -1107,6 +1253,10 @@ int ccci_reset_request(int handle)
     return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_stop_modem:
+ * Do stop modem operation
+ */
 int ccci_stop_modem(void)
 {
 	int i, ret;
@@ -1143,13 +1293,15 @@ int ccci_stop_modem(void)
 	}
 	
 	md_slp_cnt = 0;
-	md_slp_lock_ack = 0;
-	md_slp_unlock_ack = 0;
 	md_boot_stage = MD_BOOT_STAGE_0;
 
 	return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_stop_modem:
+ * Do start modem operation
+ */
 int ccci_start_modem(void)
 {
 	ccci_enable();
@@ -1160,6 +1312,10 @@ int ccci_start_modem(void)
 	return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_do_modem_reset:
+ * Do reset work by operate the rgu register
+ */
 int ccci_do_modem_reset(void)
 {
 	CCCI_MSG_INF("ctl", "Begin to reset MD\n");
@@ -1172,6 +1328,10 @@ int ccci_do_modem_reset(void)
 	return CCCI_SUCCESS;
 }
 
+/*
+ * ccci_send_run_time_data
+ * return 0 for success; return negative values for failure
+ */
 int ccci_send_run_time_data(void)
 {
 	int ret=0;
@@ -1204,11 +1364,20 @@ int ccci_send_run_time_data(void)
 	return ret;
 }
 
+/*
+ * boot_md_show
+ * @buf:
+ */
 static ssize_t boot_md_show(char *buf)
 {
     return sprintf(buf, "%d\n", md_boot_stage);
 }
 
+/*
+ * boot_md_store
+ * @buf:
+ * @count:
+ */
 static ssize_t boot_md_store(const char *buf, size_t count)
 {
     if (down_interruptible(&ccci_mb_mutex)) {
@@ -1295,7 +1464,6 @@ static int __init ccci_alloc_smem(void)
 	ccci_fs_smem_size = CCCI_FS_SMEM_SIZE;
 	base_virt += CCCI_FS_SMEM_SIZE;
 	base_phy += CCCI_FS_SMEM_SIZE;
-
 	// RPC
 	ccci_rpc_smem_base_virt = base_virt;
 	ccci_rpc_smem_base_phy = base_phy;
@@ -1378,23 +1546,31 @@ void unlock_md_dormant(void)
 }
 
 	
+/*
+ccci_dormancy
+When "data_connect_sta" is not zero, which means there are data connection exist
+So the suspend function should call this API to notify modem disconnect data 
+connection before enter suspend state to save power. axs
+ */
  
 int ccci_dormancy(char *buf, unsigned int len)
 {
 	//CCCI_MSG("<ctl> ccci_dormancy\n");
-	if((atomic_read(&data_connect_sta) > 0) || force_fd_flag)
+	//if(atomic_read(&data_connect_sta) > 0)
 	{
-		CCCI_MSG_INF("ctl", "notify enter dormancy, data_sta<%d>, fd_flag<%d>\n", 
-			atomic_read(&data_connect_sta), force_fd_flag);
-		//CCCI_MSG_INF("ctl", "notify enter fast dormancy \n");
+		//CCCI_MSG_INF("ctl", "notify enter dormancy, data_sta<%d>\n", atomic_read(&data_connect_sta));
+		CCCI_MSG_INF("ctl", "notify enter fast dormancy \n");
 		ccci_write_mailbox(CCCI_SYSTEM_TX, 0xE);
-		atomic_set(&data_connect_sta,0x0);
-		force_fd_flag = 0;
+		//atomic_set(&data_connect_sta,0x0);
 	}
 
 	return 0;
 	//unlock_md_dormant();
 }
+/*
+When data channel coming, the "data_connect_sta" should be mark
+This function called in IRQ_handler function. axs
+*/
 void check_data_connected(int channel)
 {
 	if(channel >= CCCI_CCMNI1_RX && channel <= CCCI_CCMNI3_TX_ACK)
@@ -1409,9 +1585,8 @@ int lock_md_sleep(char *buf, unsigned int len)
 
 	spin_lock_irqsave(&md_slp_lock, flag);
 	if (buf[0]) {
-		//if (++md_slp_cnt == 1)
-		//	md_slp_lock_ack = 0;
-		++md_slp_cnt;
+		if (++md_slp_cnt == 1)
+			md_slp_lock_ack = 0;
 	}
 	else {
 		if (md_slp_cnt == 0) {
@@ -1420,9 +1595,8 @@ int lock_md_sleep(char *buf, unsigned int len)
 			return ret;
 		}
 		
-		//if (--md_slp_cnt == 0)
-		//	md_slp_unlock_ack = 0;
-		--md_slp_cnt;
+		if (--md_slp_cnt == 0)
+			md_slp_unlock_ack = 0;
 	}
 	spin_unlock_irqrestore(&md_slp_lock, flag);
 	
@@ -1430,22 +1604,12 @@ int lock_md_sleep(char *buf, unsigned int len)
 		ret = ccci_write_mailbox_with_resv(CCCI_SYSTEM_TX, MD_SLP_REQUEST, LOCK_MD_SLP);
 	else if (md_slp_cnt == 0)
 		ret = ccci_write_mailbox_with_resv(CCCI_SYSTEM_TX, MD_SLP_REQUEST, UNLOCK_MD_SLP);	
-
-	if (ret == 0) {
-		spin_lock_irqsave(&md_slp_lock, flag);
-		if (buf[0])
-			--md_slp_lock_ack;
-		else
-			--md_slp_unlock_ack;
-		spin_unlock_irqrestore(&md_slp_lock, flag);		
-	}
 	
 	CCCI_MSG_INF("ctl", "%s request md sleep %d (%d, %d, %d): %d\n", 
 		current->comm, buf[0], md_slp_cnt, md_slp_lock_ack, md_slp_unlock_ack, ret);
 
 	return ret;
 }
-
 
 int ack_md_sleep(char *buf, unsigned int len)
 {
@@ -1463,7 +1627,7 @@ int ack_md_sleep(char *buf, unsigned int len)
 
 
 #ifdef CONFIG_MTK_AEE_FEATURE
-extern void aed_md_exception2(int *, int, int *, int, char *);
+extern void aed_md_exception(int *, int, int *, int, char *);
 
 #endif
 
@@ -1497,12 +1661,12 @@ void ccci_aed(unsigned int dump_flag, char *aed_str)
 	}
 
 	#ifdef CONFIG_MTK_AEE_FEATURE
-	aed_md_exception2(ex_log_addr, ex_log_len, md_img_addr, md_img_len, buff);
+	aed_md_exception(ex_log_addr, ex_log_len, md_img_addr, md_img_len, buff);
 	#endif
 }
 
 extern void ccci_aed_cb_register(ccci_aed_cb_t funcp);
-typedef size_t (*ccci_sys_cb_func_t)(char buf[], size_t len);
+typedef size_t (*ccci_filter_cb_func_t)(char buf[], size_t len);
 extern int register_filter_func(char cmd[], ccci_sys_cb_func_t store, ccci_sys_cb_func_t show);
 extern unsigned long long lg_ch_tx_debug_enable;
 extern unsigned long long lg_ch_rx_debug_enable;
@@ -1576,6 +1740,150 @@ size_t ccci_ch_filter_show(char buf[], size_t len)
 	return ret;
 }
 
+ssize_t show_attr_md1_postfix(char *buf)
+{
+	get_md_post_fix(0, buf, NULL);
+	
+	CCCI_MSG("md1: %s\n", buf);
+	
+	return strlen(buf);
+}
+
+
+/* ccci sysfs kobject */
+typedef struct ccci_info
+{
+	struct kobject kobj;
+	unsigned int ccci_attr_count;
+}ccci_info_t;
+
+typedef struct ccci_attribute
+{
+	struct attribute attr;
+	ssize_t (*show)(char *buf);
+	ssize_t (*store)(const char *buf, size_t count);
+}ccci_attribute_t;
+
+#define CCCI_ATTR(_name, _mode, _show, _store)				\
+	ccci_attribute_t ccci_attr_##_name = {					\
+	.attr = {.name = __stringify(_name), .mode = _mode },	\
+	.show = _show,											\
+	.store = _store,										\
+}
+
+/* common func declare */
+void	ccci_attr_release(struct kobject *kobj);
+ssize_t ccci_attr_show(struct kobject *kobj, struct attribute *attr, char *buf);
+ssize_t ccci_attr_store(struct kobject *kobj, struct attribute *attr, const char *buf, size_t count);
+ssize_t show_attr_md1_postfix(char *buf);
+/* global vars */
+static ccci_info_t *ccci_sys_info = NULL;
+struct sysfs_ops ccci_sysfs_ops = {
+	.show  = ccci_attr_show,
+	.store = ccci_attr_store
+};
+
+CCCI_ATTR(boot, 0660,  boot_md_show, boot_md_store);
+CCCI_ATTR(modem_info, 0644, NULL, NULL);
+CCCI_ATTR(md1_postfix, 0644, show_attr_md1_postfix, NULL);
+
+struct attribute *ccci_default_attrs[] = {
+	&ccci_attr_boot.attr,
+	&ccci_attr_modem_info.attr,
+	&ccci_attr_md1_postfix.attr,
+	NULL
+};
+
+struct kobj_type ccci_ktype = {
+	.release		= ccci_attr_release,
+    .sysfs_ops 		= &ccci_sysfs_ops,
+    .default_attrs 	= ccci_default_attrs
+};
+/* common func implement */
+ssize_t ccci_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	ssize_t len = 0;
+	ccci_attribute_t *a = container_of(attr, ccci_attribute_t, attr);
+
+	if (a->show)
+	{
+		len = a->show(buf);
+	}
+
+	return len;
+}
+
+ssize_t ccci_attr_store(struct kobject *kobj, struct attribute *attr, const char *buf, size_t count)
+{
+	ssize_t len = 0;
+	ccci_attribute_t *a = container_of(attr, ccci_attribute_t, attr);
+
+	if (a->store)
+	{
+		len = a->store(buf, count);
+	}
+
+	return len;
+}
+
+void ccci_attr_release(struct kobject *kobj)
+{
+	ccci_info_t *ccci_info_temp = container_of(kobj, ccci_info_t, kobj);
+	kfree(ccci_info_temp);
+	ccci_sys_info = NULL;
+}
+int register_ccci_attr_func(const char *buf, ssize_t (*show)(char*), ssize_t (*store)(const char*,size_t))
+{
+	int i = 0;
+	ccci_attribute_t *ccci_attr_temp = NULL;
+	
+	while(ccci_default_attrs[i])
+	{
+		if (!strncmp(ccci_default_attrs[i]->name, buf, strlen(ccci_default_attrs[i]->name))) {
+			ccci_attr_temp = container_of(ccci_default_attrs[i], ccci_attribute_t, attr);
+			break;
+		}
+		i++;
+	}
+	if (ccci_attr_temp) {
+		ccci_attr_temp->show  = show;
+		ccci_attr_temp->store = store;
+		return 0;
+	} else {
+		CCCI_MSG("fail to register ccci attibute!\n");
+		return -1;
+	}
+}
+
+#define CCCI_KOBJ_NAME		"ccci"
+extern struct kobject *kernel_kobj;
+int ccci_attr_install(void)
+{
+	int ret = 0;
+
+	ccci_sys_info = kmalloc(sizeof(ccci_info_t), GFP_KERNEL);
+	if (!ccci_sys_info)
+		return -ENOMEM;
+
+	memset(ccci_sys_info, 0, sizeof(ccci_info_t));
+
+	ret = kobject_init_and_add(&ccci_sys_info->kobj, &ccci_ktype, kernel_kobj, CCCI_KOBJ_NAME);
+	if (ret < 0) {
+		kobject_put(&ccci_sys_info->kobj);
+        CCCI_MSG("fail to add ccci kobject in kernel\n");
+        return ret;
+    }
+
+	ccci_sys_info->ccci_attr_count = sizeof(*ccci_default_attrs)/sizeof(struct attribute);
+
+	return ret;
+
+}
+
+
+/*
+ * ccci_md_init_mod_init: module init function
+ */
 int __init ccci_md_init_mod_init(void)
 {
     int ret;
@@ -1630,11 +1938,15 @@ int __init ccci_md_init_mod_init(void)
     register_filter_func("-c", ccci_ch_filter_store, ccci_ch_filter_show);
     wake_lock_init(&trm_wake_lock, WAKE_LOCK_SUSPEND, "ccci_trm");
     spin_lock_init(&md_slp_lock);
-    
+    //3. Init ccci device table	
+    ret = ccci_attr_install();
     return 0;
 }
 
 
+/*
+ * ccci_md_init_mod_exit: module exit function
+ */
 void __exit ccci_md_init_mod_exit(void)
 {
     //iounmap(md_img_vir);

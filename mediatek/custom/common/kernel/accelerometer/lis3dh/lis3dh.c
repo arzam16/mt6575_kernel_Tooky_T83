@@ -34,6 +34,7 @@
 #include <linux/sensors_io.h>
 #include "lis3dh.h"
 #include <linux/hwmsen_helper.h>
+
 #ifdef MT6516
 #include <mach/mt6516_devs.h>
 #include <mach/mt6516_typedefs.h>
@@ -54,6 +55,7 @@
 #include <mach/mt6575_gpio.h>
 #include <mach/mt6575_pm_ldo.h>
 #endif
+
 #ifdef MT6577
 #include <mach/mt6577_devs.h>
 #include <mach/mt6577_typedefs.h>

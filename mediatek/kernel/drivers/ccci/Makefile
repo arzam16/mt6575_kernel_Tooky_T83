@@ -1,5 +1,5 @@
 #CONFIG_MTK_CCCI_DRIVER :=m
-ifneq ($(filter-out MT8320,$(MTK_PLATFORM)),)
+ifneq ($(CONFIG_MTK_CCCI_EXT), y)
 
 include $(MTK_ROOT_BUILD)/Makefile
 #CCCI_PLATFORM_DRIVER_DIR :=  $(wildcard $(obj)/$(call to-root,$(obj))mediatek/platform/$(call lc,\
@@ -8,6 +8,7 @@ CCCI_PLATFORM_DRIVER_DIR :=  $(srctree)/mediatek/platform/$(call lc,$(MTK_PLATFO
 ifeq ($(CCCI_PLATFORM_DRIVER_DIR),)
 $(error Invalid ccci platform path, please check)
 endif
+
 
 
 obj-$(CONFIG_MTK_CCCI_DRIVER) += ccci.o
@@ -19,10 +20,14 @@ ccci-y +=ccci_ipc.o
 ccci-y +=ccci_pmic.o
 ccci-y +=ccci_fs_main.o
 ccci-y +=ccci_rpc_main.o
+ccci-y +=ccmni_net.o
+ccci-y +=ccmni_pfp.o
 
 #include $(CCCI_PLATFORM_DRIVER_DIR)/Makefile
 
-
+ifeq ($(CONFIG_MTK_CCCI_DRIVER), y)
+ccflags-y += -DENABLE_CCCI_DRV_BUILDIN
+endif
 
 clean-files += $(patsubst $(obj)/%,%,$(wildcard $(obj)/*~))
 
@@ -34,10 +39,6 @@ ccflags-y  += -DCCCI_DEBUG_ON  -DCCCI_MD_DEBUG_ON  #-save-temps
 #ccflags-y  += -DENCRYPT_DEBUG -DCCCI_RPC_DEBUG_ON
 endif
 ccflags-y  += -D__CCCI_LOG__
-
-ifdef CONFIG_ARCH_MT6573
-ccflags-y += #-DCCCI_STATIC_SHARED_MEM
-endif
 
 else 
 obj- :=dummy.o

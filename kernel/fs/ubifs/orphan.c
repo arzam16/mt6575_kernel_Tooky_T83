@@ -248,8 +248,7 @@ static int do_write_orph_node(struct ubifs_info *c, int len, int atomic)
 		ubifs_assert(c->ohead_offs == 0);
 		ubifs_prepare_node(c, c->orph_buf, len, 1);
 		len = ALIGN(len, c->min_io_size);
-		err = ubifs_leb_change(c, c->ohead_lnum, c->orph_buf, len,
-				       UBI_SHORTTERM);
+		err = ubifs_leb_change(c, c->ohead_lnum, c->orph_buf, len);
 	} else {
 		if (c->ohead_offs == 0) {
 			/* Ensure LEB has been unmapped */
@@ -258,7 +257,7 @@ static int do_write_orph_node(struct ubifs_info *c, int len, int atomic)
 				return err;
 		}
 		err = ubifs_write_node(c, c->orph_buf, len, c->ohead_lnum,
-				       c->ohead_offs, UBI_SHORTTERM);
+				       c->ohead_offs);
 	}
 	return err;
 }
@@ -712,7 +711,7 @@ int ubifs_mount_orphans(struct ubifs_info *c, int unclean, int read_only)
 	c->max_orphans = tot_avail_orphs(c);
 
 	if (!read_only) {
-		c->orph_buf = vmalloc(c->leb_size);
+		c->orph_buf = kmalloc(c->leb_size, GFP_KERNEL);
 		if (!c->orph_buf)
 			return -ENOMEM;
 	}
@@ -899,7 +898,7 @@ static int dbg_scan_orphans(struct ubifs_info *c, struct check_info *ci)
 	if (c->no_orphs)
 		return 0;
 
-	buf = __vmalloc(c->leb_size, GFP_NOFS, PAGE_KERNEL);
+	buf = kmalloc(c->leb_size, GFP_KERNEL);
 	if (!buf) {
 		ubifs_err("cannot allocate memory to check orphans");
 		return 0;
@@ -920,7 +919,7 @@ static int dbg_scan_orphans(struct ubifs_info *c, struct check_info *ci)
 			break;
 	}
 
-	vfree(buf);
+	kfree(buf);
 	return err;
 }
 

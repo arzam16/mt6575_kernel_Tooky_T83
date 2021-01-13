@@ -709,6 +709,15 @@ rlmFillHtCapIE (
     ASSERT(prBssInfo);
     ASSERT(prMsduInfo);
 
+#if 1
+		if(prMsduInfo->ucNetworkType==NETWORK_TYPE_P2P_INDEX)
+			{
+				DBGLOG(AIS, WARN,("Assoc:Force P2P BW to 20\n"));
+				prBssInfo->fgAssoc40mBwAllowed=FALSE;
+			}
+#endif
+
+
     fg40mAllowed = prBssInfo->fgAssoc40mBwAllowed;
 
     prHtCap = (P_IE_HT_CAP_T)
@@ -726,6 +735,16 @@ rlmFillHtCapIE (
     if (prAdapter->rWifiVar.rConnSettings.fgRxShortGIDisabled) {
         prHtCap->u2HtCapInfo &=
             ~(HT_CAP_INFO_SHORT_GI_20M | HT_CAP_INFO_SHORT_GI_40M);
+    }
+
+    if(prAdapter->rWifiVar.u8SupportRxSgi20 == 2) {
+        prHtCap->u2HtCapInfo &= ~(HT_CAP_INFO_SHORT_GI_20M);
+    }
+    if(prAdapter->rWifiVar.u8SupportRxSgi40 == 2) {
+        prHtCap->u2HtCapInfo &= ~(HT_CAP_INFO_SHORT_GI_40M);
+    }
+    if(prAdapter->rWifiVar.u8SupportRxGf == 2) {
+        prHtCap->u2HtCapInfo &= ~(HT_CAP_INFO_HT_GF);
     }
 
     prHtCap->ucAmpduParam = AMPDU_PARAM_DEFAULT_VAL;
@@ -1447,6 +1466,16 @@ rlmProcessAssocRsp (
      *       shall be invoked afterwards.
      *       Update channel, bandwidth and protection mode by nicUpdateBss()
      */
+#if 1
+	if(prStaRec->ucNetTypeIndex==NETWORK_TYPE_P2P_INDEX)
+	{
+				
+				DBGLOG(AIS, WARN, ("Force P2P BW to 20\n"));
+				prBssInfo->fgAssoc40mBwAllowed=FALSE;
+	}	
+#endif
+
+
 }
 
 /*----------------------------------------------------------------------------*/

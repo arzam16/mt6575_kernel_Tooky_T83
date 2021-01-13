@@ -27,6 +27,7 @@
 #include <linux/platform_device.h>
 #include <asm/atomic.h>
 //#include <mach/mt_gpio.h>
+
 #ifdef MT6516
 #include <mach/mt6516_devs.h>
 #include <mach/mt6516_typedefs.h>
@@ -47,11 +48,12 @@
 #include <mach/mt_gpio.h>
 #include <mach/mt_pm_ldo.h>
 #endif
+
 #ifdef MT6577
-#include <mach/mt_devs.h>
-#include <mach/mt_typedefs.h>
-#include <mach/mt_gpio.h>
-#include <mach/mt_pm_ldo.h>
+#include <mach/mt6577_devs.h>
+#include <mach/mt6577_typedefs.h>
+#include <mach/mt6577_gpio.h>
+#include <mach/mt6577_pm_ldo.h>
 #endif
 
 #ifdef MT6516
@@ -69,6 +71,7 @@
 #ifdef MT6577
 #define POWER_NONE_MACRO MT65XX_POWER_NONE
 #endif
+
 #include <linux/hwmsensor.h>
 #include <linux/hwmsen_dev.h>
 #include <linux/sensors_io.h>

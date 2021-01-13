@@ -33,8 +33,9 @@
 #define MTCHRDEV_REG(num, name) CHDEV_##name,
 
 #define MAKE_MTCHRDEV_ENUM
-#include <linux/mtchrdev_table.h>
+#include <mach/mtchrdev_table.h>
 
+#undef MTCHRDEV_REG
 #define MTCHRDEV_REG(num, name) \
     [CHDEV_##name] = {num, #name},
 
@@ -43,7 +44,7 @@ struct{
     const char *name;
 }mtchrdev_info[MTCHRDEV_COUNT] = {
     [ DNY_CHRDEV ] = { 0, "dynamic" },
-#include <linux/mtchrdev_table.h>
+#include <mach/mtchrdev_table.h>
 };
 #endif/* end of CONFIG_MT_CHRDEV_REG*/
 int dynamic_chardev_num = CHRDEV_MAJOR_HASH_SIZE;

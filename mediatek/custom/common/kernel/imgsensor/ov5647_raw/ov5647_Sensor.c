@@ -1,38 +1,4 @@
 /*****************************************************************************
-*  Copyright Statement:
-*  --------------------
-*  This software is protected by Copyright and the information contained
-*  herein is confidential. The software may not be copied and the information
-*  contained herein may not be used or disclosed except with the written
-*  permission of MediaTek Inc. (C) 2005
-*
-*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
-*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
-*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
-*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
-*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
-*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
-*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
-*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
-*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
-*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
-*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
-*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
-*
-*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
-*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
-*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
-*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
-*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE. 
-*
-*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
-*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
-*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
-*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
-*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
-*
-*****************************************************************************/
-/*****************************************************************************
  *
  * Filename:
  * ---------
@@ -58,6 +24,14 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
+ *
+ * 09 07 2012 qihao.geng
+ * [ALPS00351342] [6577JB][Camera]HDR photo is black when set anti-flicker as 60HZ
+ * Correct the write shutter function, max_shutter = frame_length - 4 + vts_differ.
+ *
+ * 09 07 2012 qihao.geng
+ * [ALPS00351342] [6577JB][Camera]HDR photo is black when set anti-flicker as 60HZ
+ * Enlarge frame length before write shutter to make sure it can take effect
  *
  * 02 19 2012 koli.lin
  * [ALPS00237113] [Performance][Video recording]Recording preview the screen have flash
@@ -160,8 +134,8 @@ static void OV5647_Write_Shutter(kal_uint16 iShutter)
 		}
 	}
 	
-	if(iShutter > OV5647_sensor.frame_height)
-		extra_line = iShutter - OV5647_sensor.frame_height;
+	if(iShutter > (OV5647_sensor.frame_height-4))
+		extra_line = iShutter - (OV5647_sensor.frame_height - 4);
 
 	// Update Extra shutter
 	OV5647_write_cmos_sensor(0x350c, (extra_line >> 8) & 0xFF);	
@@ -1109,6 +1083,8 @@ UINT32 OV5647Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 #elif defined(__OV5647_56M__)
 	shutter = (shutter * (((kal_uint32)(pv_line_length * 806 * 1000))/((kal_uint32)(OV5647_sensor.line_length * 563))))/1000;
 #endif
+
+
 #else
 		OV5647_Sensor_5M();
 		spin_lock(&ov5647_drv_lock);

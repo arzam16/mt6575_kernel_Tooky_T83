@@ -851,6 +851,12 @@ cnmStaRecAlloc (
             prStaRec->fgTxAmpduEn = TRUE;
             prStaRec->fgRxAmpduEn = TRUE;
 
+            #if CFG_ENABLE_PER_STA_STATISTICS && CFG_ENABLE_PKT_LIFETIME_PROFILE
+            prStaRec->u4TotalTxPktsNumber = 0;
+            prStaRec->u4TotalTxPktsTime = 0;
+			prStaRec->u4MaxTxPktsTime = 0;
+            #endif
+
             for (k = 0; k < NUM_OF_PER_STA_TX_QUEUES; k++) {
                 QUEUE_INITIALIZE(&prStaRec->arTxQueue[k]);
             }

@@ -4,6 +4,7 @@
 #include <linux/platform_device.h>
 #include "musbfsh_core.h"
 #include "musbfsh_mt65xx.h"
+bool musbfsh_power = false;
 
 // unsigned char __iomem *usb11_phy_addr = (unsigned char __iomem*)USB11_PHY_ADDR;
 

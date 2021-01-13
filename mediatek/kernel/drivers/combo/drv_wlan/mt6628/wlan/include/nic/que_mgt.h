@@ -217,6 +217,7 @@ Add per station flow control when STA is in PS
 #define QM_PRINT_TC_RESOURCE_CTRL       0  /* 1: To print TC resource adjustment results */
 #define QM_RX_WIN_SSN_AUTO_ADVANCING    1  /* 1: If pkt with SSN is missing, auto advance the RX reordering window */
 #define QM_RX_INIT_FALL_BEHIND_PASS     1  /* 1: Indicate the packets falling behind to OS before the frame with SSN is received */
+#define QM_TC_RESOURCE_EMPTY_COUNTER    1  /* 1: Count times of TC resource empty happened */
 /* Parameters */
 #define QM_INIT_TIME_TO_UPDATE_QUE_LEN  60  /* p: Update queue lengths when p TX packets are enqueued */
 #define QM_INIT_TIME_TO_ADJUST_TC_RSC   3   /* s: Adjust the TC resource every s updates of queue lengths  */
@@ -521,10 +522,9 @@ typedef struct _QUE_MGT_T{      /* Queue Management Control Info */
 #if QM_DEBUG_COUNTER
     UINT_32 au4QmDebugCounters[QM_DBG_CNT_NUM];
 #endif
-
-
-
-
+#if QM_TC_RESOURCE_EMPTY_COUNTER
+    UINT_32 au4QmTcResourceEmptyCounter[NET_TYPE_NUM][TC_NUM];
+#endif
 } QUE_MGT_T, *P_QUE_MGT_T;
 
 

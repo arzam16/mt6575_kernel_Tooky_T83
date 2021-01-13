@@ -22,9 +22,6 @@ extern unsigned long long lg_ch_tx_debug_enable;
 extern unsigned long long lg_ch_rx_debug_enable;
 extern unsigned int md_ex_type;
 unsigned int push_data_fail = 0;
-extern unsigned int force_fd_flag;
-unsigned int IS_AP_Eng_Build = 0;
-
 
 static inline void ccci_recv_array_init(struct recv_array *array,CCCI_BUFF_T *buff,int msg_num)
 {	
@@ -517,11 +514,21 @@ extern int ccci_start_modem(void);
 
 static long ccci_dev_ioctl( struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int addr, len, ret = 0;
+	int addr, len, state, ret = 0;
 	CCCI_BUFF_T buff;
 	struct ccci_dev_client *client=(struct ccci_dev_client *)file->private_data;
 
 	switch (cmd) {
+	case CCCI_IOC_GET_MD_STATE:
+			state = get_curr_md_state();
+			if(state >= 0) { 
+				state+='0'; // Make number to charactor
+				ret = put_user((unsigned int)state, (unsigned int __user *)arg);
+			} else {
+				CCCI_MSG_INF("chr", "Get MD state fail: %d\n",state);
+				ret = state;
+			}
+			break;
 	case CCCI_IOC_MD_RESET:
 		CCCI_MSG_INF("chr", "MD reset ioctl called by %s\n", current->comm);
 		ret=reset_md();
@@ -566,7 +573,10 @@ static long ccci_dev_ioctl( struct file *file, unsigned int cmd, unsigned long a
 		if(client->ch_num != CCCI_SYSTEM_RX)
 			ret = -1;
 		else{
-			addr = is_modem_debug_ver();
+			if(is_modem_debug_ver())
+				addr = 1;
+			else
+				addr = 0;
 			ret = put_user((unsigned int)addr, (unsigned int __user *)arg);
 		}
 		break;
@@ -596,35 +606,12 @@ static long ccci_dev_ioctl( struct file *file, unsigned int cmd, unsigned long a
 		ret=ccci_start_modem();
 		break;
 
-	case CCCI_IOC_FORCE_FD:
-		if(copy_from_user(&force_fd_flag, (void __user *)arg, sizeof(unsigned int))) {
-			CCCI_MSG_INF("chr", "CCCI_IOC_FORCE_FD: copy_from_user fail!\n");
-			ret = -EFAULT;
-		}
-		else
- 		    CCCI_MSG_INF("chr", "CCCI_IOC_FORCE_FD: %d\n", force_fd_flag);		
-		break;
-
-	case CCCI_IOC_AP_ENG_BUILD:
-		if(copy_from_user(&IS_AP_Eng_Build, (void __user *)arg, sizeof(unsigned int))) {
-			CCCI_MSG_INF("chr", "CCCI_IOC_AP_ENG_BUILD: copy_from_user fail!\n");
-			ret = -EFAULT;
-		} else {
- 		    CCCI_MSG_INF("chr", "CCCI_IOC_AP_ENG_BUILD: %s\n", (IS_AP_Eng_Build?"eng":"user"));	
- 		    ret = 0;
- 		}	
-		break;
-
-	case CCCI_IOC_GET_MD_MEM_SIZE:
-		get_md_mem_info(&addr,&len);
-		ret = put_user((unsigned int)len, (unsigned int __user *)arg);
-		break;
-
 	default:
 		ret = -ENOTTY;
 		break;
 	}
 
+	//  CCCI_DEBUG("ret=%d cmd=0x%x addr=%0x len=%d\n",ret,cmd,addr,len);
 	return ret;
 }
 
@@ -638,15 +625,12 @@ static int ccci_dev_mmap(struct file *file, struct vm_area_struct *vma)
     if (client->ch_num == CCCI_PCM_RX || client->ch_num == CCCI_PCM_TX) {
         ccci_pcm_base_req(&addr,&len);
     }
-    else if (client->ch_num == CCCI_MD_LOG_RX || client->ch_num == CCCI_MD_LOG_TX) {
+    else if (client->ch_num==CCCI_MD_LOG_RX||client->ch_num==CCCI_MD_LOG_TX)
+    {
 		ccci_mdlog_base_req(&addr,&len);
     }
-	else if (client->ch_num == CCCI_SYSTEM_RX) {
-		get_md_mem_info(&addr,&len);	
-	}
     
-    CCCI_MSG_INF("chr", "remap_addr(ch=%d):0x%lx, len:0x%x, map_len:0x%x\n",client->ch_num, 
-		addr,len,vma->vm_end-vma->vm_start);
+    CCCI_CHR_MSG("remap addr:0x%lx len:%d  map-len=%lu\n",addr,len,vma->vm_end-vma->vm_start);
     len=(vma->vm_end-vma->vm_start)<len?vma->vm_end-vma->vm_start:len;
     pfn = addr;
     pfn >>= PAGE_SHIFT;

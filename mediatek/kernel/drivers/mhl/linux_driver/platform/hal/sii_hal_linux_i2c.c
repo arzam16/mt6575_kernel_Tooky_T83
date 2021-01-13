@@ -9,6 +9,11 @@
 #include <mach/mt_gpio.h>
 #include <cust_gpio_usage.h>
 #include <cust_eint.h>
+
+
+/******************************software I2C demo code**********************************/
+//------------------------------------------------------------------------------
+#if 0
 /******************************software I2C demo code**********************************/
 //------------------------------------------------------------------------------
 #define I2C_DELAY_VALUE	3
@@ -19,7 +24,7 @@
 	#define GPIO_SDA	GPIO_HDMI_I2C_SDA
 	#define GPIO_SCL	GPIO_HDMI_I2C_SCL
 	
-uint8_t GET_SDA(void)	
+uint8_t GET_SDA(void)
 {
 	unsigned int a;
 	//mt_set_gpio_dir(GPIO_SDA, GPIO_DIR_IN);
@@ -27,7 +32,7 @@ uint8_t GET_SDA(void)
 	return a;
 }
 
-uint8_t GET_SCL(void) 
+uint8_t GET_SCL(void)
 {
 	unsigned int a;
 
@@ -388,8 +393,19 @@ void SiiRegEdidReadBlock( SiiReg_t segmentAddr, SiiReg_t virtualAddr, uint8_t *p
 */
 /******************************software I2C demo code**********************************/
 
+#endif
+
+//void SiiRegEdidReadBlock( SiiReg_t segmentAddr, SiiReg_t virtualAddr, uint8_t *pBuffer, uint16_t count )
+
+uint8_t I2C_ReadSegmentBlockEDID (uint8_t SlaveAddr, uint8_t Segment, uint8_t Offset, uint8_t *Buffer, uint8_t Length)
+{
+    return 0;
+}
+
 static int32_t MhlI2cProbe(struct i2c_client *client, const struct i2c_device_id *id);
 static int32_t MhlI2cRemove(struct i2c_client *client);
+
+
 static int32_t MhlI2cProbe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	printk("%s, client=0x%08x\n", __func__, (unsigned int)client);
@@ -405,9 +421,6 @@ halReturn_t I2cAccessCheck(void)
 {
 	halReturn_t		retStatus;
 	retStatus = HalInitCheck();
-
-	return HAL_RET_SUCCESS;
-	
 	if (retStatus != HAL_RET_SUCCESS)
 	{
 		return retStatus;
@@ -415,7 +428,8 @@ halReturn_t I2cAccessCheck(void)
 	if(gMhlDevice.pI2cClient == NULL)
 	{
 		printk("I2C device not currently open\n");
-		retStatus = HAL_RET_DEVICE_NOT_OPEN;
+		//retStatus = HAL_RET_DEVICE_NOT_OPEN;
+		retStatus =HAL_RET_SUCCESS;
 	}
 	return retStatus;
 }
@@ -427,7 +441,14 @@ struct i2c_device_id gMhlI2cIdTable[] =
 	}
 };
 
-#if 0
+
+#if SII_I2C_ADDR==(0x76)
+static struct i2c_board_info __initdata i2c_mhl = { 
+	.type = "Sil_MHL",
+	.addr = 0x3B,
+	.irq = 8,
+};
+#else
 static struct i2c_board_info __initdata i2c_mhl = { 
 	.type = "Sil_MHL",
 	.addr = 0x39,
@@ -446,13 +467,9 @@ struct i2c_driver mhl_i2c_driver = {
 
 halReturn_t HalOpenI2cDevice(char const *DeviceName, char const *DriverName)
 {
-	//halReturn_t		retStatus;
-    //int32_t 		retVal;
+	halReturn_t		retStatus;
+    int32_t 		retVal;
 
-	gMhlDevice.pI2cClient=(struct i2c_client *)1;
-	return HAL_RET_SUCCESS;
-
-#if 0
 	retStatus = HalInitCheck();
 	if (retStatus != HAL_RET_SUCCESS)
 	{
@@ -465,9 +482,8 @@ halReturn_t HalOpenI2cDevice(char const *DeviceName, char const *DriverName)
     	return HAL_RET_PARAMETER_ERROR;
     }
 
-    i2c_register_board_info(0, &i2c_mhl, 1);
+    i2c_register_board_info(HDMI_I2C_CHANNEL, &i2c_mhl, 1);
 
-#if 0
     memcpy(gMhlI2cIdTable[0].name, DeviceName, retVal);
     gMhlI2cIdTable[0].name[retVal] = 0;
     gMhlI2cIdTable[0].driver_data = 0;
@@ -475,13 +491,12 @@ halReturn_t HalOpenI2cDevice(char const *DeviceName, char const *DriverName)
     gMhlDevice.driver.driver.name = "Sil_MHL";
     gMhlDevice.driver.id_table = gMhlI2cIdTable;
     gMhlDevice.driver.probe = MhlI2cProbe;
-    gMhlDevice.driver.remove = MhlI2cRemove;	
-#endif
+    gMhlDevice.driver.remove = MhlI2cRemove;
 
 	//printk("gMhlDevice.driver.driver.name=%s\n", gMhlDevice.driver.driver.name);
 	//printk("gMhlI2cIdTable.name=%s\n", gMhlI2cIdTable[0].name);
     retVal = i2c_add_driver(&mhl_i2c_driver);
-		    	printk("gMhlDevice.pI2cClient =0x%08x\n", gMhlDevice.pI2cClient);
+    //printk("gMhlDevice.pI2cClient =%p\n", gMhlDevice.pI2cClient);
     if (retVal != 0)
     {
     	printk("I2C driver add failed, retVal=%d\n", retVal);
@@ -489,13 +504,11 @@ halReturn_t HalOpenI2cDevice(char const *DeviceName, char const *DriverName)
     }
     else
     {
-    gMhlDevice.pI2cClient=1;
 #if 0
     	if (gMhlDevice.pI2cClient == NULL)
         {
             i2c_del_driver(&gMhlDevice.driver);
 			printk("I2C driver add failed, retVal=%d\n", retVal);
-
             retStatus = HAL_RET_NO_DEVICE;
         }
     	else
@@ -503,13 +516,11 @@ halReturn_t HalOpenI2cDevice(char const *DeviceName, char const *DriverName)
     	{
     		retStatus = HAL_RET_SUCCESS;
     	}
-    }		
+    }
 
-	printk("GPIO_SCL=%d, GPIO_SDA=%d\n", GPIO_SCL, GPIO_SDA);
+	//printk("GPIO_SCL=%d, GPIO_SDA=%d\n", GPIO_SCL, GPIO_SDA);
 
     return retStatus;
-
-#endif
 }
 halReturn_t HalCloseI2cDevice(void)
 {
@@ -532,102 +543,238 @@ halReturn_t HalCloseI2cDevice(void)
 	}
 	return retStatus;
 }
-#if 0
+
+#define USE_DEFAULT_I2C_CODE  0
+static int mhl_i2c_status = 0; // bit0: read, bit1: write, bit2: block_read, bit3:block_write
+
 uint8_t I2C_ReadByte(uint8_t deviceID, uint8_t offset)
 {
-	uint8_t					accessI2cAddr;
-	union i2c_smbus_data	data;
-	int32_t					status;
-	if (I2cAccessCheck() != HAL_RET_SUCCESS)
-	{
-		return 0xFF;
-	}
-    accessI2cAddr = deviceID>>1;  
-    status = i2c_smbus_xfer(gMhlDevice.pI2cClient->adapter, accessI2cAddr,
-    						0, I2C_SMBUS_READ, offset, I2C_SMBUS_BYTE_DATA,
-    						&data);
-	if (status < 0)
-	{
+    //printk("hdmi enter I2C_ReadByte(0x%02x, 0x%02x)\n",
+    //       deviceID, offset);
+
+    uint8_t					accessI2cAddr;
+    union i2c_smbus_data	data;
+    int32_t					status;
+    u32 client_main_addr;
+    char buf = offset ;
+    if (I2cAccessCheck() != HAL_RET_SUCCESS)
+    {
+        return 0xFF;
+    }
+    mhl_i2c_status |= 1;
+    if((mhl_i2c_status & 0xfe) !=0)
+        printk("MHL R mhl_i2c_status(0x%02x)\n",mhl_i2c_status);
+                    
+    accessI2cAddr = deviceID>>1;
+
+    //backup addr
+    client_main_addr = gMhlDevice.pI2cClient->addr;
+    gMhlDevice.pI2cClient->addr = (accessI2cAddr & I2C_MASK_FLAG)|I2C_WR_FLAG ;
+
+#if 1
+#ifdef MHL_SET_EXT_GPIO
+    gMhlDevice.pI2cClient->ext_flag |= I2C_DIRECTION_FLAG;
+#endif
+    status = i2c_master_send(gMhlDevice.pI2cClient, &buf, 0x101);
+
+    ///gMhlDevice.pI2cClient->ext_flag |= I2C_DIRECTION_FLAG;
+    ///status = i2c_master_recv(gMhlDevice.pI2cClient, (char*)&buf, 1);
+    data.byte = buf;
+
+    if (status < 0)
+    {
         if(deviceID != 0xfc)
         {
             printk("I2C_ReadByte(0x%02x, 0x%02x), i2c_transfer error: %d\n",
-                            deviceID, offset, status);
+                    deviceID, offset, status);
         }
-		data.byte = 0xFF;
-	}
-	return data.byte;
+        data.byte = 0xFF;
+    }
+#else
+    char buf = offset;
+    u32 ext_flag = I2C_DIRECTION_FLAG | I2C_WR_FLAG;
+    status = mt_i2c_master_send(gMhlDevice.pI2cClient, &buf, (1 << 8) | 1, ext_flag);
+
+    data.byte = buf;
+
+    if (status < 0)
+    {
+        if(deviceID != 0xfc)
+        {
+            printk("I2C_ReadByte(0x%02x, 0x%02x), i2c_transfer error: %d\n",
+                    deviceID, offset, status);
+        }
+        data.byte = 0xFF;
+    }
+#endif
+
+    mhl_i2c_status &= 0xfe;
+    gMhlDevice.pI2cClient->addr = client_main_addr;
+    return data.byte;
 }
+
 void I2C_WriteByte(uint8_t deviceID, uint8_t offset, uint8_t value)
 {
-	uint8_t					accessI2cAddr;
-	union i2c_smbus_data	data;
-	int32_t					status;
-	if (I2cAccessCheck() != HAL_RET_SUCCESS)
-	{
-		return;
-	}
-    accessI2cAddr = deviceID>>1;
-	data.byte = value;
+    //printk("hdmi enter I2C_WriteByte(0x%02x, 0x%02x, 0x%02x) \n",
+    //    deviceID, offset, value);
+
+    uint8_t					accessI2cAddr;
+#if USE_DEFAULT_I2C_CODE
+    union i2c_smbus_data	data;
+#endif
+    int32_t					status;
+    u32 client_main_addr;
+    u8 buf[2];
+    if (I2cAccessCheck() != HAL_RET_SUCCESS)
+    {
+        return;
+    }
+    accessI2cAddr = deviceID>>1;//?
+    mhl_i2c_status |= 2;
+    if((mhl_i2c_status & 0xfd) !=0)
+        printk("MHL W mhl_i2c_status(0x%02x)\n",mhl_i2c_status);
+
+    //backup addr
+    client_main_addr = gMhlDevice.pI2cClient->addr;
+    gMhlDevice.pI2cClient->addr = accessI2cAddr;
+
+#if USE_DEFAULT_I2C_CODE
+    data.byte = value;
     status = i2c_smbus_xfer(gMhlDevice.pI2cClient->adapter, accessI2cAddr,
-    						0, I2C_SMBUS_WRITE, offset, I2C_SMBUS_BYTE_DATA,
-    						&data);
-	if (status < 0)
-	{
-		printk("I2C_WriteByte(0x%02x, 0x%02x, 0x%02x), i2c_transfer error: %d\n",
-						deviceID, offset, value, status);
-	}
+            0, I2C_SMBUS_WRITE, offset, I2C_SMBUS_BYTE_DATA,
+            &data);
+#else
+#ifdef MHL_SET_EXT_GPIO
+    gMhlDevice.pI2cClient->ext_flag |= I2C_DIRECTION_FLAG;
+#endif
+    buf[0] = offset;
+    buf[1] = value;
+    status = i2c_master_send( gMhlDevice.pI2cClient, (const char*)buf, 2 /*sizeof(buf)*/);
+#endif
+
+    if (status < 0)
+    {
+        printk("I2C_WriteByte(0x%02x, 0x%02x, 0x%02x), i2c_transfer error: %d\n",
+                deviceID, offset, value, status);
+    }
+    mhl_i2c_status &= 0xfd;
+    /* restore default client address */
+    gMhlDevice.pI2cClient->addr = client_main_addr;
 }
 
 uint8_t I2C_ReadBlock(uint8_t deviceID, uint8_t offset,uint8_t *buf, uint8_t len)
 {
+    //printk("hdmi enter %s (0x%02x, 0x%02x, 0x%02x)\n", __func__, deviceID, offset, len);
     int i;
-	uint8_t					accessI2cAddr;
-	union i2c_smbus_data	data;
-	int32_t					status;
-	if (I2cAccessCheck() != HAL_RET_SUCCESS)
-	{
-		return 0x00;
-	}
-    accessI2cAddr = deviceID>>1; 
+    uint8_t					accessI2cAddr;
+#if USE_DEFAULT_I2C_CODE
+    union i2c_smbus_data	data;
+#endif
+    int32_t					status;
+    u32 client_main_addr;
+    if (I2cAccessCheck() != HAL_RET_SUCCESS)
+    {
+        return 0x00;
+    }
+    accessI2cAddr = deviceID>>1;
+
+    //backup addr
+    client_main_addr = gMhlDevice.pI2cClient->addr;
+    gMhlDevice.pI2cClient->addr = accessI2cAddr;
+    mhl_i2c_status |= 4;
+    if((mhl_i2c_status & 0xfb) !=0)
+        printk("MHL BR mhl_i2c_status(0x%02x)\n",mhl_i2c_status);
+
+
     memset(buf,0xff,len);
     for(i = 0 ;i < len;i++)
     {
+#if USE_DEFAULT_I2C_CODE
         status = i2c_smbus_xfer(gMhlDevice.pI2cClient->adapter, accessI2cAddr,
-        						0, I2C_SMBUS_READ, offset + i, I2C_SMBUS_BYTE_DATA,
-        						&data);
-    	if (status < 0)
-    	{
+                0, I2C_SMBUS_READ, offset + i, I2C_SMBUS_BYTE_DATA,
+                &data);
+        if (status < 0)
+        {
             return 0;
-    	}
+        }
         *buf = data.byte;
-        buf++;
-    }
-    return len;
-}
-void I2C_WriteBlock(uint8_t deviceID, uint8_t offset, uint8_t *buf, uint8_t len)
-{
-    int i;
-	uint8_t					accessI2cAddr;
-	union i2c_smbus_data	data;
-	int32_t					status;
-	if (I2cAccessCheck() != HAL_RET_SUCCESS)
-	{
-		return ;
-	}
-    accessI2cAddr = deviceID>>1; 
-    for(i = 0 ;i < len;i++)
-    {
-        data.byte = *buf;
-        status = i2c_smbus_xfer(gMhlDevice.pI2cClient->adapter, accessI2cAddr,
-        						0, I2C_SMBUS_WRITE, offset + i, I2C_SMBUS_BYTE_DATA,
-        						&data);
-    	if (status < 0)
-    	{
-            return ;
-    	}
-        buf++;
-    }
-    return ;
-}
+#else
+        u8 tmp;
+        tmp = offset + i;
+#ifdef MHL_SET_EXT_GPIO
+        gMhlDevice.pI2cClient->ext_flag |= I2C_DIRECTION_FLAG;
+#endif
+        status = i2c_master_send(gMhlDevice.pI2cClient, (const char*)&tmp, 1);
+        if (status < 0)
+        {
+            printk("I2C_ReadByte(0x%02x, 0x%02x), i2c_transfer error: %d\n",
+                    deviceID, offset, status);
+        }
+
+        status = i2c_master_recv(gMhlDevice.pI2cClient, (char*)&tmp, 1);
+        *buf = tmp; 
 #endif
 
+        buf++;
+    }
+    mhl_i2c_status &= 0xfb;
+    /* restore default client address */
+    gMhlDevice.pI2cClient->addr = client_main_addr;
+    return len;
+}
+
+void I2C_WriteBlock(uint8_t deviceID, uint8_t offset, uint8_t *buf, uint8_t len)
+{
+    //printk("hdmi enter %s (0x%02x, 0x%02x, 0x%02x)\n",__func__, deviceID, offset, len);
+    int i;
+    uint8_t					accessI2cAddr;
+#if USE_DEFAULT_I2C_CODE
+    union i2c_smbus_data	data;
+#endif
+    int32_t					status;
+    u8 tmp[2] = {0};
+    u32 client_main_addr;
+
+    if (I2cAccessCheck() != HAL_RET_SUCCESS)
+    {
+        return ;
+    }
+    accessI2cAddr = deviceID>>1;
+    mhl_i2c_status |= 8;
+    if((mhl_i2c_status & 0xf7) !=0)
+        printk("MHL BW mhl_i2c_status(0x%02x)\n",mhl_i2c_status);
+
+    //backup addr
+    client_main_addr = gMhlDevice.pI2cClient->addr;
+    gMhlDevice.pI2cClient->addr = accessI2cAddr;
+
+
+    for(i = 0 ;i < len;i++)
+    {
+#if USE_DEFAULT_I2C_CODE
+        data.byte = *buf;
+        status = i2c_smbus_xfer(gMhlDevice.pI2cClient->adapter, accessI2cAddr,
+                0, I2C_SMBUS_WRITE, offset + i, I2C_SMBUS_BYTE_DATA,
+                &data);
+#else
+        tmp[0] = offset + i;
+        tmp[1] = *buf;
+#ifdef MHL_SET_EXT_GPIO
+        gMhlDevice.pI2cClient->ext_flag |= I2C_DIRECTION_FLAG;
+#endif
+        status = i2c_master_send( gMhlDevice.pI2cClient, (const char*)tmp, 2);
+
+#endif
+        if (status < 0)
+        {
+            /* restore default client address */
+            gMhlDevice.pI2cClient->addr = client_main_addr;
+            return ;
+        }
+        buf++;
+    }
+    mhl_i2c_status &= 0xf7;
+    /* restore default client address */
+    gMhlDevice.pI2cClient->addr = client_main_addr;
+    return ;
+}

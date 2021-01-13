@@ -15,6 +15,9 @@
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
 #include <trace/events/power.h>
+//2012/11/13-16829-jessicatseng, Add "/proc/wakelocks" file for MOTO's requirement
+#include <linux/proc_fs.h>
+//>2012/11/13-16829-jessicatseng
 
 #include "power.h"
 
@@ -31,6 +34,7 @@ int wakelock_debug_mask = 0;
  * if wakeup events are registered during or immediately before the transition.
  */
 bool events_check_enabled __read_mostly;
+EXPORT_SYMBOL_GPL(events_check_enabled);
 
 /*
  * Combined counters of registered wakeup events and wakeup events in progress.
@@ -135,6 +139,8 @@ EXPORT_SYMBOL_GPL(wakeup_source_destroy);
  */
 void wakeup_source_add(struct wakeup_source *ws)
 {
+	unsigned long flags;
+
 	if (WARN_ON(!ws))
 		return;
 
@@ -143,9 +149,9 @@ void wakeup_source_add(struct wakeup_source *ws)
 	ws->active = false;
 	ws->last_time = ktime_get();
 
-	spin_lock_irq(&events_lock);
+	spin_lock_irqsave(&events_lock, flags);
 	list_add_rcu(&ws->entry, &wakeup_sources);
-	spin_unlock_irq(&events_lock);
+	spin_unlock_irqrestore(&events_lock, flags);
 }
 EXPORT_SYMBOL_GPL(wakeup_source_add);
 
@@ -155,12 +161,14 @@ EXPORT_SYMBOL_GPL(wakeup_source_add);
  */
 void wakeup_source_remove(struct wakeup_source *ws)
 {
+	unsigned long flags;
+
 	if (WARN_ON(!ws))
 		return;
 
-	spin_lock_irq(&events_lock);
+	spin_lock_irqsave(&events_lock, flags);
 	list_del_rcu(&ws->entry);
-	spin_unlock_irq(&events_lock);
+	spin_unlock_irqrestore(&events_lock, flags);
 	synchronize_rcu();
 }
 EXPORT_SYMBOL_GPL(wakeup_source_remove);
@@ -390,7 +398,7 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	ws->active_count++;
 	ws->last_time = ktime_get();
 	if (ws->autosleep_enabled) {
-		pr_info("[%s]:ws activate->\t%s\n", _TAG, ws->name);
+		//pr_info("[%s]:ws activate->\t%s\n", _TAG, ws->name);
 		ws->start_prevent_time = ws->last_time;
 	}
 
@@ -475,30 +483,6 @@ static inline void update_prevent_sleep_time(struct wakeup_source *ws,
 					     ktime_t now) {}
 #endif
 
-static void print_active_wakeup_sources(void)
-{
-	struct wakeup_source *ws;
-	int active = 0;
-	struct wakeup_source *last_activity_ws = NULL;
-
-	rcu_read_lock();
-	list_for_each_entry_rcu(ws, &wakeup_sources, entry){
-		if (ws->active) {
-			pr_warn("[%s][%s]: activity: %s\n", _TAG, __func__, ws->name);
-			active = 1;
-		} else if (!active &&
-					(!last_activity_ws ||
-					ktime_to_ns(ws->last_time) >
-					ktime_to_ns(last_activity_ws->last_time))) {
-			last_activity_ws = ws;
-		}
-	}
-
-	if (!active && last_activity_ws)
-		pr_warn("[%s][%s]: last activity: %s\n", _TAG, __func__, last_activity_ws->name);
-	rcu_read_unlock();
-}
-
 /**
  * wakup_source_deactivate - Mark given wakeup source as inactive.
  * @ws: Wakeup source to handle.
@@ -542,13 +526,15 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 
 	if (ws->autosleep_enabled) {
 		update_prevent_sleep_time(ws, now);
-		printk("[%s]:ws deactivate->\t%s\n", _TAG, ws->name);
+		//printk("[%s]:ws deactivate->\t%s\n", _TAG, ws->name);
 	}
 
 	/*
 	 * Increment the counter of registered wakeup events and decrement the
 	 * couter of wakeup events in progress simultaneously.
 	 */
+    // FIXME: CHECK BUG here ??? if combined_event_count = 0x????0000, then atomic_add_return(...) --> 0x????ffff
+    //        , which is not the expected result !!!
 	cec = atomic_add_return(MAX_IN_PROGRESS, &combined_event_count);
 	trace_wakeup_source_deactivate(ws->name, cec);
 
@@ -692,6 +678,31 @@ void pm_wakeup_event(struct device *dev, unsigned int msec)
 }
 EXPORT_SYMBOL_GPL(pm_wakeup_event);
 
+static void print_active_wakeup_sources(void)
+{
+	struct wakeup_source *ws;
+	int active = 0;
+	struct wakeup_source *last_activity_ws = NULL;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+		if (ws->active) {
+			pr_info("active wakeup source: %s\n", ws->name);
+			active = 1;
+		} else if (!active &&
+			   (!last_activity_ws ||
+			    ktime_to_ns(ws->last_time) >
+			    ktime_to_ns(last_activity_ws->last_time))) {
+			last_activity_ws = ws;
+		}
+	}
+
+	if (!active && last_activity_ws)
+		pr_info("last active wakeup source: %s\n",
+			last_activity_ws->name);
+	rcu_read_unlock();
+}
+
 /**
  * pm_wakeup_pending - Check if power transition in progress should be aborted.
  *
@@ -721,6 +732,7 @@ bool pm_wakeup_pending(void)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(pm_wakeup_pending);
 
 /**
  * pm_get_wakeup_count - Read the number of registered wakeup events.
@@ -771,15 +783,16 @@ bool pm_get_wakeup_count(unsigned int *count, bool block)
 bool pm_save_wakeup_count(unsigned int count)
 {
 	unsigned int cnt, inpr;
+	unsigned long flags;
 
 	events_check_enabled = false;
-	spin_lock_irq(&events_lock);
+	spin_lock_irqsave(&events_lock, flags);
 	split_counters(&cnt, &inpr);
 	if (cnt == count && inpr == 0) {
 		saved_count = count;
 		events_check_enabled = true;
 	}
-	spin_unlock_irq(&events_lock);
+	spin_unlock_irqrestore(&events_lock, flags);
 	return events_check_enabled;
 }
 
@@ -849,15 +862,15 @@ static int print_wakeup_source_stats(struct seq_file *m,
 	} else {
 		active_time = ktime_set(0, 0);
 	}
-
-	ret = seq_printf(m, "%-12s\t%lu\t\t%lu\t\t%lu\t\t%lu\t\t"
+//<<EricHsieh,2012/10/24, Fixed the battery dump tool can show correctly.
+	ret = seq_printf(m, "%-12s\t\t%lu\t\t%lu\t\t%lu\t\t%lu\t\t"
 			"%lld\t\t%lld\t\t%lld\t\t%lld\t\t%lld\n",
 			ws->name, active_count, ws->event_count,
 			ws->wakeup_count, ws->expire_count,
 			ktime_to_ms(active_time), ktime_to_ms(total_time),
 			ktime_to_ms(max_time), ktime_to_ms(ws->last_time),
 			ktime_to_ms(prevent_sleep_time));
-
+//<<EricHsieh,2012/10/24
 	spin_unlock_irqrestore(&ws->lock, flags);
 
 	return ret;
@@ -896,10 +909,30 @@ static const struct file_operations wakeup_sources_stats_fops = {
 	.release = single_release,
 };
 
+//2012/11/13-16829-jessicatseng, Add "/proc/wakelocks" file for MOTO's requirement
+static int wakelock_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, wakeup_sources_stats_show, NULL);
+}
+
+static const struct file_operations wakelock_stats_fops = {
+	.owner = THIS_MODULE,
+	.open = wakelock_stats_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+//>2012/11/13-16829-jessicatseng
+
 static int __init wakeup_sources_debugfs_init(void)
 {
 	wakeup_sources_stats_dentry = debugfs_create_file("wakeup_sources",
 			S_IRUGO, NULL, NULL, &wakeup_sources_stats_fops);
+
+//2012/11/13-16829-jessicatseng, Add "/proc/wakelocks" file for MOTO's requirement
+	proc_create("wakelocks", S_IRUGO, NULL, &wakelock_stats_fops);
+//>2012/11/13-16829-jessicatseng
+			
 	return 0;
 }
 

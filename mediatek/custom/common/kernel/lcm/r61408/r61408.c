@@ -34,10 +34,15 @@
 *****************************************************************************/
 
 #include <linux/string.h>
-#ifdef BUILD_UBOOT
-#include <asm/arch/mt6575_gpio.h>
+#ifdef BUILD_LK
+#include <platform/mt_gpio.h>
 #else
-#include <mach/mt6575_gpio.h>
+#include <linux/string.h>
+#if defined(BUILD_UBOOT)
+#include <asm/arch/mt_gpio.h>
+#else
+#include <mach/mt_gpio.h>
+#endif
 #endif
 #include <cust_gpio_usage.h>
 #include "lcm_drv.h"

@@ -10,10 +10,10 @@
 #define FIQ_SMP_CALL_SGI 13
 #define FIQ_DBG_SGI 14
 #define NR_IRQS NR_MT_IRQ_LINE
-#define MT65xx_EDGE_SENSITIVE 0
-#define MT65xx_LEVEL_SENSITIVE 1
-#define MT65xx_POLARITY_LOW   0
-#define MT65xx_POLARITY_HIGH  1
+#define MT_EDGE_SENSITIVE 0
+#define MT_LEVEL_SENSITIVE 1
+#define MT_POLARITY_LOW   0
+#define MT_POLARITY_HIGH  1
 
 #if !defined(__ASSEMBLY__)
 
@@ -43,6 +43,7 @@ typedef void (*fiq_isr_handler)(void *arg, void *regs, void *svc_sp);
  * Define function prototypes.
  */
 extern void mt_init_irq(void);
+extern void mt_irq_dump(void);
 extern int mt_irq_is_active(const unsigned int irq);
 extern int request_fiq(int irq, fiq_isr_handler handler, unsigned long irq_flags, void *arg);
 #if defined(CONFIG_FIQ_GLUE)

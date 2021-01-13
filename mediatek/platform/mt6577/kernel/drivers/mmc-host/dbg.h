@@ -73,27 +73,6 @@ extern struct dma_addr msdc_latest_dma_address[MAX_BD_PER_GPD];
 extern struct dma_addr* msdc_get_dma_address(int host_id);
 extern int msdc_get_dma_status(int host_id);
 
-
-extern u32 sdio_enable_tune;
-extern u32 sdio_iocon_dspl;
-extern u32 sdio_iocon_w_dspl;
-extern u32 sdio_iocon_rspl;
-
-extern u32 sdio_pad_tune_rrdly;
-extern u32 sdio_pad_tune_rdly;
-extern u32 sdio_pad_tune_wrdly;
-extern u32 sdio_dat_rd_dly0_0;
-extern u32 sdio_dat_rd_dly0_1;
-extern u32 sdio_dat_rd_dly0_2;
-extern u32 sdio_dat_rd_dly0_3;
-extern u32 sdio_dat_rd_dly1_0;
-extern u32 sdio_dat_rd_dly1_1;
-extern u32 sdio_dat_rd_dly1_2;
-extern u32 sdio_dat_rd_dly1_3;
-extern u32 sdio_clk_drv;
-extern u32 sdio_cmd_drv;
-extern u32 sdio_data_drv;
-extern u32 sdio_tune_flag;
 /* Debug message event */
 #define DBG_EVT_NONE        (0)       /* No event */
 #define DBG_EVT_DMA         (1 << 0)  /* DMA related event */
@@ -151,7 +130,6 @@ do { \
 
 int msdc_debug_proc_init(void); 
 
-void msdc_init_gpt(void);
 extern void GPT_GetCounter64(UINT32 *cntL32, UINT32 *cntH32);
 u32 msdc_time_calc(u32 old_L32, u32 old_H32, u32 new_L32, u32 new_H32);
 void msdc_performance(u32 opcode, u32 sizes, u32 bRx, u32 ticks);   

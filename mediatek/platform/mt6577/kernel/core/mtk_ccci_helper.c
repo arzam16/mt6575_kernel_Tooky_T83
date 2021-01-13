@@ -7,7 +7,6 @@
 #include <linux/uaccess.h>
 #include <linux/mm.h>
 #include <linux/kfifo.h>
-
 #include <linux/firmware.h>
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
@@ -16,13 +15,19 @@
 
 #include <mach/mtk_ccci_helper.h>
 
+#include "dfo_boot.h"
+#include "dfo_boot_default.h"
+
+#ifndef __USING_DUMMY_CCCI_API__
 
 //#define android_bring_up_prepare 1 //when porting ccci drver for android bring up, enable the macro
-
-
 ccci_kern_func_info ccci_func_table[MAX_KERN_API];
-
-
+#if 0
+#define MAX_MD_NUM 1
+ccci_sys_cb_func_info_t	ccci_sys_cb_table_1000[MAX_MD_NUM][MAX_KERN_API];
+ccci_sys_cb_func_info_t	ccci_sys_cb_table_100[MAX_MD_NUM][MAX_KERN_API];
+static unsigned char		kern_func_err_num[MAX_MD_NUM][MAX_KERN_API];
+#endif
 /***************************************************************************
  * Make device node helper function section
  ***************************************************************************/
@@ -75,21 +80,91 @@ static void release_dev_node(void *dev_class, int major_id, int minor_start_id, 
 
 #endif
 
-/***************************************************************************
- * provide API called by ccci module
- ***************************************************************************/
-
-AP_IMG_TYPE get_ap_img_ver(void)
+void get_md_post_fix(int md_id,char buf[], char buf_ex[])
 {
-	#if defined(MODEM_2G)
-	return AP_IMG_2G;
-	#elif  defined(MODEM_3G)
-	return AP_IMG_3G;
-	#else
-	return AP_IMG_INVALID;
-	#endif
+	// modem_X_YY_K_[Ex].img
+	int		X;
+	char	YY_K[8];
+	int		Ex = 0;	
+	unsigned int	feature_val = 0;
+
+	// X
+	X = 1;
+
+	// YY_K
+	YY_K[0] = '\0';
+	feature_val = get_modem_support(md_id);
+	
+	switch(feature_val)
+	{
+		case modem_2g:
+			snprintf(YY_K, 8, "_2g_n");
+			break;
+			
+		case modem_3g:
+			snprintf(YY_K, 8, "_3g_n");
+			break;
+			
+		case modem_wg:
+			snprintf(YY_K, 8, "_wg_n");
+			break;
+			
+		case modem_tg:
+			snprintf(YY_K, 8, "_tg_n");
+			break;			
+			
+		default:
+			break;
+	}
+
+	// [_Ex] Get chip version
+	//if(get_chip_version() == CHIP_SW_VER_01)
+		Ex = 1;
+	//else if(get_chip_version() == CHIP_SW_VER_02)
+		//Ex = 2;
+
+	// Gen post fix
+	if(buf)
+		snprintf(buf, 12, "%d%s", X, YY_K);
+
+	if(buf_ex)
+		snprintf(buf_ex, 12, "%d%s_E%d", X, YY_K, Ex);
 }
-EXPORT_SYMBOL(get_ap_img_ver);
+EXPORT_SYMBOL(get_md_post_fix);
+static int ccci_get_dfo_setting(void *key, int* value)
+{
+	int i;
+	for (i=0; i<DFO_BOOT_COUNT; i++) 
+	{
+		if(key && !strcmp(key, dfo_boot_default.name[i]))
+		{
+			*value = dfo_boot_default.value[i];
+			printk("[ccci/ctl] (0)dfo boot default:%s:0x%08X\n", key, *value);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+modem_type_t get_modem_support(int md_id)
+{
+	int val=0;
+	ccci_get_dfo_setting("MTK_MD1_SUPPORT",&val);
+	switch(val)
+	{
+		case 1:
+    return modem_2g;
+		case 2:
+	return modem_3g;
+		case 3:
+	return modem_wg;
+		case 4:
+	return modem_tg;
+		default:
+	return md_type_invalid;
+	}
+}
+EXPORT_SYMBOL(get_modem_support);
 
 
 int get_td_eint_info(char * eint_name, unsigned int len)
@@ -159,13 +234,6 @@ int get_dram_type_clk(int *clk, int *type)
 EXPORT_SYMBOL(get_dram_type_clk);
 
 
-int get_eint_attr(char *name, unsigned int name_len, unsigned int type, char * result, unsigned int *len)
-{
-	return get_eint_attribute(name, name_len, type, result, len);
-}
-EXPORT_SYMBOL(get_eint_attr);
-
-
 /***************************************************************************
  * Make sysfs node helper function section
  ***************************************************************************/
@@ -205,6 +273,7 @@ static struct mtk_ccci_sysobj {
 	struct kobject kobj;
 } ccci_sysobj;
 
+
 static int mtk_ccci_sysfs(void) 
 {
 	struct mtk_ccci_sysobj *obj = &ccci_sysobj;
@@ -233,18 +302,9 @@ ssize_t mtk_ccci_attr_store(struct kobject *kobj, struct attribute *attr, const 
 	return entry->store(kobj, buffer, size);
 }
 
-/*---------------------------------------------------------------------------*/
-/* Filter table                                                              */
-/*---------------------------------------------------------------------------*/
-#define MAX_FILTER_MEMBER		(4)
-typedef size_t (*ccci_sys_cb_func_t)(const char buf[], size_t len);
-typedef struct _cmd_op_map{
-	char cmd[8];
-	int  cmd_len;
-	ccci_sys_cb_func_t store;
-	ccci_sys_cb_func_t show;
-}cmd_op_map_t;
-
+//----------------------------------------------------------//
+// Filter table                                                         
+//----------------------------------------------------------//
 cmd_op_map_t cmd_map_table[MAX_FILTER_MEMBER] = {{"",0}, {"",0}, {"",0}, {"",0}};
 
 ssize_t mtk_ccci_filter_show(struct kobject *kobj, char *buffer) 
@@ -276,7 +336,7 @@ ssize_t mtk_ccci_filter_store(struct kobject *kobj, const char *buffer, size_t s
 		if( strncmp(buffer, cmd_map_table[i].cmd, cmd_map_table[i].cmd_len)==0 ){
 			// Find a mapped cmd
 			if(NULL != cmd_map_table[i].store){
-				return cmd_map_table[i].store(buffer, size);
+				return cmd_map_table[i].store((char*)buffer, size);
 			}
 		}
 	}
@@ -284,7 +344,7 @@ ssize_t mtk_ccci_filter_store(struct kobject *kobj, const char *buffer, size_t s
 	return size;
 }
 
-int register_filter_func(char cmd[], ccci_sys_cb_func_t store, ccci_sys_cb_func_t show)
+int register_filter_func(char cmd[], ccci_filter_cb_func_t store, ccci_filter_cb_func_t show)
 {
 	int i;
 	int empty_slot = -1;
@@ -341,8 +401,9 @@ int register_ccci_kern_func(unsigned int id, ccci_kern_cb_func_t func)
 
 	return ret;
 }
-EXPORT_SYMBOL(register_ccci_kern_func);
 
+
+EXPORT_SYMBOL(register_ccci_kern_func);
 
 int exec_ccci_kern_func(unsigned int id, char *buf, unsigned int len)
 {
@@ -366,6 +427,82 @@ int exec_ccci_kern_func(unsigned int id, char *buf, unsigned int len)
 	return ret;
 }
 EXPORT_SYMBOL(exec_ccci_kern_func);
+int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned int len)
+{   
+    printk("exec_ccci_kern_func_by_md_id:%d!", id);
+	return exec_ccci_kern_func(id,buf,len);
+}
+EXPORT_SYMBOL(exec_ccci_kern_func_by_md_id);
+
+int register_ccci_sys_call_back(int md_id, unsigned int id, ccci_sys_cb_func_t func)
+{
+#if 0
+	int ret = 0;
+	ccci_sys_cb_func_info_t *info_ptr;
+	
+	if( md_id >= MAX_MD_NUM ) {
+		printk("[ccci/ctl] (0)register_sys_call_back fail: invalid md id(%d)\n", md_id+1);
+		return E_PARAM;
+	}
+
+	if((id >= 0x100)&&((id-0x100) < MAX_KERN_API)) {
+		info_ptr = &(ccci_sys_cb_table_100[md_id][id-0x100]);
+	} else if((id >= 0x1000)&&((id-0x1000) < MAX_KERN_API)) {
+		info_ptr = &(ccci_sys_cb_table_1000[md_id][id-0x1000]);
+	} else {
+		printk("[ccci/ctl] (%d)register_sys_call_back fail: invalid func id(0x%x)\n", md_id+1, id);
+		return E_PARAM;
+	}
+	
+	if(info_ptr->func == NULL) {
+		info_ptr->id = id;
+		info_ptr->func = func;
+	}
+	else
+		printk("[ccci/ctl] (%d)register_sys_call_back fail: func(0x%x) registered!\n", md_id+1, id);
+	return ret;
+#endif
+    return 0;
+}
+EXPORT_SYMBOL(register_ccci_sys_call_back);
+
+
+void exec_ccci_sys_call_back(int md_id, int cb_id, int data)
+{
+#if 0
+	ccci_sys_cb_func_t func;
+	int	id;
+	ccci_sys_cb_func_info_t	*curr_table;
+	
+	if(md_id >= MAX_MD_NUM) {
+		printk("[ccci/ctl] (0)exec_sys_cb fail: invalid md id(%d) \n", md_id+1);
+		return;
+	}
+
+	id = cb_id & 0xFF;
+	if(id >= MAX_KERN_API) {
+		printk("[ccci/ctl] (%d)exec_sys_cb fail: invalid func id(0x%x)\n",  md_id+1, cb_id);
+		return;
+	}
+
+	if ((cb_id & (0x1000|0x100))==0x1000) {
+		curr_table = ccci_sys_cb_table_1000[md_id];
+	} else if ((cb_id & (0x1000|0x100))==0x100) {
+		curr_table = ccci_sys_cb_table_100[md_id];
+	} else {
+		printk("[ccci/ctl] (%d)exec_sys_cb fail: invalid func id(0x%x)\n",  md_id+1, cb_id);
+		return;
+	}
+	
+	func = curr_table[id].func;
+	if(func != NULL) {
+		func(md_id, data);
+	} else {
+		printk("[ccci/ctl] (%d)exec_sys_cb fail: func id(0x%x) not register!\n", md_id+1, cb_id);
+	}
+#endif
+}
+EXPORT_SYMBOL(exec_ccci_sys_call_back);
 
 static void exec_ccci_dormancy(void)
 {
@@ -475,7 +612,6 @@ struct platform_device ccci_helper_device = {
 	.dev		= {}
 };
 
-
 static int __init ccci_helper_init(void)
 {
 	int ret;
@@ -487,6 +623,11 @@ static int __init ccci_helper_init(void)
 	// init ccci kernel API register table
 	memset((void*)ccci_func_table, 0, sizeof(ccci_func_table));
 	
+ 	// init ccci system channel call back function register table
+	//memset((void*)ccci_sys_cb_table_100, 0, sizeof(ccci_sys_cb_table_100));
+	//memset((void*)ccci_sys_cb_table_1000, 0, sizeof(ccci_sys_cb_table_1000));
+	//memset((void*)kern_func_err_num, 0, sizeof(kern_func_err_num));
+
 	ret = platform_device_register(&ccci_helper_device);
 	if (ret) {
 		printk("ccci_helper_device register fail(%d)\n", ret);
@@ -509,3 +650,71 @@ module_init(ccci_helper_init);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("MTK");
 MODULE_DESCRIPTION("The ccci helper function");
+
+#else
+unsigned int modem_size_list[1] = {0};
+unsigned int get_nr_modem(void)
+{
+    return 0;
+}
+
+unsigned int *get_modem_size_list(void)
+{
+    return modem_size_list;
+}
+int parse_ccci_dfo_setting(void *dfo_tbl, int num)
+{
+	return 0;
+}
+
+int parse_meta_md_setting(unsigned char args[])
+{
+	return 0;
+}
+
+unsigned int get_modem_is_enabled(int md_id)
+{
+	return 0;
+}
+
+unsigned int get_modem_support(int md_id)
+{
+	return 0;
+}
+
+int register_ccci_kern_func(unsigned int id, ccci_kern_cb_func_t func)
+{
+	return -1;
+}
+
+int register_ccci_kern_func_by_md_id(int md_id, unsigned int id, ccci_kern_cb_func_t func)
+{
+	return -1;
+}
+
+int exec_ccci_kern_func(unsigned int id, char *buf, unsigned int len)
+{
+	return -1;
+}
+
+int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned int len)
+{
+	return -1;
+}
+
+int register_ccci_sys_call_back(int md_id, unsigned int id, ccci_sys_cb_func_t func)
+{
+	return -1;
+}
+
+void exec_ccci_sys_call_back(int md_id, int cb_id, int data)
+{
+}
+
+void ccci_helper_exit(void)
+{
+}
+
+
+#endif
+

@@ -110,6 +110,11 @@ struct _GL_P2P_INFO_T {
     UINT_8                      aucWSCIE[3][400]; /* 0 for beacon, 1 for probe req, 2 for probe response */
     UINT_16                     u2WSCIELen[3];
 
+#if CFG_SUPPORT_WFD
+    UINT_8                      aucVenderIE[1024];  /* Save the other IE for prove resp */
+    UINT_16                     u2VenderIELen;
+#endif
+
 	UINT_8                      ucOperatingChnl;
 	UINT_8                      ucInvitationType;
 

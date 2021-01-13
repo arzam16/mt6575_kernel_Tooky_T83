@@ -313,7 +313,7 @@ FTRACE_ENTRY(mt65xx_mon, mt65xx_mon_entry,
         TRACE_MT65XX_MON_TYPE, //trace type
 
         F_STRUCT( //members of record data structure
-            __field_struct(struct mt65xx_mon_log, field)
+            __field_struct(struct mt_mon_log, field)
             __field(    int, cpu)
             __field(    unsigned int, log)
             ),

@@ -60,7 +60,7 @@ static atomic_t g_EEPROMatomic;
 /*******************************************************************************
 *
 ********************************************************************************/
-// maximun read length is limited at "I2C_FIFO_SIZE" in I2c-mt6516.c which is 8 bytes
+// maximun read length is limited at "I2C_FIFO_SIZE" in I2c-mt65xx.c which is 8 bytes
 int iWriteEEPROM(u16 a_u2Addr  , u32 a_u4Bytes, u8 * puDataInBytes)
 {
     int  i4RetValue = 0;
@@ -69,7 +69,7 @@ int iWriteEEPROM(u16 a_u2Addr  , u32 a_u4Bytes, u8 * puDataInBytes)
         0, 0, 0, 0, 0, 0};
     if(a_u4Bytes + 2 > 8)
     {
-        EEPROMDB("[S24EEPROM] exceed I2c-mt6516.c 8 bytes limitation (include address 2 Byte)\n");
+        EEPROMDB("[S24EEPROM] exceed I2c-mt65xx.c 8 bytes limitation (include address 2 Byte)\n");
         return -1;
     }
 
@@ -91,7 +91,7 @@ int iWriteEEPROM(u16 a_u2Addr  , u32 a_u4Bytes, u8 * puDataInBytes)
 }
 
 
-// maximun read length is limited at "I2C_FIFO_SIZE" in I2c-mt6516.c which is 8 bytes
+// maximun read length is limited at "I2C_FIFO_SIZE" in I2c-mt65xx.c which is 8 bytes
 int iReadEEPROM(u16 a_u2Addr, u32 ui4_length, u8 * a_puBuff)
 {
     int  i4RetValue = 0;
@@ -101,7 +101,7 @@ int iReadEEPROM(u16 a_u2Addr, u32 ui4_length, u8 * a_puBuff)
 
     if(ui4_length > 8)
     {
-        EEPROMDB("[S24EEPROM] exceed I2c-mt6516.c 8 bytes limitation\n");
+        EEPROMDB("[S24EEPROM] exceed I2c-mt65xx.c 8 bytes limitation\n");
         return -1;
     }
     spin_lock(&g_EEPROMLock); //for SMP
@@ -132,7 +132,7 @@ int iReadEEPROM(u16 a_u2Addr, u32 ui4_length, u8 * a_puBuff)
 }
 
 
-int iWriteData(unsigned int  ui4_offset, unsigned int  ui4_length, unsigned char * pinputdata)
+static int iWriteData(unsigned int  ui4_offset, unsigned int  ui4_length, unsigned char * pinputdata)
 {
    int  i4RetValue = 0;
    int  i4ResidueDataLength;
@@ -190,7 +190,7 @@ int iWriteData(unsigned int  ui4_offset, unsigned int  ui4_length, unsigned char
 }
 
 //int iReadData(stEEPROM_INFO_STRUCT * st_pOutputBuffer)
-int iReadData(unsigned int  ui4_offset, unsigned int  ui4_length, unsigned char * pinputdata)
+static int iReadData(unsigned int  ui4_offset, unsigned int  ui4_length, unsigned char * pinputdata)
 {
    int  i4RetValue = 0;
    int  i4ResidueDataLength;
@@ -410,26 +410,11 @@ static int EEPROM_Open(struct inode * a_pstInode, struct file * a_pstFile)
     spin_unlock(&g_EEPROMLock);
 
 
-#if defined(MT6516)
-    if(TRUE != hwPowerOn(MT6516_POWER_VCAM_A, VOL_2800, "S24CS64A"))
-    {
-        EEPROMDB("[S24EEPROM] Fail to enable analog gain\n");
-        return -EIO;
-    }
-#elif 1//defined(MT6573)|MT//fix warning MSG
     if(TRUE != hwPowerOn(MT65XX_POWER_LDO_VCAMA, VOL_2800, "S24CS64A"))
     {
         EEPROMDB("[S24EEPROM] Fail to enable analog gain\n");
         return -EIO;
     }
-#else//fix warning MSG
-    {
-        EEPROMDB("[EEPROM] Fail to enable analog gain\n");
-        return -EIO;
-    }
-
-#endif
-
     return 0;
 }
 

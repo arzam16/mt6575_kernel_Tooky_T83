@@ -20,6 +20,7 @@
 #include "mach/mtk_cpu_management.h"
 
 extern void disable_hotplug_policy(bool disable, int limit_cpu_num);
+extern struct mutex hp_onoff_mutex;
 
 /*********************************
 * macro
@@ -487,8 +488,11 @@ void mtk_hotplug_mechanism_thermal_protect(int limited_cpus)
     }
     
     for (i = g_limited_cpus; i < g_max_cpus; ++i)
+    {
+        mutex_lock(&hp_onoff_mutex);
         cpu_down(i);
-    
+        mutex_unlock(&hp_onoff_mutex);
+    }
     mutex_unlock(&g_mtk_hotplug_mechanism_lock);
     
 }

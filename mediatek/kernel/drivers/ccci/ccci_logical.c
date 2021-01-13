@@ -51,7 +51,7 @@ static void logical_layer_tasklet(unsigned long data)
 
 }
 
-static int lg_add_client(struct logical_layer *lg_layer,int num,int buf_num,struct logical_channel **lg_chptr)
+static int lg_add_client(struct logical_layer *lg_layer,int num,int buf_num,char *name,void *private_data,CCCI_CALLBACK callback, LG_DTOR_CB lg_dtor)
 {
 	int ret=0;
 	struct logical_channel *client;
@@ -60,7 +60,6 @@ static int lg_add_client(struct logical_layer *lg_layer,int num,int buf_num,stru
 	if (num>=lg_layer->lc_num)
 	{
 		CCCI_MSG("Invalid lg_ch Num %d.\n",num);
-		*lg_chptr=NULL;
 		return -EINVAL;
 		
 	}
@@ -71,9 +70,9 @@ static int lg_add_client(struct logical_layer *lg_layer,int num,int buf_num,stru
 		ret=-EEXIST;
 		CCCI_MSG("struct logical_channel[%s:%d] has registered by %s\n",
 			lg_layer->lg_array[num]->name,num,lg_layer->lg_array[num]->owner);
-		*lg_chptr=lg_layer->lg_array[num];
 	}
-	else {
+	else 
+        {
 		client=kzalloc(sizeof(struct logical_channel),GFP_ATOMIC) ;
 		if (client==NULL)
 		{
@@ -82,13 +81,18 @@ static int lg_add_client(struct logical_layer *lg_layer,int num,int buf_num,stru
 		}	
 		else 
 		{	
-			//printk("[CCCI] allocate client %x for num:%d\n", client, num);
-			CCCI_CTL_MSG("allocate struct logical_channel for lg_ch:%d\n", num);	
-			lg_layer->lg_array[num]=client;
+                spin_lock_init(&client->lock);
+        	client->name=name;
+        	client->have_fifo=0;
+        	snprintf(client->owner,sizeof(client->owner),current->comm);
+        	client->callback=callback;
+        	client->private_data=private_data;
+        	client->dtor=lg_dtor;
+        	CCCI_CCIF_MSG("CH:%d Name:%s Process:%s \n",num,name,current->comm);
 			client->buf_num=buf_num;
+			lg_layer->lg_array[num]=client;
 			atomic_inc(&lg_layer->user);
 		}
-		*lg_chptr=client;
 	}
 
 	write_unlock_irq(&lg_layer->lock);

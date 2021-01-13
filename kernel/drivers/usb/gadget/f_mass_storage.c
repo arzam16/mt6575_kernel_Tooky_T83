@@ -311,8 +311,7 @@ static const char fsg_string_interface[] = "Mass Storage";
 #include "storage_common.c"
 
 /*Caution: Use the method would cause write performance drop!!*/
-//modify by jch for USB MS write performance drop (bug number:398524)
-#define SYNC_THRESHOLD 260096 /*This value should be tuned EX:(508*8*1024)*/
+#define SYNC_THRESHOLD 0 /*This value should be tuned EX:(508*8*1024)*/
 /*-------------------------------------------------------------------------*/
 
 struct fsg_dev;
@@ -412,6 +411,8 @@ struct fsg_common {
 	int  bicr;
 #endif
 	void (*android_callback)(unsigned char);
+
+	struct work_struct fsync_work;
 };
 
 struct fsg_config {
@@ -519,6 +520,7 @@ static int fsg_set_halt(struct fsg_dev *fsg, struct usb_ep *ep)
 /* Caller must hold fsg->lock */
 static void wakeup_thread(struct fsg_common *common)
 {
+	smp_wmb();	/* ensure the write of bh->state is complete */
 	/* Tell the main thread that something has happened */
 	common->thread_wakeup_needed = 1;
 	if (common->thread_task)
@@ -749,6 +751,7 @@ static int sleep_thread(struct fsg_common *common)
 	}
 	__set_current_state(TASK_RUNNING);
 	common->thread_wakeup_needed = 0;
+	smp_rmb();	/* ensure the latest bh->state is visible */
 	return rc;
 }
 
@@ -1342,6 +1345,8 @@ static int do_read_toc(struct fsg_common *common, struct fsg_buffhd *bh)
 	int		msf = common->cmnd[1] & 0x02;
 	int		start_track = common->cmnd[6];
 	u8		*buf = (u8 *)bh->buf;
+	u8		format;
+	int		ret;
 
 	if ((common->cmnd[1] & ~0x02) != 0 ||	/* Mask away MSF */
 			start_track > 1) {
@@ -1349,6 +1354,24 @@ static int do_read_toc(struct fsg_common *common, struct fsg_buffhd *bh)
 		return -EINVAL;
 	}
 
+	format = common->cmnd[2] & 0xf;
+	/*
+	* Check if CDB is old style SFF-8020i
+	* i.e. format is in 2 MSBs of byte 9
+	* Mac OS-X host sends us this.
+	*/
+
+	if (format == 0)
+		format = (common->cmnd[9] >> 6) & 0x3;
+
+	ret = fsg_get_toc(curlun, msf, format, buf);
+	if (ret < 0) {
+		curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
+	}
+
+	return ret;
+
+#ifdef NEVER
 	memset(buf, 0, 20);
 	buf[1] = (20-2);		/* TOC data length */
 	buf[2] = 1;			/* First track number */
@@ -1361,6 +1384,7 @@ static int do_read_toc(struct fsg_common *common, struct fsg_buffhd *bh)
 	buf[14] = 0xAA;			/* Lead-out track number */
 	store_cdrom_address(&buf[16], msf, curlun->num_sectors);
 	return 20;
+#endif /* NEVER */
 }
 
 static int do_mode_sense(struct fsg_common *common, struct fsg_buffhd *bh)
@@ -1512,6 +1536,26 @@ static int do_start_stop(struct fsg_common *common)
 		: 0;
 }
 
+static void do_fsync(struct work_struct *work)
+{
+	struct fsg_common *common =
+		container_of(work, struct fsg_common, fsync_work);
+
+	struct file	*filp = common->curlun->filp;
+	static int syncing = 0;
+
+	if (common->curlun->ro || !filp)
+		return;
+
+	if(!syncing) {
+		syncing = 1;
+		printk("do_fsync+\n");
+		vfs_fsync(filp, 1);
+		printk("do_fsync-\n");
+		syncing = 0;
+	}
+}
+
 static int do_prevent_allow(struct fsg_common *common)
 {
 	struct fsg_lun	*curlun = common->curlun;
@@ -1530,8 +1574,11 @@ static int do_prevent_allow(struct fsg_common *common)
 		return -EINVAL;
 	}
 
-	if (curlun->prevent_medium_removal && !prevent)
+	if (!curlun->nofua && curlun->prevent_medium_removal && !prevent)
 		fsg_lun_fsync_sub(curlun);
+	else
+		schedule_work(&common->fsync_work);
+
 	curlun->prevent_medium_removal = prevent;
 	return 0;
 }
@@ -1819,6 +1866,20 @@ static int send_status(struct fsg_common *common)
 		return -EIO;
 
 	common->next_buffhd_to_fill = bh->next;
+
+#ifdef MTK_ICUSB_SUPPORT
+#define ICUSB_FSYNC_MAGIC_TIME 2
+	if (curlun->filp && curlun->isICUSB)
+	{
+		struct timeval tv_before, tv_after;
+		do_gettimeofday(&tv_before);
+		vfs_fsync(curlun->filp, 1);
+		do_gettimeofday(&tv_after);
+		if( (tv_after.tv_sec - tv_before.tv_sec) >= ICUSB_FSYNC_MAGIC_TIME){
+			printk(KERN_WARNING "time spent more than %d sec, sec : %d, usec : %d\n", ICUSB_FSYNC_MAGIC_TIME, (unsigned int)(tv_after.tv_sec - tv_before.tv_sec), (unsigned int)(tv_after.tv_usec - tv_before.tv_usec));
+		}
+	}
+#endif
 	return 0;
 }
 
@@ -2108,7 +2169,7 @@ static int do_scsi_command(struct fsg_common *common)
 		common->data_size_from_cmnd =
 			get_unaligned_be16(&common->cmnd[7]);
 		reply = check_command(common, 10, DATA_DIR_TO_HOST,
-				      (7<<6) | (1<<1), 1,
+				      (0xf<<6) | (1<<1), 1,
 				      "READ TOC");
 		if (reply == 0)
 			reply = do_read_toc(common, bh);
@@ -2929,6 +2990,8 @@ buffhds_first_it:
 	}
 	init_completion(&common->thread_notifier);
 	init_waitqueue_head(&common->fsg_wait);
+
+	INIT_WORK(&common->fsync_work, &do_fsync);
 
 	/* Information */
 	INFO(common, FSG_DRIVER_DESC ", version: " FSG_DRIVER_VERSION "\n");

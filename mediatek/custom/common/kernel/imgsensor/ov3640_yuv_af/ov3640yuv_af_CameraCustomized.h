@@ -24,10 +24,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * 05 25 2010 sean.cheng
  * [ALPS00001357][Meta]CameraTool 

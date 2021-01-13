@@ -24,10 +24,6 @@
  * $Revision:$
  * $Modtime:$
  * $Log:$
- * 
- * 09 12 2012 wcpadmin
- * [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
- * .
  *
  * 01 04 2012 hao.wang
  * [ALPS00109603] getsensorid func check in
@@ -46,6 +42,8 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <linux/xlog.h>
+
 //#include <mach/mt6516_pll.h>
 
 #include "kd_camera_hw.h"
@@ -61,10 +59,11 @@
 
 #define MT9V113YUV_DEBUG
 #ifdef MT9V113YUV_DEBUG
-#define SENSORDB printk
+#define SENSORDB(fmt, arg...) xlog_printk(ANDROID_LOG_INFO ,"[MT9V113YUV]", fmt, ##arg)
 #else
-#define SENSORDB(x,...)
+#define SENSORDB(fmt, arg...)
 #endif
+
 
 extern int iReadRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u8 * a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
 extern int iWriteRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u16 i2cId);
@@ -73,7 +72,7 @@ kal_uint16 MT9V113_write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
 	char puSendCmd[4] = {(char)(addr >> 8) , (char)(addr & 0xFF) ,(char)(para >> 8),(char)(para & 0xFF)};
 	
 	iWriteRegI2C(puSendCmd , 4,MT9V113_WRITE_ID);
-
+    return 0;
 }
 
 kal_uint16 MT9V113_read_cmos_sensor(kal_uint32 addr)
@@ -96,7 +95,7 @@ kal_uint16 MT9V113_read_cmos_sensor(kal_uint32 addr)
 struct MT9V113_sensor_struct MT9V113_Sensor_Driver;
 MSDK_SENSOR_CONFIG_STRUCT MT9V113SensorConfigData;
 
-void sequencer_refresh()
+void sequencer_refresh(void)
 {
 	/* It is recommended that Refresh and Refresh mode commands always	run 
 	together, and Refresh mode should be issued before the Refresh command. */
@@ -109,7 +108,7 @@ void sequencer_refresh()
 }
 
 
-static void MT9V113_LensShading_2()
+static void MT9V113_LensShading_2(void)
 {
 	
 	//[Lens Correction 08/25/08 10:55:30]
@@ -222,7 +221,7 @@ static void MT9V113_LensShading_2()
 	MT9V113_write_cmos_sensor(0x3210, 0x09B8 );	//PGA_ENABLE
 }
 
-static void MT9V113_CCM2()
+static void MT9V113_CCM2(void)
 {
 	//Adjust the CMM to increase the saturation. 
 	MT9V113_write_cmos_sensor(0x098C, 0x2306);    	// MCU_ADDRESS [AWB_CCM_L_0]
@@ -627,8 +626,8 @@ static void MT9V113_HVMirror(kal_uint8 image_mirror)
 *****************************************************************************/
 void MT9V113_set_preview_dummy(kal_uint32 dummy_pixels, kal_uint32 dummy_lines)
 {
-	kal_uint32 line_len_pclk = 0;
-	kal_uint32 frame_len_lines = 0;
+	//kal_uint32 line_len_pclk = 0;
+	//kal_uint32 frame_len_lines = 0;
 	kal_uint32 min_shutter_step = 0;
 
 //	MT9V113_Sensor_Driver.Preview_Pixels_In_Line = MT9V113_DEFUALT_PREVIEW_LINE_LENGTH + dummy_pixels;
@@ -821,6 +820,7 @@ UINT32 MT9V113Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	image_window->GrabStartY = MT9V113_Sensor_Driver.StartY;
 	image_window->ExposureWindowWidth = MT9V113_Sensor_Driver.iGrabWidth;
 	image_window->ExposureWindowHeight = MT9V113_Sensor_Driver.iGrabheight;
+	return ERROR_NONE;
 }
 
 
@@ -832,6 +832,8 @@ UINT32 MT9V113GetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolutio
 	pSensorResolution->SensorFullHeight=MT9V113_IMAGE_SENSOR_VGA_HEIGHT - 12;
 	pSensorResolution->SensorPreviewWidth=MT9V113_IMAGE_SENSOR_VGA_WIDTH - 16;
 	pSensorResolution->SensorPreviewHeight=MT9V113_IMAGE_SENSOR_VGA_HEIGHT - 12;
+	pSensorResolution->SensorVideoWidth=MT9V113_IMAGE_SENSOR_VGA_WIDTH - 16;
+	pSensorResolution->SensorVideoHeight=MT9V113_IMAGE_SENSOR_VGA_HEIGHT - 12;
 
     SENSORDB("[Exit]:MT9V113 get Resolution func\n");
 	
@@ -855,7 +857,7 @@ UINT32 MT9V113GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 	pSensorInfo->SensorWebCamCaptureFrameRate=15;
 	pSensorInfo->SensorResetActiveHigh=FALSE;//low is to reset 
 	pSensorInfo->SensorResetDelayCount=4;  //4ms 
-	pSensorInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_UYVY;
+	pSensorInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_YUYV;
 	pSensorInfo->SensorClockPolarity=SENSOR_CLOCK_POLARITY_LOW;	
 	pSensorInfo->SensorClockFallingPolarity=SENSOR_CLOCK_POLARITY_LOW;
 	pSensorInfo->SensorHsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
@@ -863,30 +865,6 @@ UINT32 MT9V113GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 	pSensorInfo->SensorInterruptDelayLines = 1; 
 	pSensorInfo->SensroInterfaceType=SENSOR_INTERFACE_TYPE_PARALLEL;
 
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxWidth=CAM_SIZE_VGA_WIDTH; //???
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].MaxHeight=CAM_SIZE_VGA_HEIGHT;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].ISOSupported=TRUE;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_100_MODE].BinningEnable=FALSE;
-
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxWidth=CAM_SIZE_VGA_WIDTH;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].MaxHeight=CAM_SIZE_VGA_HEIGHT;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].ISOSupported=TRUE;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_200_MODE].BinningEnable=FALSE;
-
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxWidth=CAM_SIZE_VGA_WIDTH;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].MaxHeight=CAM_SIZE_VGA_HEIGHT;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].ISOSupported=TRUE;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_400_MODE].BinningEnable=FALSE;
-
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxWidth=CAM_SIZE_VGA_WIDTH;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].MaxHeight=CAM_SIZE_VGA_HEIGHT;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].ISOSupported=TRUE;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_800_MODE].BinningEnable=TRUE;
-
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxWidth=CAM_SIZE_VGA_WIDTH;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].MaxHeight=CAM_SIZE_VGA_HEIGHT;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].ISOSupported=TRUE;
-	pSensorInfo->SensorISOBinningInfo.ISOBinningInfo[ISO_1600_MODE].BinningEnable=TRUE;
 
 	pSensorInfo->CaptureDelayFrame = 1; 
 	pSensorInfo->PreviewDelayFrame = 2; 
@@ -897,7 +875,6 @@ UINT32 MT9V113GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 	{
 		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
 		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-		case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
 			pSensorInfo->SensorClockFreq=12;
 			pSensorInfo->SensorClockDividCount=	7;
 			pSensorInfo->SensorClockRisingCount= 0;
@@ -909,7 +886,6 @@ UINT32 MT9V113GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
 			
 		break;
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
 			pSensorInfo->SensorClockFreq=12;
 			pSensorInfo->SensorClockDividCount=	7;
 			pSensorInfo->SensorClockRisingCount= 0;
@@ -948,11 +924,9 @@ UINT32 MT9V113Control(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WIN
 	{
 		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
 		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-		case MSDK_SCENARIO_ID_VIDEO_CAPTURE_MPEG4:
 			 MT9V113Preview(pImageWindow, pSensorConfigData);
 			 break;
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_MEM:
 			 MT9V113Capture(pImageWindow, pSensorConfigData);
 		default:
 		     break; 
@@ -1364,7 +1338,7 @@ UINT32 MT9V113YUVSetVideoMode(UINT16 u2FrameRate)
     }
     else 
     {
-        printk("Wrong frame rate setting \n");
+        SENSORDB("Wrong frame rate setting \n");
     }   
 
 	
@@ -1375,7 +1349,7 @@ UINT32 MT9V113YUVSetVideoMode(UINT16 u2FrameRate)
 UINT32 MT9V113FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 							 UINT8 *pFeaturePara,UINT32 *pFeatureParaLen)
 {
-    UINT16 u2Temp = 0; 
+    //UINT16 u2Temp = 0; 
 	UINT16 *pFeatureReturnPara16=(UINT16 *) pFeaturePara;
 	UINT16 *pFeatureData16=(UINT16 *) pFeaturePara;
 	UINT32 *pFeatureReturnPara32=(UINT32 *) pFeaturePara;
@@ -1396,7 +1370,7 @@ UINT32 MT9V113FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 			*pFeatureParaLen=4;
 		     break;
 		case SENSOR_FEATURE_GET_PIXEL_CLOCK_FREQ:
-			//*pFeatureReturnPara32 = MT9V113_sensor_pclk/10;
+			*pFeatureReturnPara32 = MT9V113_Sensor_Driver.Preview_PClk* 1000*1000;
 			*pFeatureParaLen=4;
 		     break;
 		case SENSOR_FEATURE_SET_ESHUTTER:

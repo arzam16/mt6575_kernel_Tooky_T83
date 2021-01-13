@@ -14,6 +14,7 @@
 #include <mach/mt_sc.h>
 #include <mach/mt_dormant.h>
 #include <mach/mt_clock_manager.h>
+#include <mach/wd_api.h>
 #include <mach/eint.h>
 #include <mach/mtk_ccci_helper.h>
 
@@ -40,7 +41,7 @@
 #define SC_TIMER_STA_CMDCPL	(1U << 1)
 
 /* typical values */
-#ifdef MODEM_UMTS_TDD128_MODE
+#ifdef MTK_UMTS_TDD128_MODE
 #define SC_SYSCLK_SETTLE	128	/* T 32K */
 #else
 #define SC_SYSCLK_SETTLE	160	/* T 32K */
@@ -92,9 +93,6 @@ extern int mt_irq_mask_restore(struct mtk_irq_mask *mask);
 extern void mt_irq_unmask_for_sleep(unsigned int irq);
 
 extern kal_int32 get_dynamic_period(int first_use, int first_wakeup_time, int battery_capacity_level);
-
-extern void mtk_wdt_suspend(void);
-extern void mtk_wdt_resume(void);
 
 static DEFINE_SPINLOCK(sc_lock);
 
@@ -166,7 +164,7 @@ static void sc_output_wake_reason(u32 wakesrc, u32 wakesta, u32 isr, u32 pause)
 
 	sc_info2("wake up by %s(0x%x)(0x%x)(%u)\n", str, wakesta, isr, pause);
 	if (eint_wake)
-		mt65xx_eint_print_status();
+		mt_eint_print_status();
 	if (ccif_md_wake)
 		exec_ccci_kern_func(ID_GET_MD_WAKEUP_SRC, NULL, 0);
 }
@@ -184,15 +182,15 @@ static void sc_wait_for_interrupt(unsigned int pwrlevel, bool dpidle)
 	if (pwrlevel == 0) {
 		wfi_with_sync();
 	} else {
-		if (dpidle)	/* debug help */
-			aee_rr_rec_shutdown_mode(1);
-		else
-			aee_rr_rec_shutdown_mode(2);
+		//if (dpidle)	/* debug help */
+		//	aee_rr_rec_shutdown_mode(1);
+		//else
+		//	aee_rr_rec_shutdown_mode(2);
 
 		if (!cpu_power_down(pwrlevel == 1 ? DORMANT_MODE : SHUTDOWN_MODE))
 			wfi_with_sync();
 
-		aee_rr_rec_shutdown_mode(0);
+		//aee_rr_rec_shutdown_mode(0);
 
 		cpu_check_dormant_abort();
 	}
@@ -348,9 +346,10 @@ static int sc_enable_wake_irq(unsigned int irq)
 wake_reason_t sc_go_to_sleep(unsigned int pwrlevel)
 {
 	u32 wakesrc, dvfscon, sec = 0;
-	int i, r;
+	int i, r, wd_ret;
 	unsigned long flags;
 	struct mtk_irq_mask mask;
+	struct wd_api *wd_api;
 	static wake_reason_t last_wr = WR_NONE;
 
 	sc_info2("pwrlevel = %u\n", pwrlevel);
@@ -358,7 +357,9 @@ wake_reason_t sc_go_to_sleep(unsigned int pwrlevel)
 	if (sc_pwake_en)
 		sec = sc_get_wake_period(!!(last_wr != WR_SLP_TMR));
 
-	mtk_wdt_suspend();
+	wd_ret = get_wd_api(&wd_api);
+	if (!wd_ret)
+		wd_api->wd_suspend_notify();
 
 	spin_lock_irqsave(&sc_lock, flags);
 	wakesrc = sc_wake_src;
@@ -405,7 +406,8 @@ wake_reason_t sc_go_to_sleep(unsigned int pwrlevel)
 	mt_irq_mask_restore(&mask);
 	spin_unlock_irqrestore(&sc_lock, flags);
 
-	mtk_wdt_resume();
+	if (!wd_ret)
+		wd_api->wd_resume_notify();
 
 	return last_wr;
 }
@@ -671,4 +673,4 @@ void sc_mod_init(void)
 module_param(sc_pwake_en, bool, 0644);
 
 MODULE_AUTHOR("Terry Chang <terry.chang@mediatek.com>");
-MODULE_DESCRIPTION("MT6577/75 SLPCTRL Driver v4.9");
+MODULE_DESCRIPTION("SLPCTRL Driver v4.9");

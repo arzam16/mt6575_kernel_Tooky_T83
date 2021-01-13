@@ -13,8 +13,9 @@
 #include "mach/sync_write.h"
 #include "mach/mt_emi_bm.h"
 //#include "mach/mt6573_pll.h"
-#include "mach/mt65xx_mon.h"
+#include "mach/mt_mon.h"
 #include "mach/mt_dcm.h"
+#include <../../kernel/kernel/trace/trace.h>
  
 extern void armV7_perf_mon_enable(unsigned int enable);
 extern unsigned int armV7_perf_mon_number(void);
@@ -48,8 +49,8 @@ static MonitorMode register_mode = MODE_FREE;
 static unsigned long mon_period_evt;
 static unsigned int mon_manual_evt;
 
-struct mt65xx_mon_log *mt6577_mon_log_buff;
-unsigned int mt6577_mon_log_buff_index;
+struct mt_mon_log *mt_mon_log_buff; //this buffer is allocated for MODE_MANUAL_USER & MODE_MANUAL_KERNEL only
+unsigned int mt_mon_log_buff_index;
 unsigned int mt6577_kernel_ring_buff_index;
 
 struct arm_pmu *p_pmu;
@@ -86,10 +87,10 @@ int mt65xx_mon_deinit(void)
     BM_DeInit();
     
 /*
-    if (mt6577_mon_log_buff) {
-        vfree(mt6577_mon_log_buff);
+    if (mt_mon_log_buff) {
+        vfree(mt_mon_log_buff);
 
-        mt6577_mon_log_buff = 0;
+        mt_mon_log_buff = 0;
     }
 */
 
@@ -182,19 +183,19 @@ static inline int test_bitmap(unsigned int bit, volatile unsigned long *p)
  */
 unsigned int mt65xx_mon_log(void* log_buff)
 {
-    struct mt65xx_mon_log* mon_buff;
+    struct mt_mon_log* mon_buff;
     unsigned int cur;
     struct pmu_data *pmu_data =  & p_pmu->perf_data;
  
     p_pmu->read_counter();
     
     if( register_mode == MODE_MANUAL_USER || register_mode == MODE_MANUAL_KERNEL){
-        cur = mt6577_mon_log_buff_index++;
-        mon_buff = &mt6577_mon_log_buff[cur];
-        mt6577_mon_log_buff_index %= MON_LOG_BUFF_LEN;
+        cur = mt_mon_log_buff_index++;
+        mon_buff = &mt_mon_log_buff[cur];
+        mt_mon_log_buff_index %= MON_LOG_BUFF_LEN;
     } else {
         cur = mt6577_kernel_ring_buff_index++;
-        mon_buff = (struct mt65xx_mon_log*)log_buff;
+        mon_buff = (struct mt_mon_log*)log_buff;
     }
     
             
@@ -243,6 +244,111 @@ unsigned int mt65xx_mon_log(void* log_buff)
     
     memset(pmu_data->cnt_val[0], 0, sizeof(struct pmu_data));
     return cur;
+}
+
+enum print_line_t mt65xx_mon_print_entry(struct mt65xx_mon_entry *entry, struct trace_iterator *iter){
+    struct trace_seq *s = &iter->seq;
+    int cpu = entry->cpu;
+    struct mt_mon_log *log_entry;
+    unsigned int log = 0;
+    MonitorMode mon_mode_evt = get_mt65xx_mon_mode();
+
+    if(entry == NULL)
+        return TRACE_TYPE_HANDLED;
+    else{
+        log_entry = &entry->field;
+        log = entry->log;
+    }
+
+#if 0
+    if(cpu)
+        trace_seq_printf(s, "cpu1 ");
+    else
+        trace_seq_printf(s, "cpu0 ");
+#endif
+    if (log == 0) {
+        trace_seq_printf(s, "MON_LOG_BUFF_LEN = %d, ", MON_LOG_BUFF_LEN);
+        trace_seq_printf(s, "EMI_CLOCK = %d, ", mt6577_get_bus_freq());
+    }
+    
+    if(!cpu || (mon_mode_evt != MODE_SCHED_SWITCH)){
+	    trace_seq_printf(
+			s,
+			"cpu0_cyc = %d, cpu0_cnt0 = %d, cpu0_cnt1 = %d, cpu0_cnt2 = %d, cpu0_cnt3 = %d, cpu0_cnt4 = %d, cpu0_cnt5 = %d, ",
+			log_entry->cpu_cyc,
+			log_entry->cpu_cnt0,
+			log_entry->cpu_cnt1,
+			log_entry->cpu_cnt2,
+			log_entry->cpu_cnt3,
+			log_entry->cpu_cnt4,
+			log_entry->cpu_cnt5); 
+    }
+#ifdef CONFIG_SMP		
+		if( cpu || (mon_mode_evt != MODE_SCHED_SWITCH) ) {
+			trace_seq_printf(
+				s,
+				"cpu1_cyc = %d, cpu1_cnt0 = %d, cpu1_cnt1 = %d, cpu1_cnt2 = %d, cpu1_cnt3 = %d, cpu1_cnt4 = %d, cpu1_cnt5 = %d, ",
+				log_entry->cpu1_cyc,
+				log_entry->cpu1_cnt0,
+				log_entry->cpu1_cnt1,
+				log_entry->cpu1_cnt2,
+				log_entry->cpu1_cnt3,
+				log_entry->cpu1_cnt4,
+				log_entry->cpu1_cnt5);
+		}
+#endif
+
+        trace_seq_printf(
+            s,
+            "l2c_cnt0 = %d, l2c_cnt1 = %d, ",
+            log_entry->l2c_cnt0,
+            log_entry->l2c_cnt1);
+
+        trace_seq_printf(
+            s,
+            "BM_BCNT = %d, BM_TACT = %d, BM_TSCT = %d, ",
+            log_entry->BM_BCNT,
+            log_entry->BM_TACT,
+            log_entry->BM_TSCT);
+
+        trace_seq_printf(
+            s,
+            "BM_WACT = %d, BM_WSCT = %d, BM_BACT = %d, ",
+            log_entry->BM_WACT,
+            log_entry->BM_WSCT,
+            log_entry->BM_BACT);
+
+        trace_seq_printf(
+            s,
+            "BM_BSCT = %d, ",
+            log_entry->BM_BSCT);
+
+        trace_seq_printf(
+            s,
+            "BM_TSCT2 = %d, BM_WSCT2 = %d, ",
+            log_entry->BM_TSCT2,
+            log_entry->BM_WSCT2);
+
+        trace_seq_printf(
+            s,
+            "BM_TSCT3 = %d, BM_WSCT3 = %d, ",
+            log_entry->BM_TSCT3,
+            log_entry->BM_WSCT3);
+
+        trace_seq_printf(
+            s,
+            "BM_WSCT4 = %d, BM_TPCT1 = %d, ",
+            log_entry->BM_WSCT4,
+            log_entry->BM_TPCT1);
+
+        trace_seq_printf(
+            s,
+            "DRAMC_PageHit = %d, DRAMC_PageMiss = %d, DRAMC_Interbank = %d, DRAMC_Idle = %d\n",
+            log_entry->DRAMC_PageHit,
+            log_entry->DRAMC_PageMiss,
+            log_entry->DRAMC_Interbank,
+            log_entry->DRAMC_Idle);
+    return TRACE_TYPE_HANDLED;
 }
 
 void mt65xx_mon_set_pmu(struct pmu_cfg *p_cfg)
@@ -654,14 +760,14 @@ int register_monitor(struct mtk_monitor **p_mon, MonitorMode mode)
     }    
 
     if(mode == MODE_MANUAL_USER || mode == MODE_MANUAL_KERNEL) {
-        if (!mt6577_mon_log_buff) {
-            mt6577_mon_log_buff = vmalloc(sizeof(struct mt65xx_mon_log) * MON_LOG_BUFF_LEN);        
-            if (!mt6577_mon_log_buff) {
+        if (!mt_mon_log_buff) {
+            mt_mon_log_buff = vmalloc(sizeof(struct mt_mon_log) * MON_LOG_BUFF_LEN);        
+            if (!mt_mon_log_buff) {
                 printk(KERN_WARNING "fail to allocate the buffer for the monitor log\n");
                 register_mode = MODE_FREE;
                 goto _err;
             }
-            mtk_mon.log_buff = mt6577_mon_log_buff;
+            mtk_mon.log_buff = mt_mon_log_buff;
         }    
     }    
 
@@ -686,16 +792,16 @@ void unregister_monitor(struct mtk_monitor **p_mon)
     
     spin_lock(&reg_mon_lock);
     
-    if(mt6577_mon_log_buff) {
-        vfree(mt6577_mon_log_buff);
-        mt6577_mon_log_buff = NULL;
+    if(mt_mon_log_buff) {
+        vfree(mt_mon_log_buff);
+        mt_mon_log_buff = NULL;
     }
     
     register_mode = MODE_FREE;
     *p_mon = NULL;
 
     mt6577_kernel_ring_buff_index = 0;
-    mt6577_mon_log_buff_index = 0;
+    mt_mon_log_buff_index = 0;
     spin_unlock(&reg_mon_lock);
 }
 EXPORT_SYMBOL(unregister_monitor);

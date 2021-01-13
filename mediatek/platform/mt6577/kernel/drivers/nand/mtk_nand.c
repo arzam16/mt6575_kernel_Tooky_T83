@@ -37,7 +37,6 @@
 #include <asm/uaccess.h>
 #include <linux/miscdevice.h>
 #include <mach/mtk_nand.h>
-#include "nand_device_list.h"
 #include <mach/dma.h>
 #include <mach/mt_devs.h>
 #include <mach/mt_reg_base.h>
@@ -387,41 +386,52 @@ u32 nand_virt_to_phys_add(u32 va)
 
 EXPORT_SYMBOL(nand_virt_to_phys_add);
 
-bool get_device_info(u16 id, u32 ext_id, flashdev_info * pdevinfo)
+bool get_device_info(u8*id, flashdev_info *devinfo)
 {
-    u32 index;
-    for (index = 0; gen_FlashTable[index].id != 0; index++)
-    {
-        if (id == gen_FlashTable[index].id && ext_id == gen_FlashTable[index].ext_id)
-        {
-            pdevinfo->id = gen_FlashTable[index].id;
-            pdevinfo->ext_id = gen_FlashTable[index].ext_id;
-            pdevinfo->blocksize = gen_FlashTable[index].blocksize;
-            pdevinfo->addr_cycle = gen_FlashTable[index].addr_cycle;
-            pdevinfo->iowidth = gen_FlashTable[index].iowidth;
-            pdevinfo->timmingsetting = gen_FlashTable[index].timmingsetting;
-            pdevinfo->advancedmode = gen_FlashTable[index].advancedmode;
-            pdevinfo->pagesize = gen_FlashTable[index].pagesize;
-	    pdevinfo->sparesize = gen_FlashTable[index].sparesize;
-            pdevinfo->totalsize = gen_FlashTable[index].totalsize;
-            memcpy(pdevinfo->devciename, gen_FlashTable[index].devciename, sizeof(pdevinfo->devciename));
-            printk(KERN_INFO "Device found in MTK table, ID: %x, EXT_ID: %x\n", id, ext_id);
-
-            goto find;
-        }
+    u32 i,m,n,mismatch;
+    int target=-1;
+    u8 target_id_len=0;
+    for (i = 0; i<CHIP_CNT; i++){
+		mismatch=0;
+		for(m=0;m<gen_FlashTable[i].id_length;m++){		
+			if(id[m]!=gen_FlashTable[i].id[m]){
+				mismatch=1;
+				break;
+			}	
+		}
+		if(mismatch == 0 && gen_FlashTable[i].id_length > target_id_len){
+				target=i;
+				target_id_len=gen_FlashTable[i].id_length;
+		}	
     }
 
-  find:
-    if (0 == pdevinfo->id)
-    {
-        printk(KERN_INFO "Device not found, ID: %x\n", id);
+    if(target != -1){
+		MSG(INIT, "Recognize NAND: ID [");
+		for(n=0;n<gen_FlashTable[target].id_length;n++){
+			devinfo->id[n] = gen_FlashTable[target].id[n];
+			MSG(INIT, "%x ",devinfo->id[n]);
+		}
+		MSG(INIT, "], Device Name [%s], Page Size [%d]B Spare Size [%d]B Total Size [%d]MB\n",gen_FlashTable[target].devciename,gen_FlashTable[target].pagesize,gen_FlashTable[target].sparesize,gen_FlashTable[target].totalsize);
+		devinfo->id_length=gen_FlashTable[i].id_length;
+		devinfo->blocksize = gen_FlashTable[target].blocksize;
+		devinfo->addr_cycle = gen_FlashTable[target].addr_cycle;
+		devinfo->iowidth = gen_FlashTable[target].iowidth;
+		devinfo->timmingsetting = gen_FlashTable[target].timmingsetting;
+		devinfo->advancedmode = gen_FlashTable[target].advancedmode;
+		devinfo->pagesize = gen_FlashTable[target].pagesize;
+		devinfo->sparesize = gen_FlashTable[target].sparesize;
+		devinfo->totalsize = gen_FlashTable[target].totalsize;
+		memcpy(devinfo->devciename, gen_FlashTable[target].devciename, sizeof(devinfo->devciename));
+    	return true;
+	}else{
+	    MSG(INIT, "Not Found NAND: ID [");
+		for(n=0;n<NAND_MAX_ID;n++){
+			MSG(INIT, "%x ",id[n]);
+		}
+		MSG(INIT, "]\n");
         return false;
-    } else
-    {
-        return true;
-    }
+	}
 }
-
 #ifdef DUMP_NATIVE_BACKTRACE
 #define NFI_NATIVE_LOG_SD    "/sdcard/NFI_native_log_%s-%02d-%02d-%02d_%02d-%02d-%02d.log"
 #define NFI_NATIVE_LOG_DATA "/data/NFI_native_log_%s-%02d-%02d-%02d_%02d-%02d-%02d.log"
@@ -3395,9 +3405,7 @@ static int mtk_nand_probe(struct platform_device *pdev)
     struct nand_chip *nand_chip;
     struct resource *res = pdev->resource;
     int err = 0;
-    int id;
-    u32 ext_id;
-    u8 ext_id1, ext_id2, ext_id3;
+    u8 id[NAND_MAX_ID];
     int i;
 
     hw = (struct mtk_nand_host_hw *)pdev->dev.platform_data;
@@ -3490,16 +3498,13 @@ static int mtk_nand_probe(struct platform_device *pdev)
     /* Send the command for reading device ID */
     nand_chip->cmdfunc(mtd, NAND_CMD_READID, 0x00, -1);
 
-    /* Read manufacturer and device IDs */
-    manu_id = nand_chip->read_byte(mtd);
-    dev_id = nand_chip->read_byte(mtd);
+    for(i=0;i<NAND_MAX_ID;i++){
+        id[i]=nand_chip->read_byte(mtd);
+    }
+    manu_id = id[0];
+    dev_id = id[1];
 
-    ext_id1 = nand_chip->read_byte(mtd);
-    ext_id2 = nand_chip->read_byte(mtd);
-    ext_id3 = nand_chip->read_byte(mtd);
-    ext_id = ext_id1 << 16 | ext_id2 << 8 | ext_id3;
-    id = dev_id | (manu_id << 8);
-    if (!get_device_info(id, ext_id, &devinfo))
+    if (!get_device_info(id,&devinfo))
     {
         MSG(INIT, "Not Support this Device! \r\n");
     }

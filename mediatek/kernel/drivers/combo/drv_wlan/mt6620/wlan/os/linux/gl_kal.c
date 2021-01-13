@@ -685,7 +685,9 @@
 #include "gl_os.h"
 #include "gl_wext.h"
 #include "precomp.h"
-
+#if defined(MTK_TC1_FEATURE)
+#include <tc1_partition.h>
+#endif
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -1498,8 +1500,10 @@ kalRxIndicatePkts (
                 prNetDev = kalP2PGetDevHdlr(prGlueInfo);
             }
 
-            prNetDev->stats.rx_bytes += prSkb->len;
-            prNetDev->stats.rx_packets++;
+            //prNetDev->stats.rx_bytes += prSkb->len;
+            //prNetDev->stats.rx_packets++;
+            prGlueInfo->prP2PInfo->rNetDevStats.rx_bytes += prSkb->len;
+	        prGlueInfo->prP2PInfo->rNetDevStats.rx_packets++;
             
 #else
             prNetDev = prGlueInfo->prDevHandler;
@@ -1649,7 +1653,7 @@ kalIndicateStatusAndComplete (
 
             /* ensure BSS exists */
             bss = cfg80211_get_bss(priv_to_wiphy(prGlueInfo), prChannel, arBssid,
-                    ssid.aucSsid, ssid.u4SsidLen,
+                    ssid.aucSsid, ssid.u4SsidLen, 
                     WLAN_CAPABILITY_ESS, WLAN_CAPABILITY_ESS);
 
             if(bss == NULL) {
@@ -1684,7 +1688,7 @@ kalIndicateStatusAndComplete (
             }
             else if(eStatus == WLAN_STATUS_ROAM_OUT_FIND_BEST
                     && prGlueInfo->prDevHandler->ieee80211_ptr->sme_state == CFG80211_SME_CONNECTED) {
-                cfg80211_roamed_bss(prGlueInfo->prDevHandler,
+                cfg80211_roamed_bss(prGlueInfo->prDevHandler, 
                         bss,
                         prGlueInfo->aucReqIe,
                         prGlueInfo->u4ReqIeLength,
@@ -1739,6 +1743,19 @@ kalIndicateStatusAndComplete (
             cfg80211_scan_done(prScanRequest, FALSE);
         }
         break;
+        case WLAN_STATUS_CONNECT_INDICATION:
+            /* indicate AIS Jion fail  event */
+            if(prGlueInfo->prDevHandler->ieee80211_ptr->sme_state == CFG80211_SME_CONNECTING) {
+            cfg80211_connect_result(prGlueInfo->prDevHandler,
+                    prGlueInfo->prAdapter->rWifiVar.rAisFsmInfo.prTargetBssDesc->aucBSSID,
+                    prGlueInfo->aucReqIe,
+                    prGlueInfo->u4ReqIeLength,
+                    prGlueInfo->aucRspIe,
+                    prGlueInfo->u4RspIeLength,
+                    REASON_CODE_UNSPECIFIED,
+                    GFP_KERNEL);
+                }
+            break;
 
     #if 0
     case WLAN_STATUS_MSDU_OK:
@@ -2307,9 +2324,12 @@ kalIoctl (IN P_GLUE_INFO_T    prGlueInfo,
 {
     P_GL_IO_REQ_T prIoReq = NULL;
     WLAN_STATUS ret = WLAN_STATUS_SUCCESS;
-
+ 
+    
     //GLUE_SPIN_LOCK_DECLARATION();
     ASSERT(prGlueInfo);
+
+
 
     /* <1> Check if driver is halt */
 
@@ -2393,7 +2413,9 @@ kalIoctl (IN P_GLUE_INFO_T    prGlueInfo,
 
     up(&prGlueInfo->ioctl_sem);
     up(&g_halt_sem);
+    
 
+    
     return ret;
 }
 
@@ -2928,6 +2950,7 @@ kalRetrieveNetworkAddress(
         UINT_32 i;
         BOOLEAN fgIsReadError = FALSE;
 
+#if !defined(MTK_TC1_FEATURE)
         for(i = 0 ; i < MAC_ADDR_LEN ; i+=2) {
             if(kalCfgDataRead16(prGlueInfo,
                         OFFSET_OF(WIFI_CFG_PARAM_STRUCT, aucMacAddress) + i,
@@ -2936,6 +2959,9 @@ kalRetrieveNetworkAddress(
                 break;
             }
         }
+#else
+	TC1_FAC_NAME(FacReadWifiMacAddr)((unsigned char *)prMacAddr);
+#endif
 
         if(fgIsReadError == TRUE) {
             return FALSE;

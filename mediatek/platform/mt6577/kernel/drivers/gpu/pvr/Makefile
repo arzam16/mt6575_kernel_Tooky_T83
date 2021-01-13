@@ -1,5 +1,5 @@
 OPTIM = -Os
-VER:=eng
+VER:=user
 
 ccflags-y := \
 	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/include4 \
@@ -14,7 +14,8 @@ ccflags-y := \
 	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/services4/srvkm/include \
 	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/services4/3rdparty/mtklfb \
 	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/services4/3rdparty/mtkbc \
-	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/services4/system/mt657X
+	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/services4/system/mt657X \
+	-I$(MTK_PATH_PLATFORM)/drivers/gpu/pvr/services4/system/mtk_common
 
 ccflags-y += \
 	-fno-strict-aliasing \
@@ -32,13 +33,16 @@ ccflags-y += \
 ccflags-y += \
 	-D__linux__ $(OPTIM) -g
 
-ifeq ($(strip $(TARGET_BUILD_VARIANT)),user)
-ccflags-y += \
-    -include $(MTK_PATH_PLATFORM)/drivers/gpu/pvr/include4/config_kernel_user.h
-else
-ccflags-y += \
-    -include $(MTK_PATH_PLATFORM)/drivers/gpu/pvr/include4/config_kernel_eng.h
+ifneq ($(strip $(TARGET_BUILD_VARIANT)),)
+ifneq ($(strip $(TARGET_BUILD_VARIANT)),eng)
+ifneq ($(strip $(MTK_3D_DEBUG_FOR_USER_VERSION)),yes)
+VER:=user
 endif
+endif
+endif
+
+ccflags-y += \
+	-include $(MTK_PATH_PLATFORM)/drivers/gpu/pvr/include4/config_kernel_$(VER).h
 
 pvrsrvkm-y := \
 	services4/srvkm/env/linux/osfunc.o \
@@ -49,6 +53,7 @@ pvrsrvkm-y := \
 	services4/srvkm/env/linux/proc.o \
 	services4/srvkm/env/linux/pvr_bridge_k.o \
 	services4/srvkm/env/linux/pvr_debug.o \
+	services4/srvkm/env/linux/pvr_sync.o \
 	services4/srvkm/env/linux/mm.o \
 	services4/srvkm/env/linux/mutex.o \
 	services4/srvkm/env/linux/event.o \
@@ -81,8 +86,24 @@ pvrsrvkm-y := \
 	services4/srvkm/devices/sgx/sgxtransfer.o \
 	services4/srvkm/devices/sgx/mmu.o \
 	services4/srvkm/devices/sgx/pb.o \
-    services4/system/mt657X/sysconfig.o \
-	services4/system/mt657X/sysutils.o
+	services4/system/mt657X/sysconfig.o \
+	services4/system/mt657X/sysutils.o \
+	services4/srvkm/env/linux/mtk_debug.o \
+	services4/srvkm/env/linux/mtk_pp.o \
+	services4/srvkm/env/linux/mtk_hal_mm.o \
+	services4/srvkm/common/ttrace.o \
+	services4/system/mt657X/mtk_sysfreq.o \
+	services4/system/mtk_common/mtk_gpu_hal.o
+
+#	services4/srvkm/env/linux/systrace.o \
+
+pvrsrvkm-$(CONFIG_ION_MTK) += \
+	services4/srvkm/env/linux/ion.o
+
+ifeq ($(SUPPORT_ION),1)
+pvrsrvkm-y += \
+	services4/srvkm/env/linux/ion.o
+endif
 
 mtklfb-y := \
 	services4/3rdparty/mtklfb/mtklfb_displayclass.o \

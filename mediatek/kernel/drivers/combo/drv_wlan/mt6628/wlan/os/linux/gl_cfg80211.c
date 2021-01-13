@@ -1,17 +1,92 @@
+/*
+** $Id: @(#) gl_cfg80211.c@@
+*/
+
+/*! \file   gl_cfg80211.c
+    \brief  Main routines for supporintg MT6620 cfg80211 control interface
+
+    This file contains the support routines of Linux driver for MediaTek Inc. 802.11
+    Wireless LAN Adapters.
+*/
 
 
 
+/*
+** $Log: gl_cfg80211.c $
+**
+** 11 23 2012 yuche.tsai
+** [ALPS00398671] [Acer-Tablet] Remove Wi-Fi Direct completely
+** Fix bug of WiFi may reboot under user load, when WiFi Direct is removed..
+** 
+** 09 12 2012 wcpadmin
+** [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+** .
+** 
+** 08 30 2012 chinglan.wang
+** [ALPS00349664] [6577JB][WIFI] Phone can not connect to AP secured with AES via WPS in 802.11n Only
+** .
+ *
+**
+*/
 
+/*******************************************************************************
+*                         C O M P I L E R   F L A G S
+********************************************************************************
+*/
 
-
+/*******************************************************************************
+*                    E X T E R N A L   R E F E R E N C E S
+********************************************************************************
+*/
 #include "gl_os.h"
 #include "debug.h"
 #include "wlan_lib.h"
 #include "gl_wext.h"
 #include "precomp.h"
+#include <linux/can/netlink.h>
+#include <net/netlink.h>
+#include <net/cfg80211.h>
+#include "gl_cfg80211.h"
 
+/*******************************************************************************
+*                              C O N S T A N T S
+********************************************************************************
+*/
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)   
+#define NLA_PUT(skb, attrtype, attrlen, data) \
+			 do { \
+					 if (unlikely(nla_put(skb, attrtype, attrlen, data) < 0)) \
+							 goto nla_put_failure; \
+			 } while(0)
+	 
+#define NLA_PUT_TYPE(skb, type, attrtype, value) \
+			 do { \
+					 type __tmp = value; \
+					 NLA_PUT(skb, attrtype, sizeof(type), &__tmp); \
+			 } while(0)
+	 
+#define NLA_PUT_U8(skb, attrtype, value) \
+			 NLA_PUT_TYPE(skb, u8, attrtype, value)
+	
+#define NLA_PUT_U16(skb, attrtype, value) \
+			 NLA_PUT_TYPE(skb, u16, attrtype, value)
+	
+#define NLA_PUT_U32(skb, attrtype, value) \
+			 NLA_PUT_TYPE(skb, u32, attrtype, value)
+	
+#define NLA_PUT_U64(skb, attrtype, value) \
+			 NLA_PUT_TYPE(skb, u64, attrtype, value)
+	
+#endif
+/*******************************************************************************
+*                             D A T A   T Y P E S
+********************************************************************************
+*/
 
-
+/*******************************************************************************
+*                            P U B L I C   D A T A
+********************************************************************************
+*/
 
 #if CFG_SUPPORT_WAPI
     extern UINT_8 keyStructBuf[1024];   /* add/remove key shared buffer */
@@ -19,11 +94,37 @@
     extern UINT_8 keyStructBuf[100];   /* add/remove key shared buffer */
 #endif
 
+/*******************************************************************************
+*                           P R I V A T E   D A T A
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                                 M A C R O S
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                   F U N C T I O N   D E C L A R A T I O N S
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                              F U N C T I O N S
+********************************************************************************
+*/
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for change STA type between
+ *        1. Infrastructure Client (Non-AP STA)
+ *        2. Ad-Hoc IBSS
+ *
+ * @param
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int 
 mtk_cfg80211_change_iface (
@@ -81,6 +182,14 @@ mtk_cfg80211_change_iface (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for adding key 
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_add_key (
@@ -158,7 +267,7 @@ mtk_cfg80211_add_key (
             TRUE,
             FALSE,
             &u4BufLen);
-    
+    DBGLOG(REQ, TRACE, ("wlanoidSetAddkey return %u\n", (UINT32)rStatus));
     if (rStatus == WLAN_STATUS_SUCCESS)
         i4Rslt = 0;
 
@@ -167,6 +276,14 @@ mtk_cfg80211_add_key (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for getting key for specified STA
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int 
 mtk_cfg80211_get_key (
@@ -195,6 +312,14 @@ mtk_cfg80211_get_key (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for removing key for specified STA
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_del_key (
@@ -243,6 +368,14 @@ mtk_cfg80211_del_key (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for setting default key on an interface
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int 
 mtk_cfg80211_set_default_key (
@@ -258,17 +391,22 @@ mtk_cfg80211_set_default_key (
     prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
     ASSERT(prGlueInfo);
 
-#if 1
     printk("--> %s()\n", __func__);
-#endif
+    /*work around aosp defualt supplicant fail*/
+	return WLAN_STATUS_SUCCESS;
 
-    /* not implemented */
-
-    return -EINVAL;
 }
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for getting station information such as RSSI
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 
 int
@@ -343,31 +481,83 @@ mtk_cfg80211_get_station (
         }
         else {
             sinfo->filled |= STATION_INFO_SIGNAL;
-            sinfo->signal = i4Rssi; /* dBm */
+	    //in the cfg80211 layer, the signal is a signed char variable.
+            if(i4Rssi < -128)
+		sinfo->signal = -128;
+	    else
+	        sinfo->signal = i4Rssi; /* dBm */
         }
     }
+
+    sinfo->rx_packets = prGlueInfo->rNetDevStats.rx_packets;
+    sinfo->filled |= STATION_INFO_TX_PACKETS;
+    sinfo->tx_packets = prGlueInfo->rNetDevStats.tx_packets;
+    sinfo->filled |= STATION_INFO_TX_FAILED;
+
+#if 1
+   {
+            WLAN_STATUS rStatus;
+            UINT_32 u4XmitError = 0;
+//           UINT_32 u4XmitOk = 0;
+//          UINT_32 u4RecvError = 0;
+//           UINT_32 u4RecvOk = 0;
+//           UINT_32 u4BufLen;
+
+           /* @FIX ME: need a more clear way to do this */
+
+
+            rStatus = kalIoctl(prGlueInfo,
+                    wlanoidQueryXmitError,
+                    &u4XmitError,
+                    sizeof(UINT_32),
+                    TRUE,
+                    TRUE,
+                    TRUE,
+                    FALSE,
+                    &u4BufLen);
+
+           prGlueInfo->rNetDevStats.tx_errors = u4XmitError;
+
+   }
+#else
+         prGlueInfo->rNetDevStats.tx_errors = 0;
+#endif
+
+    sinfo->tx_failed = prGlueInfo->rNetDevStats.tx_errors;
 
     return 0;
 }
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to do a scan
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int 
 mtk_cfg80211_scan (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#endif
     struct cfg80211_scan_request *request
     )
 {
     P_GLUE_INFO_T prGlueInfo = NULL;
     WLAN_STATUS rStatus;
     UINT_32 u4BufLen;
-    PARAM_SCAN_REQUEST_EXT_T rScanRequest;
+    static PARAM_SCAN_REQUEST_EXT_T rScanRequest;
 
     prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
     ASSERT(prGlueInfo);
-
+    
+    kalMemZero(&rScanRequest, sizeof(PARAM_SCAN_REQUEST_EXT_T));
+    
     /* check if there is any pending scan not yet finished */
     if(prGlueInfo->prScanRequest != NULL) {
         return -EBUSY;
@@ -386,6 +576,9 @@ mtk_cfg80211_scan (
     if(request->ie_len > 0) {
         rScanRequest.u4IELength = request->ie_len;
         rScanRequest.pucIE = (PUINT_8)(request->ie);
+    }
+    else {
+        rScanRequest.u4IELength = 0;
     }
 
     rStatus = kalIoctl(prGlueInfo,
@@ -411,6 +604,15 @@ mtk_cfg80211_scan (
 static UINT_8 wepBuf[48];
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to connect to 
+ *        the ESS with the specified parameters
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_connect (
@@ -484,6 +686,7 @@ mtk_cfg80211_connect (
     }
 
     if (sme->crypto.n_ciphers_pairwise) {
+        prGlueInfo->prAdapter->rWifiVar.rConnSettings.rRsnInfo.au4PairwiseKeyCipherSuite[0] = sme->crypto.ciphers_pairwise[0];
         switch (sme->crypto.ciphers_pairwise[0]) {
         case WLAN_CIPHER_SUITE_WEP40:
             prGlueInfo->rWpaInfo.u4CipherPairwise = IW_AUTH_CIPHER_WEP40;
@@ -508,6 +711,7 @@ mtk_cfg80211_connect (
     }
 
     if (sme->crypto.cipher_group) {
+        prGlueInfo->prAdapter->rWifiVar.rConnSettings.rRsnInfo.u4GroupKeyCipherSuite = sme->crypto.cipher_group;
         switch (sme->crypto.cipher_group) {
         case WLAN_CIPHER_SUITE_WEP40:
             prGlueInfo->rWpaInfo.u4CipherGroup = IW_AUTH_CIPHER_WEP40;
@@ -532,6 +736,7 @@ mtk_cfg80211_connect (
     }
 
     if (sme->crypto.n_akm_suites) {
+        prGlueInfo->prAdapter->rWifiVar.rConnSettings.rRsnInfo.au4AuthKeyMgtSuite[0] = sme->crypto.akm_suites[0];
         if (prGlueInfo->rWpaInfo.u4WpaVersion == IW_AUTH_WPA_VERSION_WPA) {
             switch (sme->crypto.akm_suites[0]) {
             case WLAN_AKM_SUITE_8021X:
@@ -579,19 +784,22 @@ mtk_cfg80211_connect (
         PUINT_8 prDesiredIE = NULL;
 
 #if CFG_SUPPORT_WAPI
-        rStatus = kalIoctl(prGlueInfo,
-                wlanoidSetWapiAssocInfo,
-                sme->ie,
-                sme->ie_len,
-                FALSE,
-                FALSE,
-                FALSE,
-                FALSE,
-                &u4BufLen);
-        
-        if (rStatus != WLAN_STATUS_SUCCESS) {
-            DBGLOG(SEC, WARN, ("[wapi] set wapi assoc info error:%lx\n", rStatus));
-        }
+		if (wextSrchDesiredWAPIIE(sme->ie,
+						sme->ie_len, (PUINT_8 *)&prDesiredIE)){
+	        rStatus = kalIoctl(prGlueInfo,
+	                wlanoidSetWapiAssocInfo,
+	                prDesiredIE,
+	                IE_SIZE(prDesiredIE),
+	                FALSE,
+	                FALSE,
+	                FALSE,
+	                FALSE,
+	                &u4BufLen);
+	    
+	        if (rStatus != WLAN_STATUS_SUCCESS) {
+	            DBGLOG(SEC, WARN, ("[wapi] set wapi assoc info error:%lx\n", rStatus));
+	        }
+		}
 #endif
 #if CFG_SUPPORT_WPS2
         if (wextSrchDesiredWPSIE(sme->ie,
@@ -684,7 +892,7 @@ mtk_cfg80211_connect (
         prWepKey->u4KeyIndex = (UINT_32) sme->key_idx;
         prWepKey->u4KeyIndex |= BIT(31);
         if (prWepKey->u4KeyLength > 32) {
-            DBGLOG(REQ, WARN, ("Too long key length (%u)\n", prWepKey->u4KeyLength));
+            DBGLOG(REQ, WARN, ("Too long key length (%u)\n", (UINT32)prWepKey->u4KeyLength));
             return -EINVAL;
         }
         kalMemCopy(prWepKey->aucKeyMaterial, sme->key, prWepKey->u4KeyLength);
@@ -747,6 +955,15 @@ mtk_cfg80211_connect (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to disconnect from
+ *        currently connected ESS
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int 
 mtk_cfg80211_disconnect (
@@ -782,6 +999,14 @@ mtk_cfg80211_disconnect (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to join an IBSS group
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_join_ibss (
@@ -800,8 +1025,13 @@ mtk_cfg80211_join_ibss (
     ASSERT(prGlueInfo);
 
     /* set channel */
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(3, 7, 0)
     if(params->channel) {
         u4ChnlFreq = nicChannelNum2Freq(params->channel->hw_value);
+#else
+    if(params->chandef.chan) {
+        u4ChnlFreq = nicChannelNum2Freq(params->chandef.chan->hw_value);
+#endif
 
         rStatus = kalIoctl(prGlueInfo,
                            wlanoidSetFrequency,
@@ -842,6 +1072,14 @@ mtk_cfg80211_join_ibss (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to leave from IBSS group
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_leave_ibss (
@@ -876,6 +1114,15 @@ mtk_cfg80211_leave_ibss (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to configure 
+ *        WLAN power managemenet
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_set_power_mgmt (
@@ -925,6 +1172,15 @@ mtk_cfg80211_set_power_mgmt (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to cache
+ *        a PMKID for a BSSID
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_set_pmksa (
@@ -972,6 +1228,15 @@ mtk_cfg80211_set_pmksa (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to remove
+ *        a cached PMKID for a BSSID
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_del_pmksa (
@@ -986,6 +1251,15 @@ mtk_cfg80211_del_pmksa (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to flush
+ *        all cached PMKID
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_flush_pmksa (
@@ -1030,13 +1304,28 @@ mtk_cfg80211_flush_pmksa (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to stay on a 
+ *        specified channel
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int 
 mtk_cfg80211_remain_on_channel (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     struct ieee80211_channel *chan,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
     enum nl80211_channel_type channel_type,
+#endif
     unsigned int duration,
     u64 *cookie
     )
@@ -1057,11 +1346,24 @@ mtk_cfg80211_remain_on_channel (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to cancel staying 
+ *        on a specified channel
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_cancel_remain_on_channel (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     u64 cookie
     )
 {
@@ -1081,15 +1383,29 @@ mtk_cfg80211_cancel_remain_on_channel (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to send a management frame
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_mgmt_tx (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     struct ieee80211_channel *channel,
     bool offscan,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
     enum nl80211_channel_type channel_type,
     bool channel_type_valid,
+#endif
     unsigned int wait,
     const u8 *buf,
     size_t len,
@@ -1114,11 +1430,24 @@ mtk_cfg80211_mgmt_tx (
 
 
 /*----------------------------------------------------------------------------*/
+/*!
+ * @brief This routine is responsible for requesting to cancel the wait time
+ *        from transmitting a management frame on another channel
+ *
+ * @param 
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_mgmt_tx_cancel_wait (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
     struct net_device *ndev,
+#else
+    struct wireless_dev *wdev,
+#endif
     u64 cookie
     )
 {
@@ -1236,6 +1565,207 @@ mtk_cfg80211_testmode_set_key_ext(
 
 
 int
+mtk_cfg80211_testmode_get_sta_statistics(
+    IN struct wiphy *wiphy,
+    IN void *data,
+    IN int len,
+    IN P_GLUE_INFO_T prGlueInfo)
+{
+    WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+    INT_32 i4Status = -EINVAL;
+	UINT_32 u4BufLen;
+    UINT_32 u4LinkScore;
+    UINT_32 u4TotalError;
+    UINT_32 u4TxExceedThresholdCount; 
+    UINT_32 u4TxTotalCount;
+	
+    P_NL80211_DRIVER_GET_STA_STATISTICS_PARAMS prParams = NULL;
+    PARAM_GET_STA_STA_STATISTICS rQueryStaStatistics;
+    struct sk_buff *skb;
+    
+	ASSERT(wiphy);
+    ASSERT(prGlueInfo);
+   
+	if(data && len) {
+        prParams = (P_NL80211_DRIVER_GET_STA_STATISTICS_PARAMS)data;
+    }
+   
+	if(!prParams->aucMacAddr) {
+		DBGLOG(QM, TRACE,("%s MAC Address is NULL\n", __FUNCTION__));
+		i4Status = -EINVAL;
+		goto nla_put_failure;
+	}
+	
+	skb = cfg80211_testmode_alloc_reply_skb(wiphy, sizeof(PARAM_GET_STA_STA_STATISTICS) + 1);
+
+	if(!skb) {
+        DBGLOG(QM, TRACE, ("%s allocate skb failed:\n", __FUNCTION__));
+		i4Status = -ENOMEM;
+		goto nla_put_failure;
+	}
+
+    DBGLOG(QM, TRACE,("Get ["MACSTR"] STA statistics\n", MAC2STR(prParams->aucMacAddr)));
+    
+	kalMemZero(&rQueryStaStatistics, sizeof(rQueryStaStatistics));
+    COPY_MAC_ADDR(rQueryStaStatistics.aucMacAddr, prParams->aucMacAddr);
+
+    rStatus = kalIoctl(prGlueInfo,
+            	 wlanoidQueryStaStatistics,
+            	 &rQueryStaStatistics,
+            	 sizeof(rQueryStaStatistics),
+            	 TRUE,
+            	 FALSE,
+            	 TRUE,
+            	 TRUE,
+            	 &u4BufLen);
+    
+    /* Calcute Link Score */
+    u4TxExceedThresholdCount = rQueryStaStatistics.u4TxExceedThresholdCount;
+    u4TxTotalCount = rQueryStaStatistics.u4TxTotalCount;
+    u4TotalError = rQueryStaStatistics.u4TxFailCount + rQueryStaStatistics.u4TxLifeTimeoutCount;
+	
+    /* u4LinkScore 10~100 , ExceedThreshold ratio 0~90 only */
+    /* u4LinkScore 0~9    , Drop packet ratio 0~9 and all packets exceed threshold */
+    if(u4TxTotalCount) {
+        if(u4TxExceedThresholdCount <= u4TxTotalCount) {
+            u4LinkScore = (90 - ((u4TxExceedThresholdCount * 90) / u4TxTotalCount)) ;
+        }
+        else {
+            u4LinkScore = 0;
+        }
+    }
+    else {
+        u4LinkScore = 90;
+    }
+
+    u4LinkScore += 10;
+
+    if(u4LinkScore == 10) {
+
+        if(u4TotalError<=u4TxTotalCount) {
+            u4LinkScore = (10 - ((u4TotalError * 10) / u4TxTotalCount)) ;
+        }
+        else {
+            u4LinkScore = 0;
+        }
+    
+    }
+
+    if(u4LinkScore>100) {
+        u4LinkScore = 100;
+    }
+
+    
+    NLA_PUT_U8(skb, NL80211_TESTMODE_STA_STATISTICS_INVALID, 0);
+    NLA_PUT_U8(skb, NL80211_TESTMODE_STA_STATISTICS_VERSION, NL80211_DRIVER_TESTMODE_VERSION);
+    NLA_PUT(skb, NL80211_TESTMODE_STA_STATISTICS_MAC, MAC_ADDR_LEN, prParams->aucMacAddr);
+    NLA_PUT_U8(skb, NL80211_TESTMODE_STA_STATISTICS_LINK_SCORE, u4LinkScore);   
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_FLAG, rQueryStaStatistics.u4Flag); 
+    
+    /* FW part STA link status */
+    NLA_PUT_U8(skb, NL80211_TESTMODE_STA_STATISTICS_PER, rQueryStaStatistics.ucPer);
+    NLA_PUT_U8(skb, NL80211_TESTMODE_STA_STATISTICS_RSSI, rQueryStaStatistics.ucRcpi);
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_PHY_MODE, rQueryStaStatistics.u4PhyMode);
+    NLA_PUT_U16(skb, NL80211_TESTMODE_STA_STATISTICS_TX_RATE, rQueryStaStatistics.u2LinkSpeed);
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_FAIL_CNT, rQueryStaStatistics.u4TxFailCount);
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_TIMEOUT_CNT, rQueryStaStatistics.u4TxLifeTimeoutCount);
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_AVG_AIR_TIME, rQueryStaStatistics.u4TxAverageAirTime);
+    
+    /* Driver part link status */
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_TOTAL_CNT, rQueryStaStatistics.u4TxTotalCount);
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_THRESHOLD_CNT, rQueryStaStatistics.u4TxExceedThresholdCount);
+    NLA_PUT_U32(skb, NL80211_TESTMODE_STA_STATISTICS_AVG_PROCESS_TIME, rQueryStaStatistics.u4TxAverageProcessTime);
+
+    /* Network counter */
+    NLA_PUT(
+        skb, 
+        NL80211_TESTMODE_STA_STATISTICS_TC_EMPTY_CNT_ARRAY, 
+        sizeof(rQueryStaStatistics.au4TcResourceEmptyCount), 
+        rQueryStaStatistics.au4TcResourceEmptyCount);
+
+    /* Sta queue length */
+    NLA_PUT(
+        skb, 
+        NL80211_TESTMODE_STA_STATISTICS_TC_QUE_LEN_ARRAY, 
+        sizeof(rQueryStaStatistics.au4TcQueLen), 
+        rQueryStaStatistics.au4TcQueLen);    
+
+    /* Global QM counter */
+    NLA_PUT(
+        skb, 
+        NL80211_TESTMODE_STA_STATISTICS_TC_AVG_QUE_LEN_ARRAY, 
+        sizeof(rQueryStaStatistics.au4TcAverageQueLen), 
+        rQueryStaStatistics.au4TcAverageQueLen);
+
+    NLA_PUT(
+        skb, 
+        NL80211_TESTMODE_STA_STATISTICS_TC_CUR_QUE_LEN_ARRAY, 
+        sizeof(rQueryStaStatistics.au4TcCurrentQueLen), 
+        rQueryStaStatistics.au4TcCurrentQueLen);
+
+    /* Reserved field */
+    NLA_PUT(
+        skb, 
+        NL80211_TESTMODE_STA_STATISTICS_RESERVED_ARRAY, 
+        sizeof(rQueryStaStatistics.au4Reserved), 
+        rQueryStaStatistics.au4Reserved);
+    
+	i4Status = cfg80211_testmode_reply(skb);
+
+nla_put_failure:    
+    return i4Status;
+}
+
+int
+mtk_cfg80211_testmode_get_link_detection(
+    IN struct wiphy *wiphy,
+    IN void *data,
+    IN int len,
+    IN P_GLUE_INFO_T prGlueInfo)
+{
+    WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+    INT_32 i4Status = -EINVAL;
+	UINT_32 u4BufLen;
+	
+	PARAM_802_11_STATISTICS_STRUCT_T rStatistics;
+    struct sk_buff *skb;
+    
+	ASSERT(wiphy);
+    ASSERT(prGlueInfo);
+   	
+	skb = cfg80211_testmode_alloc_reply_skb(wiphy, sizeof(PARAM_GET_STA_STA_STATISTICS) + 1);
+
+	if(!skb) {
+        DBGLOG(QM, TRACE, ("%s allocate skb failed:%lx\n", __FUNCTION__, rStatus));
+		return -ENOMEM;
+	}
+
+	kalMemZero(&rStatistics, sizeof(rStatistics));
+
+	rStatus = kalIoctl(prGlueInfo,
+			wlanoidQueryStatistics,
+			&rStatistics,
+			sizeof(rStatistics),
+			TRUE,
+			TRUE,
+			TRUE,
+			FALSE,
+			&u4BufLen);
+   
+    NLA_PUT_U8(skb, NL80211_TESTMODE_STA_STATISTICS_INVALID, 0);
+    NLA_PUT_U64(skb, NL80211_TESTMODE_LINK_TX_FAIL_CNT, rStatistics.rFailedCount.QuadPart); 
+    NLA_PUT_U64(skb, NL80211_TESTMODE_LINK_TX_RETRY_CNT, rStatistics.rRetryCount.QuadPart);
+    NLA_PUT_U64(skb, NL80211_TESTMODE_LINK_TX_MULTI_RETRY_CNT, rStatistics.rMultipleRetryCount.QuadPart);
+    NLA_PUT_U64(skb, NL80211_TESTMODE_LINK_ACK_FAIL_CNT, rStatistics.rACKFailureCount.QuadPart);
+    NLA_PUT_U64(skb, NL80211_TESTMODE_LINK_FCS_ERR_CNT, rStatistics.rFCSErrorCount.QuadPart);
+    
+	i4Status = cfg80211_testmode_reply(skb);
+
+    nla_put_failure:    
+    return i4Status;
+}
+
+int
 mtk_cfg80211_testmode_sw_cmd(
     IN struct wiphy *wiphy,
     IN void *data,
@@ -1287,7 +1817,7 @@ int mtk_cfg80211_testmode_cmd(
 {
     P_GLUE_INFO_T prGlueInfo = NULL;
     P_NL80211_DRIVER_TEST_MODE_PARAMS prParams = (P_NL80211_DRIVER_TEST_MODE_PARAMS)NULL;
-    BOOLEAN fgIsValid = 0;
+    INT_32 i4Status = -EINVAL;
 
     ASSERT(wiphy);
 
@@ -1297,8 +1827,13 @@ int mtk_cfg80211_testmode_cmd(
     printk("--> %s()\n", __func__);
 #endif
 
-    if(data && len)
+    if(data && len) {
         prParams = (P_NL80211_DRIVER_TEST_MODE_PARAMS)data;
+    }
+	else {
+		DBGLOG(REQ, ERROR, ("mtk_cfg80211_testmode_cmd, data is NULL\n"));
+		return i4Status;
+	}
         
     /* Clear the version byte */
     prParams->index = prParams->index & ~ BITS(24,31);
@@ -1306,22 +1841,26 @@ int mtk_cfg80211_testmode_cmd(
     if(prParams){
         switch(prParams->index){
             case 1: /* SW cmd */
-                if(mtk_cfg80211_testmode_sw_cmd(wiphy, data, len))
-                    fgIsValid = TRUE;
+                i4Status = mtk_cfg80211_testmode_sw_cmd(wiphy, data, len);
                 break;
             case 2: /* WAPI */
 #if CFG_SUPPORT_WAPI
-                if(mtk_cfg80211_testmode_set_key_ext(wiphy, data, len))
-                    fgIsValid = TRUE;
+                i4Status = mtk_cfg80211_testmode_set_key_ext(wiphy, data, len);
 #endif
                 break;
+			case 0x10:
+				i4Status = mtk_cfg80211_testmode_get_sta_statistics(wiphy, data, len, prGlueInfo);
+                break;
+			case 0x20:
+				i4Status = mtk_cfg80211_testmode_get_link_detection(wiphy, data, len, prGlueInfo);
+                break;
             default:
-                fgIsValid = TRUE;
+                i4Status = -EINVAL;
                 break;
         }
     }
 
-    return fgIsValid;
+    return i4Status;
 }
 #endif
 

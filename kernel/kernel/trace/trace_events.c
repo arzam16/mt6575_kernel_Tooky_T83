@@ -22,6 +22,8 @@
 
 #include "trace_output.h"
 
+#include <linux/mtk_ftrace.h>
+
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM "TRACE_SYSTEM"
 
@@ -206,6 +208,9 @@ static int ftrace_event_enable_disable(struct ftrace_event_call *call,
 					int enable)
 {
 	int ret = 0;
+
+    if(call->name && ((call->flags & TRACE_EVENT_FL_ENABLED) ^ enable))
+        printk("[ftrace]event '%s' is %s\n", call->name, enable?"enabled":"disabled");
 
 	switch (enable) {
 	case 0:
@@ -1450,6 +1455,28 @@ static __init int setup_trace_event(char *str)
 }
 __setup("trace_event=", setup_trace_event);
 
+#ifdef CONFIG_MTK_SCHED_TRACERS
+// collect boot time ftrace, disabled by default
+static int boot_time_ftrace = 0;
+
+static __init int setup_boot_time_ftrace(char *str)
+{
+    boot_time_ftrace = 1;
+    return 1;
+}
+__setup("boot_time_ftrace", setup_boot_time_ftrace);
+
+// delay the ring buffer expand until lat_initcall stage
+// to avoid impacting the boot time
+static __init int expand_ring_buffer_init(void){
+    if(!boot_time_ftrace)
+        tracing_update_buffers();
+    return 0;
+}
+late_initcall(expand_ring_buffer_init);
+
+#endif
+
 static __init int event_trace_init(void)
 {
 	struct ftrace_event_call **call;
@@ -1516,6 +1543,22 @@ static __init int event_trace_init(void)
 		if (ret)
 			pr_warning("Failed to enable trace event: %s\n", token);
 	}
+
+#ifdef CONFIG_MTK_SCHED_TRACERS
+    // enable ftrace facilities
+    mt_ftrace_enable_disable(1);
+
+    // only update buffer eariler if we want to collect boot-time ftrace
+    // to avoid the boot time impacted by early-expanded ring buffer
+    if(boot_time_ftrace)
+        tracing_update_buffers();
+    else 
+        set_tracer_flag(TRACE_ITER_OVERWRITE, 1);
+		// ring_buffer_change_overwrite(global_trace.buffer, 1);
+
+
+    printk("[ftrace]ftrace ready...\n");
+#endif
 
 	ret = register_module_notifier(&trace_module_nb);
 	if (ret)

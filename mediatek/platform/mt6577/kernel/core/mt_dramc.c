@@ -10,7 +10,6 @@
 #include <mach/mt_clock_manager.h>
 #include <mach/mt_dramc.h>
 #include <linux/module.h>
-extern void mt6577_uart_update_sysclk(void);
 
 
 #define DRAMC_PD_CTRL      (DRAM_CTR_BASE + 0x01DC)
@@ -28,10 +27,10 @@ static spinlock_t dram_lock;
 static unsigned int default_free_run_clock;
 static unsigned int default_dram_clock;
 static unsigned int cur_dram_clk;
-
-static int get_ddr_type (void)
+extern void *mtk_uart_update_sysclk(void)__attribute__((weak));
+int get_ddr_type (void)
 {
-    return (*(volatile unsigned int *)(DRAM_CTR_BASE + 0x00D8) & 0xC0000000)? 1: 2;
+    return (*(volatile unsigned int *)(DRAM_CTR_BASE + 0x00D8) & 0xC0000000)? ((*(volatile unsigned int *)(APMIXED_BASE + 0x0204) & 0x00000020) ? 1 : 3): 2;
 }
 
 static int lpddr_downgrade_clock(int clk)
@@ -200,7 +199,16 @@ static int lpddr_downgrade_clock(int clk)
 
     spin_unlock_irqrestore(&dram_lock, flags);
 
-    mt6577_uart_update_sysclk();
+
+    if(mtk_uart_update_sysclk)
+    {
+       mtk_uart_update_sysclk();
+        /* END */
+    }
+    else
+    {
+      printk("UART Driver has not provide mtk_uart_update_sysclk\r\nPlease contact with Haow Wang \n");
+    }
 
     return 0;
 }
@@ -377,7 +385,16 @@ static int lpddr2_downgrade_clock(int clk)
 
     spin_unlock_irqrestore(&dram_lock, flags);
 
-    mt6577_uart_update_sysclk();
+
+    if(mtk_uart_update_sysclk)
+    {
+       mtk_uart_update_sysclk();
+        /* END */
+    }
+    else
+    {
+      printk("UART Driver has not provide mtk_uart_update_sysclk\r\nPlease contact with Haow Wang \n");
+    }
 
     return 0;
 }
@@ -481,6 +498,51 @@ static ssize_t dram_refresh_store(struct device_driver *driver, const char *buf,
 
 DRIVER_ATTR(refresh_clock, 0664, dram_refresh_show, dram_refresh_store);
 
+#define DRAMC_MIOCKCTRLOFF      (1 << 26)
+
+unsigned int get_dram_clk_gating(void)
+{
+    return ((REG_DRAMC_PD_CTRL & DRAMC_MIOCKCTRLOFF) >> 26);
+}
+
+int set_dram_clk_gating(int val)
+{
+    if(val == 1){
+        REG_DRAMC_PD_CTRL |= DRAMC_MIOCKCTRLOFF;
+    } else if(val == 0) {
+        REG_DRAMC_PD_CTRL &= ~DRAMC_MIOCKCTRLOFF;
+    } else {
+        printk("Invalid DRAMC Register Setting\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static ssize_t dram_clk_gating_show(struct device_driver *driver, char *buf)
+{
+    return snprintf(buf, PAGE_SIZE, "%s\n", ((REG_DRAMC_PD_CTRL & DRAMC_MIOCKCTRLOFF) >> 26) == 1 ? "Always No Gating" : "Controlled by DRAMC" );
+}
+
+static ssize_t dram_clk_gating_store(struct device_driver *driver, const char *buf, size_t count)
+{
+    unsigned int bit;
+
+    bit = simple_strtol(buf, 0, 10);
+
+    if(bit == 1){
+        REG_DRAMC_PD_CTRL |= DRAMC_MIOCKCTRLOFF;
+    } else if(bit == 0) {
+        REG_DRAMC_PD_CTRL &= ~DRAMC_MIOCKCTRLOFF;
+    } else {
+        printk("Invalid DRAMC Register Setting\n");
+    }
+
+    return count;
+}
+
+DRIVER_ATTR(dram_clk_gating, 0664, dram_clk_gating_show, dram_clk_gating_store);
+
 struct dramc_driver {
     struct device_driver driver;
     const struct platform_device_id *id_table;
@@ -523,6 +585,13 @@ int __init dram_clock_init(void)
     if (ret)
     {
         printk("fail to create the dram clock sysfs file\n");
+        return ret;
+    }
+
+    ret = driver_create_file(&dram_clock_drv.driver, &driver_attr_dram_clk_gating);
+    if (ret)
+    {
+        printk("fail to create the dram clock gating sysfs file\n");
         return ret;
     }
 

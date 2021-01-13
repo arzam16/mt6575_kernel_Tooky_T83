@@ -13,6 +13,14 @@
 
 /*
 ** $Log: wapi.c $
+** 
+** 10 24 2012 wh.su
+** [ALPS00376392] [klocwork 9.1]  in  wapi.c, line 344
+** Use MAX_NUM_SUPPORTED_WAPI_AKM_SUITESfor avoid Klocwork warning.
+** 
+** 10 24 2012 wh.su
+** [ALPS00376391] [klocwork 9.1]  in  wapi.c, line 311
+** Use the MAX_NUM_SUPPORTED_WAPI_CIPHER_SUITES for avoid Klccwork waring.
  *
  * 11 10 2011 wh.su
  * [WCXRP00001078] [MT6620 Wi-Fi][Driver] Adding the mediatek log improment support : XLOG
@@ -300,8 +308,8 @@ wapiParseWapiIE (
 
     if (pucPairSuite) {
         /* The information about the pairwise key cipher suites is present. */
-        if (u2PairSuiteCount > MAX_NUM_SUPPORTED_CIPHER_SUITES) {
-            u2PairSuiteCount = MAX_NUM_SUPPORTED_CIPHER_SUITES;
+        if (u2PairSuiteCount > MAX_NUM_SUPPORTED_WAPI_CIPHER_SUITES) {
+            u2PairSuiteCount = MAX_NUM_SUPPORTED_WAPI_CIPHER_SUITES;
         }
 
         prWapiInfo->u4PairwiseKeyCipherSuiteCount = (UINT_32) u2PairSuiteCount;
@@ -334,8 +342,8 @@ wapiParseWapiIE (
     if (pucAuthSuite) {
         /* The information about the authentication and key management suites
            is present. */
-        if (u2AuthSuiteCount > MAX_NUM_SUPPORTED_AKM_SUITES) {
-            u2AuthSuiteCount = MAX_NUM_SUPPORTED_AKM_SUITES;
+        if (u2AuthSuiteCount > MAX_NUM_SUPPORTED_WAPI_AKM_SUITES) {
+            u2AuthSuiteCount = MAX_NUM_SUPPORTED_WAPI_AKM_SUITES;
         }
 
         prWapiInfo->u4AuthKeyMgtSuiteCount = (UINT_32) u2AuthSuiteCount;

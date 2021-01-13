@@ -53,6 +53,8 @@ extern struct device_type i2c_adapter_type;
 
 #define I2C_POLLING_FLAG (0x00000001)
 //#define I2C_PUSHPULL_FLAG (0x00000002)
+#define I2C_3DCAMERA_FLAG (0x00000004)
+#define I2C_DIRECTION_FLAG (0x00000008)
 /* --- General options ------------------------------------------------	*/
 
 struct i2c_msg;
@@ -76,6 +78,11 @@ extern int i2c_master_send(const struct i2c_client *client, const char *buf,
 extern int i2c_master_recv(const struct i2c_client *client, char *buf,
 			   int count);
 
+extern int mt_i2c_master_send(const struct i2c_client *client, const char *buf,
+			   int count, u32 ext_flag);
+
+extern int mt_i2c_master_recv(const struct i2c_client *client, char *buf,
+			   int count, u32 ext_flag);
 /* Transfer num messages.
  */
 extern int i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs,

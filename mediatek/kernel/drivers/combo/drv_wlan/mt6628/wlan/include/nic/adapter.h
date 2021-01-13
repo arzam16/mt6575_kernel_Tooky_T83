@@ -13,10 +13,6 @@
 
 /*
 ** $Log: adapter.h $
-**
-** 11 29 2012 cp.wu
-** [ALPS00403868] WIFI«ÝÉó?¬y?¤j
-** sync with MT6620 logic to not retry connection when being disconnected by the remote peer.
 ** 
 ** 08 31 2012 yuche.tsai
 ** [ALPS00349585] [6577JB][WiFi direct][KE]Establish p2p connection while both device have connected to AP previously,one device reboots automatically with KE
@@ -739,6 +735,9 @@ typedef struct _CONNECTION_SETTINGS_T {
     /* b0~3: trigger-en AC0~3. b4~7: delivery-en AC0~3 */
     UINT_8                          bmfgApsdEnAc;
 
+    /* for RSN info store, when upper layer set rsn info */
+    RSN_INFO_T                      rRsnInfo;
+
 } CONNECTION_SETTINGS_T, *P_CONNECTION_SETTINGS_T;
 
 struct _BSS_INFO_T {
@@ -1049,6 +1048,9 @@ typedef struct _WIFI_VAR_T {
     BOOLEAN                 fgSupportTspec;
     BOOLEAN                 fgSupportUAPSD;
     BOOLEAN                 fgSupportULPSMP;
+    UINT_8                  u8SupportRxSgi20; /* 0: default 1: enable 2:disble */
+    UINT_8                  u8SupportRxSgi40;
+    UINT_8                  u8SupportRxGf;
 
 #if CFG_SLT_SUPPORT
     SLT_INFO_T      rSltInfo;
@@ -1302,7 +1304,8 @@ struct _ADAPTER_T {
 #endif
 
     BOOL fgDisStaAgingTimeoutDetection;
-
+	UINT_32   u4FwCompileFlag0;
+    UINT_32   u4FwCompileFlag1;
 };/* end of _ADAPTER_T */
 
 /*******************************************************************************

@@ -12,6 +12,12 @@
 
 /*
 ** $Log: p2p_fsm.c $
+**
+** 12 20 2012 yuche.tsai
+** [ALPS00410124] [Rose][Free Test][KE][rlmUpdateParamsForAP]The device reboot automaticly and then "Fatal/Kernel" pops up during use data service.(Once)
+** Fix possible NULL station record cause KE under AP mode.
+** May due to variable uninitial.
+** Review: http://mtksap20:8080/go?page=NewReview&reviewid=49970
 ** 
 ** 09 12 2012 wcpadmin
 ** [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
@@ -857,6 +863,16 @@ static PUINT_8 apucDebugP2pState[P2P_STATE_NUM] = {
     (PUINT_8)DISP_STRING("P2P_STATE_GC_JOIN")
 };
 /*lint -restore */
+#else
+static UINT_8 apucDebugP2pState[P2P_STATE_NUM] = {
+    P2P_STATE_IDLE,
+    P2P_STATE_SCAN,
+    P2P_STATE_AP_CHANNEL_DETECT,
+    P2P_STATE_REQING_CHANNEL,
+    P2P_STATE_CHNL_ON_HAND,
+    P2P_STATE_GC_JOIN
+};
+
 #endif /* DBG */
 
 
@@ -902,6 +918,7 @@ p2pFsmInit (
 
         prP2pFsmInfo->eCurrentState = prP2pFsmInfo->ePreviousState = P2P_STATE_IDLE;
         prP2pFsmInfo->prTargetBss = NULL;
+		prP2pFsmInfo->fgIsWPSMode = 0;
 
         cnmTimerInitTimer(prAdapter,
                             &(prP2pFsmInfo->rP2pFsmTimeoutTimer),
@@ -1063,9 +1080,15 @@ p2pFsmStateTransition (
         fgIsTransOut = fgIsTransOut?FALSE:TRUE;
 
         if (!fgIsTransOut) {
+            #if DBG
             DBGLOG(P2P, STATE, ("TRANSITION: [%s] -> [%s]\n",
                                 apucDebugP2pState[prP2pFsmInfo->eCurrentState],
                                 apucDebugP2pState[eNextState]));
+            #else
+            DBGLOG(P2P, STATE, ("[%d] TRANSITION: [%d] -> [%d]\n", 
+                                DBG_P2P_IDX, apucDebugP2pState[prP2pFsmInfo->eCurrentState], 
+                                apucDebugP2pState[eNextState]));
+            #endif
 
             /* Transition into current state. */
             prP2pFsmInfo->ePreviousState = prP2pFsmInfo->eCurrentState;
@@ -1409,7 +1432,6 @@ p2pFsmRunEventChannelRequest (
     )
 {
     P_P2P_CHNL_REQ_INFO_T prChnlReqInfo = (P_P2P_CHNL_REQ_INFO_T)NULL;
-	P_P2P_CHNL_REQ_INFO_T prBackupChnlReqInfo = (P_P2P_CHNL_REQ_INFO_T)NULL;
     P_MSG_P2P_CHNL_REQUEST_T prP2pChnlReqMsg = (P_MSG_P2P_CHNL_REQUEST_T)NULL;
     P_P2P_FSM_INFO_T prP2pFsmInfo = (P_P2P_FSM_INFO_T)NULL;
     ENUM_P2P_STATE_T eNextState = P2P_STATE_NUM;
@@ -1425,8 +1447,6 @@ p2pFsmRunEventChannelRequest (
         }
         
         prChnlReqInfo = &(prP2pFsmInfo->rChnlReqInfo);
-		prBackupChnlReqInfo = &(prP2pFsmInfo->rBackupChnlReqInfo);
-		kalMemZero(prBackupChnlReqInfo, sizeof(P2P_CHNL_REQ_INFO_T));
 
         DBGLOG(P2P, TRACE, ("p2pFsmRunEventChannelRequest\n"));
 
@@ -1446,37 +1466,18 @@ p2pFsmRunEventChannelRequest (
             eNextState = P2P_STATE_CHNL_ON_HAND;
         }
         else {
-			
-          
-			      if ((prP2pFsmInfo->eCurrentState == P2P_STATE_REQING_CHANNEL || prP2pFsmInfo->eCurrentState == P2P_STATE_CHNL_ON_HAND) &&
-				  	   (prChnlReqInfo->fgIsChannelRequested)) {
 
-					   /* Backup the second remain on channel req if supplicant send two series  */
-					   /* Resume it after ChannelAbort  */
-					   prBackupChnlReqInfo->u8Cookie = prP2pChnlReqMsg->u8Cookie;  /* Cookie can only be assign after abort.(for indication) */
-            		   prBackupChnlReqInfo->ucReqChnlNum = prP2pChnlReqMsg->rChannelInfo.ucChannelNum;
-            		   prBackupChnlReqInfo->eBand = prP2pChnlReqMsg->rChannelInfo.eBand;
-            		   prBackupChnlReqInfo->eChnlSco = prP2pChnlReqMsg->eChnlSco;
-            		   prBackupChnlReqInfo->u4MaxInterval = prP2pChnlReqMsg->u4Duration;
-            		   prBackupChnlReqInfo->eChannelReqType = CHANNEL_REQ_TYPE_REMAIN_ON_CHANNEL;
+            // Make sure the state is in IDLE state.
+            p2pFsmRunEventAbort(prAdapter, prP2pFsmInfo);
 
-					   break;
-						
-			      }
-				  else{
+            prChnlReqInfo->u8Cookie = prP2pChnlReqMsg->u8Cookie;  /* Cookie can only be assign after abort.(for indication) */
+            prChnlReqInfo->ucReqChnlNum = prP2pChnlReqMsg->rChannelInfo.ucChannelNum;
+            prChnlReqInfo->eBand = prP2pChnlReqMsg->rChannelInfo.eBand;
+            prChnlReqInfo->eChnlSco = prP2pChnlReqMsg->eChnlSco;
+            prChnlReqInfo->u4MaxInterval = prP2pChnlReqMsg->u4Duration;
+            prChnlReqInfo->eChannelReqType = CHANNEL_REQ_TYPE_REMAIN_ON_CHANNEL;
 
-            		   // Make sure the state is in IDLE state.
-            		   p2pFsmRunEventAbort(prAdapter, prP2pFsmInfo);
-
-           		       prChnlReqInfo->u8Cookie = prP2pChnlReqMsg->u8Cookie;  /* Cookie can only be assign after abort.(for indication) */
-            		   prChnlReqInfo->ucReqChnlNum = prP2pChnlReqMsg->rChannelInfo.ucChannelNum;
-            		   prChnlReqInfo->eBand = prP2pChnlReqMsg->rChannelInfo.eBand;
-            		   prChnlReqInfo->eChnlSco = prP2pChnlReqMsg->eChnlSco;
-            		   prChnlReqInfo->u4MaxInterval = prP2pChnlReqMsg->u4Duration;
-            		   prChnlReqInfo->eChannelReqType = CHANNEL_REQ_TYPE_REMAIN_ON_CHANNEL;
-
-            		   eNextState = P2P_STATE_REQING_CHANNEL;
-			      }
+            eNextState = P2P_STATE_REQING_CHANNEL;
         }
 
         p2pFsmStateTransition(prAdapter, prP2pFsmInfo, eNextState);
@@ -1501,7 +1502,6 @@ p2pFsmRunEventChannelAbort (
     P_P2P_FSM_INFO_T prP2pFsmInfo = (P_P2P_FSM_INFO_T)NULL;
     P_MSG_P2P_CHNL_ABORT_T prChnlAbortMsg = (P_MSG_P2P_CHNL_ABORT_T)NULL;
     P_P2P_CHNL_REQ_INFO_T prChnlReqInfo = (P_P2P_CHNL_REQ_INFO_T)NULL;
-	P_P2P_CHNL_REQ_INFO_T prBackupChnlReqInfo = (P_P2P_CHNL_REQ_INFO_T)NULL;
 
     do {
         ASSERT_BREAK((prAdapter != NULL) && (prMsgHdr != NULL));
@@ -1514,7 +1514,6 @@ p2pFsmRunEventChannelAbort (
         }
 
         prChnlReqInfo = &prP2pFsmInfo->rChnlReqInfo;
-		prBackupChnlReqInfo = &(prP2pFsmInfo->rBackupChnlReqInfo);
 
         DBGLOG(P2P, TRACE, ("p2pFsmRunEventChannelAbort\n"));
 
@@ -1532,26 +1531,6 @@ p2pFsmRunEventChannelAbort (
     if (prMsgHdr) {
         cnmMemFree(prAdapter, prMsgHdr);
     }
-
-	/* Resume backup ChnlReq after ChannelAbort  */
-	if ((prP2pFsmInfo->eCurrentState == P2P_STATE_IDLE ) &&
-		(prChnlReqInfo->fgIsChannelRequested == FALSE) &&
-		(prBackupChnlReqInfo->u8Cookie != NULL)) {
-
-		prChnlReqInfo->u8Cookie = prBackupChnlReqInfo->u8Cookie;  /* Cookie can only be assign after abort.(for indication) */
-        prChnlReqInfo->ucReqChnlNum = prBackupChnlReqInfo->ucReqChnlNum;
-        prChnlReqInfo->eBand = prBackupChnlReqInfo->eBand;
-        prChnlReqInfo->eChnlSco = prBackupChnlReqInfo->eChnlSco;
-        prChnlReqInfo->u4MaxInterval = prBackupChnlReqInfo->u4MaxInterval;
-        prChnlReqInfo->eChannelReqType = CHANNEL_REQ_TYPE_REMAIN_ON_CHANNEL;
-		
-		kalMemZero(prBackupChnlReqInfo, sizeof(P2P_CHNL_REQ_INFO_T));
-		
-		p2pFsmStateTransition(prAdapter, prP2pFsmInfo, P2P_STATE_REQING_CHANNEL);
-
-	}
-	
-	
 
     return;
 } /* p2pFsmRunEventChannelAbort */
@@ -1774,29 +1753,6 @@ p2pFsmRunEventFsmTimeout (
         case P2P_STATE_CHNL_ON_HAND:
             {
                 p2pFsmStateTransition(prAdapter, prP2pFsmInfo, P2P_STATE_IDLE);
-                P_P2P_CHNL_REQ_INFO_T prChnlReqInfo = (P_P2P_CHNL_REQ_INFO_T)NULL;
-                P_P2P_CHNL_REQ_INFO_T prBackupChnlReqInfo = (P_P2P_CHNL_REQ_INFO_T)NULL;
-
-                /* Resume backup ChnlReq after ChannelAbort  */
-                prChnlReqInfo = &prP2pFsmInfo->rChnlReqInfo;
-		            prBackupChnlReqInfo = &(prP2pFsmInfo->rBackupChnlReqInfo);
-		            
-                if ((prP2pFsmInfo->eCurrentState == P2P_STATE_IDLE ) &&
-                (prChnlReqInfo->fgIsChannelRequested == FALSE) &&
-                (prBackupChnlReqInfo->u8Cookie != NULL)) {
-
-                   prChnlReqInfo->u8Cookie = prBackupChnlReqInfo->u8Cookie;  /* Cookie can only be assign after abort.(for indication) */
-                   prChnlReqInfo->ucReqChnlNum = prBackupChnlReqInfo->ucReqChnlNum;
-                   prChnlReqInfo->eBand = prBackupChnlReqInfo->eBand;
-                   prChnlReqInfo->eChnlSco = prBackupChnlReqInfo->eChnlSco;
-                   prChnlReqInfo->u4MaxInterval = prBackupChnlReqInfo->u4MaxInterval;
-                   prChnlReqInfo->eChannelReqType = CHANNEL_REQ_TYPE_REMAIN_ON_CHANNEL;
-		
-                   kalMemZero(prBackupChnlReqInfo, sizeof(P2P_CHNL_REQ_INFO_T));
-		
-                   p2pFsmStateTransition(prAdapter, prP2pFsmInfo, P2P_STATE_REQING_CHANNEL);
-
-                }
             }
             break;
 //        case P2P_STATE_GC_JOIN:
@@ -2100,6 +2056,8 @@ p2pFsmRunEventBeaconUpdate (
 
         DBGLOG(P2P, TRACE, ("p2pFsmRunEventBeaconUpdate\n"));
 
+		printk("p2pFsmRunEventBeaconUpdate\n");
+
         prP2pFsmInfo = prAdapter->rWifiVar.prP2pFsmInfo;
 
         if (prP2pFsmInfo == NULL) {
@@ -2180,6 +2138,10 @@ p2pFsmRunEventStopAP (
         nicDeactivateNetwork(prAdapter, NETWORK_TYPE_P2P_INDEX);
 
         nicActivateNetwork(prAdapter, NETWORK_TYPE_P2P_INDEX);
+
+#if CFG_SUPPORT_WFD
+        p2pFsmRunEventWfdSettingUpdate(prAdapter, NULL);
+#endif
 
         p2pFsmRunEventAbort(prAdapter, prAdapter->rWifiVar.prP2pFsmInfo);
 //        p2pFsmStateTransition(prAdapter, prAdapter->rWifiVar.prP2pFsmInfo, P2P_STATE_IDLE);
@@ -2458,11 +2420,7 @@ p2pFsmRunEventDeauthTxDone (
         prP2pBssInfo = &(prAdapter->rWifiVar.arBssInfo[NETWORK_TYPE_P2P_INDEX]);
         eOriMediaStatus = prP2pBssInfo->eConnectionState;
 
-        /* Change station state. */
-        cnmStaRecChangeState(prAdapter, prStaRec, STA_STATE_1);
 
-        /* Reset Station Record Status. */
-        p2pFuncResetStaRecStatus(prAdapter, prStaRec);
 
         /**/
         cnmStaRecFree(prAdapter, prStaRec, TRUE);
@@ -2473,10 +2431,11 @@ p2pFsmRunEventDeauthTxDone (
             p2pChangeMediaState(prAdapter, PARAM_MEDIA_STATE_DISCONNECTED);
         }
 
-        if (eOriMediaStatus != prP2pBssInfo->eConnectionState) {
+        /* Because the eConnectionState is changed before Deauth TxDone. Dont Check eConnectionState */
+        //if (eOriMediaStatus != prP2pBssInfo->eConnectionState) {
             /* Update Disconnected state to FW. */
             nicUpdateBss(prAdapter, NETWORK_TYPE_P2P_INDEX);
-        }
+        //}
 
 
     } while (FALSE);
@@ -2628,11 +2587,19 @@ p2pFsmRunEventJoinComplete (
 
                         prBssDesc->fgIsConnecting = FALSE;
 
+                        if( prStaRec->ucJoinFailureCount >=3) {
+
                         kalP2PGCIndicateConnectionStatus(prAdapter->prGlueInfo,
                                                                     &prP2pFsmInfo->rConnReqInfo,
                                                                     prJoinInfo->aucIEBuf,
                                                                     prJoinInfo->u4BufLength,
                                                                     prStaRec->u2StatusCode);
+                        }
+                        else {
+                            /* Sometime the GO is not ready to response auth. Connect it again*/
+                            prP2pFsmInfo->prTargetBss = NULL;
+                        }
+
 
                     }
 
@@ -2645,8 +2612,16 @@ p2pFsmRunEventJoinComplete (
         }
 
         if (prP2pFsmInfo->eCurrentState == P2P_STATE_GC_JOIN) {
+            
+            if(prAdapter->rWifiVar.arBssInfo[NETWORK_TYPE_P2P_INDEX].eConnectionState == PARAM_MEDIA_STATE_CONNECTED) {
             /* Return to IDLE state. */
             p2pFsmStateTransition(prAdapter, prP2pFsmInfo, P2P_STATE_IDLE);
+        }
+	    else {
+            //p2pFsmStateTransition(prAdapter, prP2pFsmInfo, P2P_STATE_IDLE);
+                 /* one more scan */
+                 p2pFsmStateTransition(prAdapter, prP2pFsmInfo, P2P_STATE_SCAN); 
+            }
         }
 
     } while (FALSE);
@@ -3047,6 +3022,62 @@ p2pFsmRunEventBeaconTimeout (
 
 
 
+#if CFG_SUPPORT_WFD
+VOID
+p2pFsmRunEventWfdSettingUpdate (
+    IN P_ADAPTER_T prAdapter,
+    IN P_MSG_HDR_T prMsgHdr
+    )
+{
+    P_WFD_CFG_SETTINGS_T prWfdCfgSettings = (P_WFD_CFG_SETTINGS_T)NULL;
+    P_MSG_WFD_CONFIG_SETTINGS_CHANGED_T prMsgWfdCfgSettings = (P_MSG_WFD_CONFIG_SETTINGS_CHANGED_T)NULL;
+    WLAN_STATUS rStatus;
+
+
+    DBGLOG(P2P, INFO,("p2pFsmRunEventWfdSettingUpdate\n"));
+
+    do {
+        ASSERT_BREAK((prAdapter != NULL));
+
+        if (prMsgHdr != NULL) {
+            prMsgWfdCfgSettings = (P_MSG_WFD_CONFIG_SETTINGS_CHANGED_T)prMsgHdr;
+            prWfdCfgSettings = prMsgWfdCfgSettings->prWfdCfgSettings;
+        }
+        else {
+            prWfdCfgSettings = &prAdapter->rWifiVar.prP2pFsmInfo->rWfdConfigureSettings;
+        }
+        
+        DBGLOG(P2P, INFO,("WFD Enalbe %x info %x state %x flag %x adv %x\n", 
+                    prWfdCfgSettings->ucWfdEnable,
+                    prWfdCfgSettings->u2WfdDevInfo, 
+                    prWfdCfgSettings->u4WfdState, 
+                    prWfdCfgSettings->u4WfdFlag, 
+                    prWfdCfgSettings->u4WfdAdvancedFlag));
+
+        rStatus = wlanSendSetQueryCmd (
+                        prAdapter,                  /* prAdapter */
+                        CMD_ID_SET_WFD_CTRL,   /* ucCID */
+                        TRUE,                       /* fgSetQuery */
+                        FALSE,                /* fgNeedResp */
+                        FALSE,                      /* fgIsOid */
+                        NULL,
+                        NULL,                       /* pfCmdTimeoutHandler */
+                        sizeof(WFD_CFG_SETTINGS_T),    /* u4SetQueryInfoLen */
+                        (PUINT_8)prWfdCfgSettings,     /* pucInfoBuffer */
+                        NULL,                       /* pvSetQueryBuffer */
+                        0                           /* u4SetQueryBufferLen */
+                        );
+
+    } while (FALSE);
+
+    return;
+
+}
+/* p2pFsmRunEventWfdSettingUpdate */
+
+#endif
+
+
 
 
 
@@ -3217,15 +3248,24 @@ p2pRunEventAAAComplete (
 
         bssRemoveStaRecFromClientList(prAdapter, prP2pBssInfo, prStaRec);
 
-        if (prP2pBssInfo->rStaRecOfClientList.u4NumElem >= P2P_MAXIMUM_CLIENT_COUNT ||
+        if (prP2pBssInfo->rStaRecOfClientList.u4NumElem > P2P_MAXIMUM_CLIENT_COUNT ||
             kalP2PMaxClients(prAdapter->prGlueInfo, prP2pBssInfo->rStaRecOfClientList.u4NumElem)) {
             rStatus = WLAN_STATUS_RESOURCES;
             break;
         }
-
-        bssAddStaRecToClientList(prAdapter, prP2pBssInfo, prStaRec);
+		if (prStaRec != NULL) {
+        	bssAddStaRecToClientList(prAdapter, prP2pBssInfo, prStaRec);
+		} else {
+			break;
+		}
 
         prStaRec->u2AssocId = bssAssignAssocID(prStaRec);
+        
+        if (prP2pBssInfo->rStaRecOfClientList.u4NumElem > P2P_MAXIMUM_CLIENT_COUNT ||
+            kalP2PMaxClients(prAdapter->prGlueInfo, prP2pBssInfo->rStaRecOfClientList.u4NumElem)) {
+            rStatus = WLAN_STATUS_RESOURCES;
+            break;
+        }
 
         cnmStaRecChangeState(prAdapter, prStaRec, STA_STATE_3);
 

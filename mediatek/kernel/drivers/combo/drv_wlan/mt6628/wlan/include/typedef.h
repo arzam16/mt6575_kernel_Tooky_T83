@@ -154,6 +154,9 @@
 
 #define WLAN_STATUS_BWCS_UPDATE            ((WLAN_STATUS) 0xC0010017L)
 
+#define WLAN_STATUS_CONNECT_INDICATION          ((WLAN_STATUS) 0xC0010018L)
+
+
 /* NIC status flags */
 #define ADAPTER_FLAG_HW_ERR                     0x00400000
 

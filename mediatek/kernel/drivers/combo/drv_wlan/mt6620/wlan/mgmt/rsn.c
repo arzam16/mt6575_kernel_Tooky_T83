@@ -740,6 +740,54 @@ rsnSearchSupportedCipher (
     return FALSE;
 }   /* rsnSearchSupportedCipher */
 
+/*----------------------------------------------------------------------------*/
+/*!
+* \brief Whether BSS RSN is matched from upper layer set.
+*
+* \param[in] prAdapter Pointer to the Adapter structure, BSS RSN Information
+*
+* \retval BOOLEAN
+*/
+/*----------------------------------------------------------------------------*/
+BOOLEAN
+rsnIsSuitableBSS (
+    IN P_ADAPTER_T          prAdapter,
+    IN P_RSN_INFO_T         prBssRsnInfo
+    )
+{
+    UINT_8 i = 0;
+
+    DEBUGFUNC("rsnIsSuitableBSS");
+
+    do{
+
+        if((prAdapter->rWifiVar.rConnSettings.rRsnInfo.u4GroupKeyCipherSuite & 0x000000FF) != \
+            GET_SELECTOR_TYPE(prBssRsnInfo->u4GroupKeyCipherSuite)){
+            DBGLOG(RSN, TRACE, ("Break by GroupKeyCipherSuite\n"));
+            break;
+        }
+        for(i = 0; i < prBssRsnInfo->u4PairwiseKeyCipherSuiteCount; i++){
+            if(((prAdapter->rWifiVar.rConnSettings.rRsnInfo.au4PairwiseKeyCipherSuite[0] & 0x000000FF) != \
+                GET_SELECTOR_TYPE(prBssRsnInfo->au4PairwiseKeyCipherSuite[i]))
+                && (i == prBssRsnInfo->u4PairwiseKeyCipherSuiteCount - 1) ){
+                DBGLOG(RSN, TRACE, ("Break by PairwiseKeyCipherSuite\n"));
+                break;
+            }
+        }
+        for(i = 0; i < prBssRsnInfo->u4AuthKeyMgtSuiteCount; i++){
+            if(((prAdapter->rWifiVar.rConnSettings.rRsnInfo.au4AuthKeyMgtSuite[0] & 0x000000FF) != \
+                GET_SELECTOR_TYPE(prBssRsnInfo->au4AuthKeyMgtSuite[0]))
+                && (i == prBssRsnInfo->u4AuthKeyMgtSuiteCount - 1)){
+                DBGLOG(RSN, TRACE, ("Break by AuthKeyMgtSuite \n"));
+                break;
+            }
+        }
+            return TRUE;
+        }while(FALSE);
+    return FALSE;
+}
+
+
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -899,6 +947,12 @@ rsnPerformPolicySelection (
         DBGLOG(RSN, TRACE, ("-- WEP-only legacy BSS\n"));
         return TRUE;
     }
+
+    if(!rsnIsSuitableBSS(prAdapter, prBssRsnInfo))
+     {
+        DBGLOG(RSN, TRACE, ("RSN info check no matched\n"));
+        return FALSE;
+     }
 
     if (prBssRsnInfo->u4PairwiseKeyCipherSuiteCount == 1 &&
         GET_SELECTOR_TYPE(prBssRsnInfo->au4PairwiseKeyCipherSuite[0]) ==
@@ -1302,6 +1356,7 @@ rsnGenerateWPAIE (
     PUCHAR                cp;
     PUINT_8               pucBuffer;
     ENUM_NETWORK_TYPE_INDEX_T eNetworkId;
+    P_P2P_SPECIFIC_BSS_INFO_T prP2pSpecificBssInfo;
 
     DEBUGFUNC("rsnGenerateWPAIE");
 
@@ -1313,6 +1368,7 @@ rsnGenerateWPAIE (
     ASSERT(pucBuffer);
 
     eNetworkId = (ENUM_NETWORK_TYPE_INDEX_T)prMsduInfo->ucNetworkType;
+    prP2pSpecificBssInfo = prAdapter->rWifiVar.prP2pSpecificBssInfo;
 
     //if (eNetworkId != NETWORK_TYPE_AIS_INDEX)
     //    return;
@@ -1330,6 +1386,14 @@ rsnGenerateWPAIE (
         (prAdapter->rWifiVar.rConnSettings.eAuthMode == AUTH_MODE_WPA_PSK)))) 
 #endif
     {
+        if (prP2pSpecificBssInfo->u2WpaIeLen != 0)
+        {
+            kalMemCopy(pucBuffer, prP2pSpecificBssInfo->aucWpaIeBuffer,
+                prP2pSpecificBssInfo->u2WpaIeLen);
+            prMsduInfo->u2FrameLength += prP2pSpecificBssInfo->u2WpaIeLen;
+            return;
+        }
+        
         /* Construct a WPA IE for association request frame. */
         WPA_IE(pucBuffer)->ucElemId = ELEM_ID_WPA;
         WPA_IE(pucBuffer)->ucLength = ELEM_ID_WPA_LEN_FIXED;

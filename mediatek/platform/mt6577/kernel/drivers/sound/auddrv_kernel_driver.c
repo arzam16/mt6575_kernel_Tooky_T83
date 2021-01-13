@@ -1,8 +1,67 @@
+/*******************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   auddrv_kernel_driver.c
+ *
+ * Project:
+ * --------
+ *   Android
+ *
+ * Description:
+ * ------------
+ *   Kernel Audio Driver
+ *
+ * Author:
+ * -------
+ *   Chipeng    (mtk02308)
+ *   Stan Huang (mtk01728)
+ *   Charlie Lu (mtk02328)
+ *
+ *------------------------------------------------------------------------------
+ * $Revision$
+ * $Modtime:$
+ * $Log:$
+ *
+ * 06 17 2012 weiguo.li
+ * [ALPS00302429] [Need Patch] [Volunteer Patch]modify speaker driver
+ * .
+ *
+ * 03 26 2012 weiguo.li
+ * [ALPS00258848] [Need Patch] [Volunteer Patch]I2c of speaker in ICS2
+ * Rollback //ALPS_SW/TRUNK/ALPS.ICS2/alps/mediatek/platform/mt6577/kernel/drivers/sound/auddrv_kernel_driver.c to revision 4
+ *
+ * 12 29 2011 weiguo.li
+ * [ALPS00108162] [Need Patch] [Volunteer Patch]mark amp registers
+ * .
+ *
+ * 11 10 2011 weiguo.li
+ * [ALPS00091610] [Need Patch] [Volunteer Patch]chang yusu_android_speaker.c function name and modules use it
+ * .
+ *
+ * 10 14 2011 weiguo.li
+ * [ALPS00080205] [Need Patch] [Volunteer Patch] add mutex for amp device
+ * .
+ *
+ * 09 28 2011 weiguo.li
+ * [ALPS00076254] [Need Patch] [Volunteer Patch]LGE audio driver using Voicebuffer for incall
+ * .
+ *
+ *
+ *
+ *******************************************************************************/
 
 
-
+/*****************************************************************************
+*                C O M P I L E R      F L A G S
+******************************************************************************
+*/
 #undef USE_TASKLET  //if undefined, remove tasklet and do handlings in ISR directly
 
+/*****************************************************************************
+*                E X T E R N A L      R E F E R E N C E S
+******************************************************************************
+*/
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -38,7 +97,7 @@
 //#include <asm/tcm.h>
 #include <linux/pmic6326_sw.h>
 #include <linux/xlog.h>
-#include <mach/mt_gpio.h>
+#include <mach/mtk_ccci_helper.h>
 #include <mach/mt_irq.h>
 #include <mach/mt_typedefs.h>
 #include <mach/mt_clock_manager.h>
@@ -64,18 +123,26 @@ extern int cust_matv_gpio_on(void);
 extern int cust_matv_gpio_off(void);
 #endif
 
+/*****************************************************************************
+*                          C O N S T A N T S
+******************************************************************************
+*/
 #define AUDDRV_NAME   "MediaTek Audio Driver"
 #define AUDDRV_AUTHOR "MediaTek WCX"
 
+//#define JB_MIGRATION_BUILD_TEMP_REMOVE  // only enable during JB migration
 
 // internal memory usage
 #define AFE_BUF_LENGTH 0x3000   // 12k bytes
 #define AWB_BUF_LENGTH 0x5000  //20K bytes
 #define I2S_BUF_MAX    0x5000   // 20k bytes
 
-#ifdef CONFIG_ARCH_MT6575
+#ifndef AUD_AFE_MCU_IRQ_LINE
+//#ifdef CONFIG_ARCH_MT6575
 #define AUD_AFE_MCU_IRQ_LINE    MT_AFE_MCU_IRQ_ID
-
+//#else
+//#define AUD_AFE_MCU_IRQ_LINE    MT_AFE_IRQ_ID
+//#endif
 #endif
 
 #define AUD_DUMPFTRACE
@@ -99,6 +166,10 @@ extern int cust_matv_gpio_off(void);
 
 #define AUD_SRAMPRINTK
 
+//Enable to use ccci to lock/unlock md bus clock
+#if defined(CONFIG_ARCH_MT6577)||defined(MTK_AUD_LOCK_MD_SLEEP_SUPPORT)
+#define USE_CCCI_SET_ANA_CLK
+#endif
 typedef enum
 {
     DAI_STOP,
@@ -112,6 +183,10 @@ typedef enum
 
 #define    AUD_SYSRAM_ALLOC_TIMEOUT   (100)  //= 100ms
 #define    DL1_USE_SYSRAM //Audio DL1 playback use slave mode by MMsys memory
+/*****************************************************************************
+*                         D A T A      T Y P E S
+******************************************************************************
+*/
 typedef struct
 {
    volatile UINT32 Suspend_AUDIO_TOP_CON0;
@@ -203,6 +278,10 @@ typedef struct
 
 }AudDrv_Suspend_Reg;
 
+/*****************************************************************************
+*           V A R I A B L E     D E L A R A T I O N
+******************************************************************************
+*/
 static struct fasync_struct  *AudDrv_async = NULL;
 static AFE_DL_CONTROL_T      AFE_dl_Control_context;
 static AFE_DL_CONTROL_T      *AFE_dl_Control = &AFE_dl_Control_context;   // main control of AFE
@@ -244,13 +323,14 @@ atomic_t Aud_AWB_Clk_cntr = ATOMIC_INIT(0);
 static int        Aud_AWB_Clk_cntr    = 0;
 static int        Aud_ANA_Clk_cntr    = 0;
 #endif
+static int        Suspend_Aud_ANA_Clk_cntr = 0;
 //static kal_bool   AMP_Flag            = false; // AMP status
-static kal_bool   AWB_Timer_Flag  = false; // AWB_timer_Flaer
-static kal_bool   IsSuspen            = false; // is suspend flag
-static kal_bool   Flag_AudDrv_ClkOn_1st  = false; // 1st AudDrv ClkOn
-static kal_bool   Flag_Aud_DL1_SlaveOn   = false;
-static kal_bool   b_reset_afe_pwr        = false;
-static kal_bool   b_reset_i2s_pwr        = false;
+static kal_bool   AWB_Timer_Flag  = KAL_FALSE; // AWB_timer_Flaer
+static kal_bool   IsSuspen            = KAL_FALSE; // is suspend flag
+static kal_bool   Flag_AudDrv_ClkOn_1st  = KAL_FALSE; // 1st AudDrv ClkOn
+static kal_bool   Flag_Aud_DL1_SlaveOn   = KAL_FALSE;
+static kal_bool   b_reset_afe_pwr        = KAL_FALSE;
+static kal_bool   b_reset_i2s_pwr        = KAL_FALSE;
 static int        b_adc_clk_on           = 0;
 static int        b_i2s_clk_on           = 0;
 static int        b_afe_clk_on           = 0;
@@ -281,6 +361,10 @@ static u64        AudDrv_dmamask      = 0xffffffffUL;
 static struct timer_list AWB_timer;
 //For AUDIO_HQA
 static int g4SpeakerType = SPKAMP_CLASSD;
+/*****************************************************************************
+*           F U N C T I O N      D E L A R A T I O N
+******************************************************************************
+*/
 static int AudDrv_fasync(int fd, struct file *flip, int mode);
 static int AudDrv_remap_mmap(struct file *flip, struct vm_area_struct *vma);
 static int AudDrv_Read_Procmem(char *buf,char **start, off_t offset, int count , int *eof, void *data);
@@ -319,6 +403,10 @@ static int AudDrv_DL_Handling(void);
 void AudDrv_I2Sin_Handling(void);
 
 extern void copy_to_user_fake( char* Read_Data_Ptr , int read_size);
+/*****************************************************************************
+*                  F U N C T I O N        D E F I N I T I O N
+******************************************************************************
+*/
 #if defined(MTK_HDMI_SUPPORT)
 extern int hdmi_audio_config(int samplerate);
 extern int hdmi_audio_delay_mute(int latency);
@@ -504,6 +592,21 @@ void AudDrv_AudReg_Log_Print(void)
     xlog_printk(ANDROID_LOG_INFO, "Sound","Aud_on     = %d\n",SPH_Ctrl_State.bAudioPlay);
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  LouderSPKSound
+ *
+ * DESCRIPTION
+ *  For testing. Fire a warning tone
+ *
+ * PARAMETERS
+ *  time  [in]  unit in ms
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 static void AudDrv_Store_Reg_LouderSPKSound(void)
 {
 	xlog_printk(ANDROID_LOG_INFO, "Sound","+AudDrv_Store_Reg_LouderSPKSound \n");
@@ -688,7 +791,8 @@ static void AudDrv_Store_reg(void)
 {
 	xlog_printk(ANDROID_LOG_INFO, "Sound","+AudDrv_Store_reg \n");
 
-   AudDrv_Clk_On();
+   //AudDrv_Clk_On();
+   /*
    // Digital register setting
    Suspend_reg.Suspend_AFE_DAC_CON0    = Afe_Get_Reg(AFE_DAC_CON0);
    Suspend_reg.Suspend_AFE_DAC_CON1    = Afe_Get_Reg(AFE_DAC_CON1);
@@ -725,6 +829,7 @@ static void AudDrv_Store_reg(void)
    Suspend_reg.Suspend_AFE_TOP_CONTROL_0 = Afe_Get_Reg(AFE_TOP_CONTROL_0);
 
    Suspend_reg.Suspend_AFE_SDM_GAIN_STAGE = Afe_Get_Reg(AFE_SDM_GAIN_STAGE);
+*/
 #ifdef AUD_SRAMPRINTK
    aee_sram_printk("AudDrv_Store_reg AFE done \n");
 #endif
@@ -775,14 +880,14 @@ static void AudDrv_Store_reg(void)
    Suspend_reg.Suspend_WR_PATH0 = Ana_Get_Reg(WR_PATH0);
 
 //   Afe_Set_Reg(AFE_DAC_CON0,0x0,0xffffffff); // turn off all module
-   Afe_Set_Reg(AFE_IR_CLR,0x001f,0x00ff);    // clear interrupt
+   //Afe_Set_Reg(AFE_IR_CLR,0x001f,0x00ff);    // clear interrupt
 //   mdelay(5);                                // wait for a shor latency
 //   Afe_Set_Reg(AFE_IR_CLR,0x001f,0x00ff);    // clear interrupt
 #ifdef AUD_SRAMPRINTK
       aee_sram_printk("AudDrv_Store_reg ANA done \n");
 #endif
 
-   AudDrv_Clk_Off();
+   //AudDrv_Clk_Off();
 	PRINTK_AUDDRV("-AudDrv_Store_reg \n");
 }
 
@@ -837,8 +942,9 @@ static void AudDrv_Store_reg_AFE(void)
 static void AudDrv_Recover_reg(void)
 {
    xlog_printk(ANDROID_LOG_INFO, "Sound","+AudDrv_Recover_reg\n");
-   AudDrv_Clk_On();
+   //AudDrv_Clk_On();
    xlog_printk(ANDROID_LOG_INFO, "Sound","++AudDrv_Recover_reg AudDrv_Clk_On() after\n");
+   /*
    // Digital register setting
    Afe_Set_Reg(AFE_DAC_CON1,Suspend_reg.Suspend_AFE_DAC_CON1, MASK_ALL);
    Afe_Set_Reg(AFE_I2S_IN_CON,Suspend_reg.Suspend_AFE_I2S_IN_CON, MASK_ALL);
@@ -873,6 +979,7 @@ static void AudDrv_Recover_reg(void)
    Afe_Set_Reg(AFE_TOP_CONTROL_0,Suspend_reg.Suspend_AFE_TOP_CONTROL_0, MASK_ALL);
 
    Afe_Set_Reg(AFE_SDM_GAIN_STAGE,Suspend_reg.Suspend_AFE_SDM_GAIN_STAGE, MASK_ALL);
+*/
 	#ifdef AUD_SRAMPRINTK
 	aee_sram_printk("AudDrv_Recover_reg AFE recover done \n");
 	#endif
@@ -909,10 +1016,35 @@ static void AudDrv_Recover_reg(void)
    Ana_Set_Reg(AUDIO_CON32,Suspend_reg.Suspend_AUDIO_CON32, MASK_ALL);
 
    xlog_printk(ANDROID_LOG_INFO, "Sound","--AudDrv_Recover_reg ANA done\n");
+/*
+   Ana_Set_Reg(VAUDN_CON0,Suspend_reg.Suspend_VAUDN_CON0, MASK_ALL);
+   Ana_Set_Reg(VAUDP_CON0,Suspend_reg.Suspend_VAUDP_CON0, MASK_ALL);
+   Ana_Set_Reg(VAUDP_CON1,Suspend_reg.Suspend_VAUDP_CON1, MASK_ALL);
+   Ana_Set_Reg(VAUDP_CON2,Suspend_reg.Suspend_VAUDP_CON2, MASK_ALL);
+   Ana_Set_Reg(VA12_CON0,Suspend_reg.Suspend_VA12_CON0, MASK_ALL);
+   Ana_Set_Reg(VMIC_CON0,Suspend_reg.Suspend_VMIC_CON0, MASK_ALL);
+   Ana_Set_Reg(VA25_CON0,Suspend_reg.Suspend_VA25_CON0, MASK_ALL);
+*/
+/*
+   Ana_Set_Reg(AUDIO_NCP0,Suspend_reg.Suspend_AUDIO_NCP0, MASK_ALL);
+   Ana_Set_Reg(AUDIO_NCP1,Suspend_reg.Suspend_AUDIO_NCP1, MASK_ALL);
+   Ana_Set_Reg(AUDIO_LDO0,Suspend_reg.Suspend_AUDIO_LDO0, MASK_ALL);
+   Ana_Set_Reg(AUDIO_LDO1,Suspend_reg.Suspend_AUDIO_LDO1, MASK_ALL);
+   Ana_Set_Reg(AUDIO_LDO2,Suspend_reg.Suspend_AUDIO_LDO2, MASK_ALL);
+   Ana_Set_Reg(AUDIO_LDO3,Suspend_reg.Suspend_AUDIO_LDO3, MASK_ALL);
+*/
    Ana_Set_Reg(AUDIO_GLB0,Suspend_reg.Suspend_AUDIO_GLB0, MASK_ALL);
+/*
+   Ana_Set_Reg(AUDIO_GLB1,Suspend_reg.Suspend_AUDIO_GLB1, MASK_ALL);
+   Ana_Set_Reg(AUDIO_GLB2,Suspend_reg.Suspend_AUDIO_GLB2, MASK_ALL);
+   Ana_Set_Reg(AUDIO_REG0,Suspend_reg.Suspend_AUDIO_REG0, MASK_ALL);
+   Ana_Set_Reg(AUDIO_REG1,Suspend_reg.Suspend_AUDIO_REG1, MASK_ALL);
+
+   Ana_Set_Reg(WR_PATH0,Suspend_reg.Suspend_WR_PATH0, MASK_ALL);
+*/
    AudDrv_ANA_Clk_Off();
    xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_Recover_reg  AudDrv_ANA_Clk_Off() \n");
-   AudDrv_Clk_Off();
+   //AudDrv_Clk_Off();
    xlog_printk(ANDROID_LOG_INFO, "Sound","-AudDrv_Recover_reg  AudDrv_Clk_Off()\n");
 	PRINTK_AUDDRV("-AudDrv_Recover_reg \n");
 }
@@ -973,7 +1105,7 @@ void Auddrv_AWB_timer_Routine(unsigned long data)
 
 	#if 0
 	 volatile kal_uint64 t1, t2;
-	 t1 = sched_clock();
+	 t1 = local_clock();
 	#endif
 
     PRINTK_AUDDRV("Auddrv_AWB_timer_Routine \n");
@@ -1022,7 +1154,7 @@ void Auddrv_AWB_timer_Routine(unsigned long data)
     wake_up_interruptible(&AWB_Wait_Queue);
     mod_timer(&AWB_timer, jiffies+msecs_to_jiffies(AWB_TIMER_INTERVAL));
 	 #if 0
-	 t2 = sched_clock() - t1; // in ns (10^9)
+	 t2 = local_clock() - t1; // in ns (10^9)
 	 xlog_printk(ANDROID_LOG_VERBOSE,"Sound","Auddrv_AWB_timer_Routine takes (%ld)ns\n",t2);
 	 #endif
 }
@@ -1034,12 +1166,12 @@ int Auddrv_AWB_timer_on(void)
 
 	 spin_lock_bh(&auddrv_lock);
 
-    if(AWB_Timer_Flag == false){
+    if(AWB_Timer_Flag == KAL_FALSE){
         AWB_timer.expires = jiffies + msecs_to_jiffies(AWB_TIMER_INTERVAL);
         AWB_timer.data = 0;
         AWB_timer.function = Auddrv_AWB_timer_Routine;
         add_timer(&AWB_timer);
-        AWB_Timer_Flag = true;
+        AWB_Timer_Flag = KAL_TRUE;
     }
 
 	 spin_unlock_bh(&auddrv_lock);
@@ -1052,8 +1184,8 @@ int Auddrv_AWB_timer_off(void)
     xlog_printk(ANDROID_LOG_INFO, "Sound","Auddrv_AWB_timer_off is called! \n");
 
 	 spin_lock_bh(&auddrv_lock);
-    if(AWB_Timer_Flag == true){
-        AWB_Timer_Flag = false;
+    if(AWB_Timer_Flag == KAL_TRUE){
+        AWB_Timer_Flag = KAL_FALSE;
         spin_unlock_bh(&auddrv_lock);
         del_timer_sync(&AWB_timer);
     }
@@ -1064,6 +1196,15 @@ int Auddrv_AWB_timer_off(void)
 }
 
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_allcate_AWB_buffer
+ *
+ * DESCRIPTION
+ *  allocate buffer for AWB
+ *
+ *****************************************************************************
+ */
 
 void AudDrv_allcate_AWB_buffer()
 {
@@ -1090,6 +1231,15 @@ void AudDrv_allcate_AWB_buffer()
    }
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Start_AWB_Stream / AudDrv_Standby_AWB_Stream
+ *
+ * DESCRIPTION
+ *  AEB enable /disable
+ *
+ *****************************************************************************
+ */
 
 void AudDrv_Start_AWB_Stream(struct file *fp)
 {
@@ -1215,6 +1365,15 @@ int AudDrv_CheckAudioHWStatus(void)
         ret = 1;
     return ret;
 }
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Clk_On / AudDrv_Clk_Off
+ *
+ * DESCRIPTION
+ *  Enable/Disable PLL(26M clock) \ AFE clock
+ *
+ *****************************************************************************
+ */
 void AudDrv_Clk_On(void)
 {
 	unsigned long flags;
@@ -1237,7 +1396,7 @@ void AudDrv_Clk_On(void)
 #else
       Afe_Set_Reg(AUDIO_TOP_CON0, 0x00000000, 0x0001000f);  //power on AFE clock
 #endif
-      Ana_Set_Reg(AUDIO_CON3,0x0,0x2);             // Enable Audio Bias (VaudlbiasDistrib)
+      //Ana_Set_Reg(AUDIO_CON3,0x0,0x2);             // Enable Audio Bias (VaudlbiasDistrib)
 
    }
    else
@@ -1269,7 +1428,7 @@ void AudDrv_Clk_Off(void)
       }
       {
          // Disable AFE clock
-         Ana_Set_Reg(AUDIO_CON3,0x2,0x2);       // Disable Audio Bias (VaudlbiasDistrib power down)
+         //Ana_Set_Reg(AUDIO_CON3,0x2,0x2);       // Disable Audio Bias (VaudlbiasDistrib power down)
 #ifdef USE_PM_API
          AudDrv_Store_reg_AFE();
 		 Afe_Set_Reg(AUDIO_TOP_CON0, 0x00010000, 0x00010000);  // bit16: power off AFE_CK_DIV_RST
@@ -1433,8 +1592,24 @@ void AudDrv_ANA_Clk_On(void)
    spin_lock_irqsave(&auddrv_ANACLKCtl_lock, flags);
    if(Aud_ANA_Clk_cntr == 0 )
    {
+   #if defined(USE_CCCI_SET_ANA_CLK)
+       int ret = 0;
+       char clk_en = 1; //0, disable bus clk, 1, enable bus clk
+   #endif
       PRINTK_AUDDRV("+AudDrv_ANA_Clk_On, Aud_ANA_Clk_cntr:%d \n", Aud_ANA_Clk_cntr);
-     sc_request_mdbus_clk(SC_MDBUS_USER_AUDIO);
+#if !defined(USE_CCCI_SET_ANA_CLK)
+      sc_request_mdbus_clk(SC_MDBUS_USER_AUDIO);
+#else
+      ret = exec_ccci_kern_func(ID_LOCK_MD_SLEEP, &clk_en, sizeof(char));
+      //ret=0, send msg OK;
+      //ret=-1, the function of send message isn't registered
+      //ret=-2, parameter error
+      //ret=-ESRCH, modem is in reset and can't send message to modem
+      //ret=-EBUSY, modem doesn't boot up ready and can't send message to modem
+      //ret=-ENXIO, physical channel is full and at this time can't send message to modem
+      if (ret < 0)
+        xlog_printk(ANDROID_LOG_ERROR, "Sound","AudDrv_ANA_Clk_On send ccci msg fail(%d)\n",ret);
+#endif
    }
    Aud_ANA_Clk_cntr++;
    spin_unlock_irqrestore(&auddrv_ANACLKCtl_lock, flags);
@@ -1455,8 +1630,24 @@ void AudDrv_ANA_Clk_Off(void)
    Aud_ANA_Clk_cntr--;
    if(Aud_ANA_Clk_cntr == 0)
    {
+#if defined(USE_CCCI_SET_ANA_CLK)
+       int ret = 0;
+       char clk_en = 0; //0, disable bus clk, 1, enable bus clk
+#endif
       PRINTK_AUDDRV("+ AudDrv_ANA_Clk_Off, Aud_ANA_Clk_cntr:%d \n",Aud_ANA_Clk_cntr);
+#if !defined(USE_CCCI_SET_ANA_CLK)
       sc_unrequest_mdbus_clk(SC_MDBUS_USER_AUDIO);
+#else
+      ret = exec_ccci_kern_func(ID_LOCK_MD_SLEEP, &clk_en, sizeof(char));
+      //ret=0, send msg OK;
+      //ret=-1, the function of send message isn't registered
+      //ret=-2, parameter error
+      //ret=-ESRCH, modem is in reset and can't send message to modem
+      //ret=-EBUSY, modem doesn't boot up ready and can't send message to modem
+      //ret=-ENXIO, physical channel is full and at this time can't send message to modem
+      if (ret < 0)
+        xlog_printk(ANDROID_LOG_ERROR, "Sound","AudDrv_ANA_Clk_On send ccci msg fail(%d)\n",ret);
+#endif
    }
    if(Aud_ANA_Clk_cntr < 0){
       xlog_printk(ANDROID_LOG_ERROR, "Sound","!! AudDrv_ANA_Clk_Off, Aud_ANA_Clk_cntr<0 (%d) \n",Aud_ANA_Clk_cntr);
@@ -1467,6 +1658,22 @@ void AudDrv_ANA_Clk_Off(void)
    PRINTK_AUDDRV("-!! AudDrv_ANA_Clk_Off, Aud_ANA_Clk_cntr:%d \n",Aud_ANA_Clk_cntr);
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_DL1_Stream_Standby
+ *
+ * DESCRIPTION
+ *  Stop the Output Stream. Reset the AFE block
+ *
+ * PARAMETERS
+ *  fp  [in]
+ *  arg [in] input argument
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 void AudDrv_DL1_Stream_Standby(struct file *fp,unsigned long arg)
 {
 	unsigned long flags;
@@ -1487,6 +1694,15 @@ void AudDrv_DL1_Stream_Standby(struct file *fp,unsigned long arg)
    PRINTK_AUDDRV("-AudDrv_DL1_Stream_Standby \n");
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Init_DL1_Stream, AudDrv_DeInit_DL1_Stream, AudDrv_Reset_DL1_Stream_Buf
+ *
+ * DESCRIPTION
+ *  Init/DeInit DL1 output Stream.
+ *
+ *****************************************************************************
+ */
 void AudDrv_Init_DL1_Stream(kal_uint32 Afe_Buf_Length)
 {
    kal_uint32 ptr = 0;
@@ -1528,6 +1744,7 @@ void AudDrv_Init_DL1_Stream(kal_uint32 Afe_Buf_Length)
             {
                 kal_uint32 u4PhyAddr = 0;
                 xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_Init_DL1_Stream MTxxx_SYSRAM_ALLOC \n");
+					 #ifndef JB_MIGRATION_BUILD_TEMP_REMOVE
                 u4PhyAddr = (kal_uint32)SYSRAM_AUDIO_ALLOC_TIMEOUT(AFE_dl_Control->rBlock.u4BufferSize,32,AUD_SYSRAM_ALLOC_TIMEOUT);
                 if((kal_uint32)NULL == u4PhyAddr){
                     xlog_printk(ANDROID_LOG_ERROR, "Sound","AudDrv_Init_DL1_Stream MTxxx_SYSRAM_ALLOC fail \n");
@@ -1536,6 +1753,7 @@ void AudDrv_Init_DL1_Stream(kal_uint32 Afe_Buf_Length)
                     SYSRAM_AUDIO_FREE();//deallocation to release mmsysram clock.
                     DL1InPhyBufAddr = u4PhyAddr;
                 }
+					 #endif
             }
             AFE_dl_Control->rBlock.pucPhysBufAddr = DL1InPhyBufAddr;
             AFE_dl_Control->rBlock.pucVirtBufAddr = (kal_uint8*)(AFE_dl_Control->rBlock.pucPhysBufAddr - MM_SYSRAM_BASE_PA) + SYSRAM_BASE;
@@ -1571,6 +1789,13 @@ void AudDrv_Init_DL1_Stream(kal_uint32 Afe_Buf_Length)
 
 	memset((void*)AFE_dl_Control->rBlock.pucVirtBufAddr,0,AFE_dl_Control->u4BufferSize);
 
+/*
+   ptr   = AFE_dl_Control->rBlock.pucPhysBufAddr;
+   align = (ptr & 0x1f);
+   ptr   = ptr + (32-align);
+   Afe_Set_Reg(AFE_DL1_BASE ,ptr                     ,0xffffffff);
+   Afe_Set_Reg(AFE_DL1_END  ,ptr+(Afe_Buf_Length -1) ,0xffffffff);
+*/
     if(!Flag_Aud_DL1_SlaveOn)
     {
         Afe_Set_Reg(AFE_DL1_BASE , AFE_dl_Control->rBlock.pucPhysBufAddr , 0xffffffff);
@@ -1597,7 +1822,9 @@ void AudDrv_DeInit_DL1_Stream(void)
                 */
                 {//Audio DL1 master mode used
 #ifdef DL1_USE_SYSRAM
+#ifndef JB_MIGRATION_BUILD_TEMP_REMOVE
                         SYSRAM_AUDIO_FREE();
+#endif
 #elif (!defined (DL1_USE_FLEXL2))
                         ////////////
                         // Use DMA free coherent
@@ -1666,11 +1893,29 @@ static bool AudDrv_Check(AFE_BLOCK_T *Afe_Block)
     }
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Do_Handling
+ *
+ * DESCRIPTION
+ *  1.Clear the IRQ
+ *  2.Handle different IRQ case
+ *  3.Update the parameters
+ *    HW read index(u4DMAReadIdx) and Data remained(u4DataRemained) in buffer
+ *
+ * PARAMETERS
+ *  None
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 void AudDrv_Do_Handling(void)  // ISR handling
 {
    unsigned long flags;
 	kal_int32 Afe_consumed_bytes = 0;
-	kal_uint32 Reg_AFE_IRQ_MCU_CNT1;
+	//kal_uint32 Reg_AFE_IRQ_MCU_CNT1;
 	AFE_BLOCK_T *Afe_Block = NULL;
 	kal_bool Check_Afe_Block;
 	kal_uint32 u4Afe_irq_status = 0;
@@ -1691,7 +1936,7 @@ void AudDrv_Do_Handling(void)  // ISR handling
 
 	 if(u4Afe_irq1_cnt > 0)
 	 {
-	 	t_ISRTime = sched_clock(); // in ns (10^9)
+	 	t_ISRTime = local_clock(); // in ns (10^9)
 	 }
 
    Afe_Block   = &(AFE_dl_Control->rBlock);
@@ -1719,9 +1964,9 @@ HW_READ_DATA_AGAIN:
    {
       u4Afe_irq_status &=(~IRQ1_MCU_CLR);
       PRINTK_AUDDRV("2Do_Handling Afe_irq_status=%x \n",u4Afe_irq_status);
-		//t1 = sched_clock(); // in ns (10^9)
+		//t1 = local_clock(); // in ns (10^9)
 		ret = AudDrv_DL_Handling();
-		//t2 = sched_clock(); // in ns (10^9)
+		//t2 = local_clock(); // in ns (10^9)
 		//xlog_printk(ANDROID_LOG_VERBOSE,"Sound","AudDrv_DL_Handling takes (%ld)ns\n",(t2-t1));
 		if(ret < 0)
 		{
@@ -1744,10 +1989,15 @@ HW_READ_DATA_AGAIN:
 		memset(Afe_Block->pucVirtBufAddr,0,Afe_Block->u4BufferSize);
 
 		spin_lock_irqsave(&auddrv_DL1Ctl_lock, flags);
+      #if 1 //ccc skype
+      Afe_Block->u4DMAReadIdx = 0;
+		Afe_consumed_bytes = 0;
+      #else
       Reg_AFE_IRQ_MCU_CNT1= Afe_Get_Reg(AFE_IRQ_CNT1);
       Afe_consumed_bytes = Reg_AFE_IRQ_MCU_CNT1<<2;
       Afe_Block->u4DMAReadIdx += Afe_consumed_bytes;
       Afe_Block->u4DMAReadIdx %= Afe_Block->u4BufferSize;
+      #endif
       if(Afe_Block->u4WriteIdx   > Afe_Block->u4DMAReadIdx){
           Afe_Block->u4DataRemained = Afe_Block->u4WriteIdx  -  Afe_Block->u4DMAReadIdx;
       }
@@ -1756,7 +2006,7 @@ HW_READ_DATA_AGAIN:
       }
 		spin_unlock_irqrestore(&auddrv_DL1Ctl_lock, flags);
 
-      Afe_Set_Reg(AFE_DAIBT_CON ,0x8, 0x8); // set data ready
+      Afe_Set_Reg(AFE_DAIBT_CON ,0x8, 0x8); // set data ready, may move to Afe_DL_Start(), ccc skype
       u4Afe_irq_status &=(~IRQ_MCU_DAI_SET_CLR);
       goto EXIT_HANDLING;
    }
@@ -1782,6 +2032,15 @@ EXIT_HANDLING:
    return ;
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Init_I2S_InputStream, AudDrv_DeInit_I2S_InputStream
+ *
+ * DESCRIPTION
+ *  Init/DeInit I2S input Stream.
+ *
+ *****************************************************************************
+ */
 void AudDrv_Init_I2S_InputStream(kal_uint32 I2S_Buffer_Length,struct file *fp)
 {
 	unsigned long flags;
@@ -1798,6 +2057,15 @@ void AudDrv_Init_I2S_InputStream(kal_uint32 I2S_Buffer_Length,struct file *fp)
 
 ////////////
 // Use SysRam (only for Test)
+/*
+   xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_Init_I2S_InputStream MT6573_SYSRAM_ALLOC \n");
+   I2S_input_Control->rBlock.pucPhysBufAddr = (void*)MT6573_SYSRAM_ALLOC(MT6573SYSRAMUSR_FD,I2S_input_Control->rBlock.u4BufferSize,32);
+   if(NULL == I2S_input_Control->rBlock.pucPhysBufAddr){
+      xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_Init_I2S_InputStream MT6573_SYSRAM_ALLOC fail \n");
+      return;
+   }
+   I2S_input_Control->rBlock.pucVirtBufAddr = (I2S_input_Control->rBlock.pucPhysBufAddr - MM_SYSRAM_BASE_PA) + MM_SYSRAM_BASE;
+*/
 
    I2S_input_Control->rBlock.pucPhysBufAddr = I2SInPhyBufAddr;
    I2S_input_Control->rBlock.pucVirtBufAddr = I2SInVirtBufAddr;
@@ -1926,6 +2194,10 @@ static int AudDrv_DL_Handling(void)
 		  if(Afe_consumed_bytes <0){
 			 Afe_consumed_bytes += Afe_Block->u4BufferSize;
 		  }
+/*
+		  Reg_AFE_IRQ_MCU_CNT1= Afe_Get_Reg(AFE_IRQ_CNT1);
+		  Afe_consumed_bytes = Reg_AFE_IRQ_MCU_CNT1<<2;
+*/
 		  PRINTK_AUDDRV("DL_Handling HW_con:%x \n",Afe_consumed_bytes);
 
 		  // 32 bytes alignment
@@ -1996,6 +2268,24 @@ static int AudDrv_DL_Handling(void)
 
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_I2Sin_Handling
+ *
+ * DESCRIPTION
+ *  1.Clear the IRQ
+ *  2.Handle different IRQ case
+ *  3.Update the parameters
+ *    HW read index(u4WriteIdx) and Data remained(u4DataRemained) in buffer
+ *
+ * PARAMETERS
+ *  None
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 void  AudDrv_I2Sin_Handling(void)
 {
    kal_int32 I2S_filled_bytes=0;
@@ -2056,6 +2346,22 @@ void  AudDrv_I2Sin_Handling(void)
    wake_up_interruptible(&I2Sin_Wait_Queue);
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_I2S_InputStream_Standby
+ *
+ * DESCRIPTION
+ *  Stop the Output Stream. Reset the I2S block
+ *
+ * PARAMETERS
+ *  fp  [in]
+ *  arg [in] input argument
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 void AudDrv_I2S_InputStream_Standby(struct file *fp,unsigned long arg)
 {
 	unsigned long flags;
@@ -2069,6 +2375,15 @@ void AudDrv_I2S_InputStream_Standby(struct file *fp,unsigned long arg)
 	spin_unlock_irqrestore(&auddrv_I2SInCtl_lock, flags);
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_IRQ_handler / AudDrv_magic_tasklet
+ *
+ * DESCRIPTION
+ *  IRQ handler
+ *
+ *****************************************************************************
+ */
 static irqreturn_t AudDrv_IRQ_handler(int irq, void *dev_id)
 {
    unsigned long flags;
@@ -2121,6 +2436,15 @@ static void AudDrv_magic_tasklet(unsigned long data)
 }
 #endif
 
+/*****************************************************************************
+ * FILE OPERATION FUNCTION
+ *  AudDrv_open / AudDrv_release
+ *
+ * DESCRIPTION
+ *
+ *
+ *****************************************************************************
+ */
 static int AudDrv_open(struct inode *inode, struct file *fp)
 {
    // do nothing
@@ -2138,13 +2462,22 @@ static int AudDrv_release(struct inode *inode, struct file *fp)
 	return 0;
 }
 
+/*****************************************************************************
+ * FILE OPERATION FUNCTION
+ *  AudDrv_ioctl
+ *
+ * DESCRIPTION
+ *  IOCTL Msg handle
+ *
+ *****************************************************************************
+ */
 
 static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 {
    int ret =0;
    Register_Control Reg_Data;
    AMP_Control AMPParam;
-   if((cmd!=AUDDRV_ENABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_DISABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_BEE_IOCTL)) //prevent additional time cost
+   if((cmd!=AUDDRV_ENABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_DISABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_BEE_IOCTL)&&(cmd!=AUD_SET_ANA_CLOCK)) //prevent additional time cost
    {
    AudDrv_Clk_On();
    }
@@ -2200,10 +2533,12 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
                spin_unlock_bh(&auddrv_lock);
 #if defined(DL1_USE_SYSRAM)
                //free sysram here
+               #ifndef JB_MIGRATION_BUILD_TEMP_REMOVE
                SYSRAM_AUDIO_FREE();
+					#endif
 #endif
                AudDrv_Clk_Off();
-               b_reset_afe_pwr = true;
+               b_reset_afe_pwr = KAL_TRUE;
             }
 
 				spin_lock_bh(&auddrv_lock);
@@ -2214,7 +2549,7 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
                spin_unlock_bh(&auddrv_lock);
                AudDrv_I2S_Clk_Off();
                AudDrv_Clk_Off();
-               b_reset_i2s_pwr = true;
+               b_reset_i2s_pwr = KAL_TRUE;
             }
 				else
 				{
@@ -2304,8 +2639,8 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
             Afe_Set_Reg(AFE_DL1_END  , AFE_dl_Control->rBlock.pucPhysBufAddr+(AFE_dl_Control->u4BufferSize -1) , 0xffffffff);
         }
 
-         if(b_reset_afe_pwr==true){
-            b_reset_afe_pwr=false;
+         if(b_reset_afe_pwr==KAL_TRUE){
+            b_reset_afe_pwr=KAL_FALSE;
             xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv START_DL1_STREAM, reset AFE clk AFE(%d),AFEp(%d)\n",Aud_AFE_Clk_cntr,Afe_Pwr_on);
          }
 
@@ -2320,7 +2655,9 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
             AudDrv_Clk_On();
 #if defined(DL1_USE_SYSRAM)
             //allocate sysram here
+            #ifndef JB_MIGRATION_BUILD_TEMP_REMOVE
             SYSRAM_AUDIO_ALLOC_TIMEOUT(AFE_dl_Control->rBlock.u4BufferSize,32,AUD_SYSRAM_ALLOC_TIMEOUT);
+				#endif
 #endif
             PRINTK_AUDDRV("AudDrv START_DL1_STREAM, wake_lock \n");
             wake_lock(&Audio_wake_lock);
@@ -2350,7 +2687,9 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
             PRINTK_AUDDRV("!!! AudDrv STANDBY_DL1_STREAM Speech:%d, VT:%d \n",SPH_Ctrl_State.bSpeechFlag,SPH_Ctrl_State.bVT);
 #if defined(DL1_USE_SYSRAM)
             //free sysram here
+            #ifndef JB_MIGRATION_BUILD_TEMP_REMOVE
             SYSRAM_AUDIO_FREE();
+				#endif
 #endif
             AudDrv_Clk_Off();
             PRINTK_AUDDRV("AudDrv STANDBY_DL1_STREAM,1 wake_unlock \n");
@@ -2397,11 +2736,11 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
     {
         if(arg ==1)
         {
-            Flag_Aud_DL1_SlaveOn = true;
+            Flag_Aud_DL1_SlaveOn = KAL_TRUE;
         }
         else
         {
-            Flag_Aud_DL1_SlaveOn = false;
+            Flag_Aud_DL1_SlaveOn = KAL_FALSE;
         }
        PRINTK_AUDDRV("!!! Aud SET_DL1_SLAVE_MODE Flag_Aud_DL1_SlaveOn:%d \n", Flag_Aud_DL1_SlaveOn);
        break;
@@ -2440,8 +2779,8 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
          Afe_Set_Reg(AFE_I2S_BASE ,I2S_input_Control->rBlock.pucPhysBufAddr, 0xffffffff);
          Afe_Set_Reg(AFE_I2S_END  ,I2S_input_Control->rBlock.pucPhysBufAddr + (I2S_input_Control->u4BufferSize-1), 0xffffffff);
 
-         if(b_reset_i2s_pwr==true){
-            b_reset_i2s_pwr=false;
+         if(b_reset_i2s_pwr==KAL_TRUE){
+            b_reset_i2s_pwr=KAL_FALSE;
             xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv START_I2S_INPUT, reset AFE/I2S AFE(%d),AFEp(%d),I2S(%d),I2Sp(%d)\n",Aud_AFE_Clk_cntr,Afe_Pwr_on,Aud_I2S_Clk_cntr,I2S_Pwr_on);
          }
 
@@ -2583,7 +2922,7 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
       {
          PRINTK_AUDDRV("+AudDrv AUD_SET_CLOCK(%ld) \n", arg);
 
-         if( b_reset_i2s_pwr==true || b_reset_afe_pwr==true ){
+         if( b_reset_i2s_pwr==KAL_TRUE || b_reset_afe_pwr==KAL_TRUE ){
             xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv AUD_SET_CLOCK, reset AFE(%d),AFEp(%d),I2S(%d),I2Sp(%d)\n",Aud_AFE_Clk_cntr,Afe_Pwr_on,Aud_I2S_Clk_cntr,I2S_Pwr_on);
          }
 
@@ -2613,7 +2952,7 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
       {
          PRINTK_AUDDRV("+AudDrv AUD_SET_ADC_CLOCK(%ld) \n", arg);
 
-         if( b_reset_i2s_pwr==true || b_reset_afe_pwr==true ){
+         if( b_reset_i2s_pwr==KAL_TRUE || b_reset_afe_pwr==KAL_TRUE ){
             xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv AUD_SET_ADC_CLOCK, reset AFE(%d),AFEp(%d),I2S(%d),I2Sp(%d)\n",Aud_AFE_Clk_cntr,Afe_Pwr_on,Aud_I2S_Clk_cntr,I2S_Pwr_on);
          }
 
@@ -2640,7 +2979,7 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
       {
          PRINTK_AUDDRV("+AudDrv AUD_SET_I2S_CLOCK(%ld) \n", arg);
 
-         if( b_reset_i2s_pwr==true || b_reset_afe_pwr==true ){
+         if( b_reset_i2s_pwr==KAL_TRUE || b_reset_afe_pwr==KAL_TRUE ){
             xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv AUD_SET_I2S_CLOCK, reset AFE(%d),AFEp(%d),I2S(%d),I2Sp(%d)\n",Aud_AFE_Clk_cntr,Afe_Pwr_on,Aud_I2S_Clk_cntr,I2S_Pwr_on);
          }
 
@@ -2719,6 +3058,45 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
          }
          break;
       }
+/*
+      case AUD_SET_HDMI_GPIO:
+      {
+         xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv AUD_SET_HDMI_GPIO(%ld)",arg);
+         // for demo phone and EVB, use GPIO53/54/55 as I2S1
+         // Need to remove this part after DCT tool config ready
+         #if defined(MTK_HDMI_SUPPORT)
+         if(arg ==1)
+         {
+            mt_set_gpio_mode(GPIO_I2S1_DAT_PIN, GPIO_MODE_00);  //58 mode0
+            mt_set_gpio_dir(GPIO_I2S1_DAT_PIN,GPIO_DIR_OUT);
+            mt_set_gpio_out(GPIO_I2S1_DAT_PIN,GPIO_OUT_ZERO);
+            mt_set_gpio_mode(GPIO_I2S1_WS_PIN, GPIO_MODE_00);  //57 mode0
+            mt_set_gpio_dir(GPIO_I2S1_WS_PIN,GPIO_DIR_OUT);
+            mt_set_gpio_out(GPIO_I2S1_WS_PIN,GPIO_OUT_ZERO);
+            mt_set_gpio_mode(GPIO_I2S1_CK_PIN, GPIO_MODE_00);  //56 mode0
+            mt_set_gpio_dir(GPIO_I2S1_CK_PIN,GPIO_DIR_OUT);
+            mt_set_gpio_out(GPIO_I2S1_CK_PIN,GPIO_OUT_ZERO);
+
+            mt_set_gpio_mode(GPIO_I2S0_CK_PIN, GPIO_MODE_04);    //55  mode4:I2S1
+            mt_set_gpio_mode(GPIO_I2S0_WS_PIN, GPIO_MODE_04);    //54  mode4:I2S1
+            mt_set_gpio_mode(GPIO_I2S0_DAT_PIN, GPIO_MODE_04); //53  mode4:I2S1
+         }
+         else
+         {
+            mt_set_gpio_mode(GPIO_I2S0_CK_PIN, GPIO_MODE_00);  //55  mode0
+            mt_set_gpio_dir(GPIO_I2S0_CK_PIN,GPIO_DIR_OUT);
+            mt_set_gpio_out(GPIO_I2S0_CK_PIN,GPIO_OUT_ZERO);
+            mt_set_gpio_mode(GPIO_I2S0_WS_PIN, GPIO_MODE_00);  //54  mode0
+            mt_set_gpio_dir(GPIO_I2S0_WS_PIN,GPIO_DIR_OUT);
+            mt_set_gpio_out(GPIO_I2S0_WS_PIN,GPIO_OUT_ZERO);
+            mt_set_gpio_mode(GPIO_I2S0_DAT_PIN, GPIO_MODE_00); //53  mode0
+            mt_set_gpio_dir(GPIO_I2S0_DAT_PIN,GPIO_DIR_OUT);
+            mt_set_gpio_out(GPIO_I2S0_DAT_PIN,GPIO_OUT_ZERO);
+         }
+         #endif
+         break;
+      }
+*/
       case AUD_SET_HDMI_SR:
       {
          xlog_printk(ANDROID_LOG_INFO, "Sound","+AudDrv AUD_SET_HDMI_SR, SR(%d)\n",arg);
@@ -3321,7 +3699,7 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
       	break;
       }
 	}
-    if((cmd!=AUDDRV_ENABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_DISABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_BEE_IOCTL)) //prevent additional time cost
+    if((cmd!=AUDDRV_ENABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_DISABLE_ATV_I2S_GPIO)&&(cmd!=AUDDRV_BEE_IOCTL)&&(cmd!=AUD_SET_ANA_CLOCK)) //prevent additional time cost
     {
    AudDrv_Clk_Off();
     }
@@ -3329,6 +3707,20 @@ static long AudDrv_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 }
 
 
+/*****************************************************************************
+ * FILE OPERATION FUNCTION
+ *  Get_Afe_wait_period
+ *
+ * DESCRIPTION
+ *  calculate afe interrupt wait time
+ *
+ * PARAMETERS
+ *  period  [out]  return time in jiffies
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************/
 
 static kal_uint32 Get_Afe_wait_period(void)
 {
@@ -3382,6 +3774,24 @@ static kal_uint32 Get_Afe_wait_period(void)
 }
 
 
+/*****************************************************************************
+ * FILE OPERATION FUNCTION
+ *  AudDrv_write
+ *
+ * DESCRIPTION
+ *  User space Write data to (kernel)HW buffer
+ *
+ * PARAMETERS
+ *  fp      [in]
+ *  data    [in] data pointer
+ *  count   [in] number of bytes to be written
+ *  offset  [in] no use
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 static ssize_t AudDrv_write(struct file *fp, const char __user *data, size_t count, loff_t *offset)
 {
    //for DL1 output stream write data to HW buffer
@@ -3517,10 +3927,10 @@ static ssize_t AudDrv_write(struct file *fp, const char __user *data, size_t cou
          PRINTK_AUDDRV("AudDrv_write wait for interrupt count=%x \n",count);
 
          wait_queue_flag =0;
-         t1 = sched_clock(); // in ns (10^9)
+         t1 = local_clock(); // in ns (10^9)
          ret = wait_event_interruptible_timeout(DL_Wait_Queue, wait_queue_flag,(Afe_wait_priod*2)); // 100ms
 
-         t2 = sched_clock()-t1; // in ns (10^9)
+         t2 = local_clock()-t1; // in ns (10^9)
          ret1=1;
 
 			#ifdef AUD_DUMPFTRACE
@@ -3567,7 +3977,7 @@ static ssize_t AudDrv_write(struct file *fp, const char __user *data, size_t cou
              xlog_printk(ANDROID_LOG_ERROR, "Sound","[Warning]Audio Sound may be abnormal \n");
          }
 
-         if((ret <= 0) || (ret1 < 0))
+         if(((ret <= 0) && (t2 >= (Afe_wait_priod*2*10000000))) || (ret1 < 0))
          {
              kal_uint32 irq_mcu     = Afe_Get_Reg(AFE_IRQ_CON);
              kal_uint32 irq1_mcu_on = irq_mcu & 0x1;
@@ -3932,6 +4342,24 @@ ssize_t AudDrv_I2S_Read(struct file *fp,  char __user *data, size_t count, loff_
    return read_count;
 }
 
+/*****************************************************************************
+ * FILE OPERATION FUNCTION
+ *  AudDrv_read
+ *
+ * DESCRIPTION
+ *  User space Read data from (kernel)HW buffer
+ *
+ * PARAMETERS
+ *  fp      [in]
+ *  data    [in] data pointer
+ *  count   [in] number of bytes to be written
+ *  offset  [in] no use
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 static ssize_t AudDrv_read(struct file *fp,  char __user *data, size_t count, loff_t *offset)
 {
     kal_uint32 read_count =0;
@@ -3947,6 +4375,16 @@ static ssize_t AudDrv_read(struct file *fp,  char __user *data, size_t count, lo
     return read_count;
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Reset , AudDrv_flush
+ *
+ * DESCRIPTION
+ *  Notify the message to user space
+ *
+ *
+ *****************************************************************************
+ */
 static int AudDrv_Reset(void)
 {
 	unsigned long flags;
@@ -3956,7 +4394,9 @@ static int AudDrv_Reset(void)
       if(!Flag_Aud_DL1_SlaveOn)
        {//Audio DL1 master mode used
 #ifdef DL1_USE_SYSRAM
+#ifndef JB_MIGRATION_BUILD_TEMP_REMOVE
         SYSRAM_AUDIO_FREE();
+#endif
 #elif (!defined (DL1_USE_FLEXL2))
 ////////////
 // Use DMA free coherent
@@ -4032,12 +4472,46 @@ static int AudDrv_flush(struct file *flip, fl_owner_t id)
    AudDrv_Clk_Off();  // turn off asm afe clock
 //   Afe_Disable_Memory_Power ();	//disable memory buffer
 */
+/* //Move ot AudDrv_ioctl(INIT_DL1_STREAM)
+   if( (SPH_Ctrl_State.bSpeechFlag==false) && (SPH_Ctrl_State.bVT==false) && (SPH_Ctrl_State.bRecordFlag==false) ){
+      // Disable interrupt (timer)
+      xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_flush, Dis DL_SRC2, IRQ, AFE clk(%d) \n",Aud_AFE_Clk_cntr);
+      if(Aud_AFE_Clk_cntr!=0)
+      {
+          AudDrv_Clk_On();
+          Afe_Set_Reg(AFE_DL_SRC2_1,0x0,0x1);   // DL2_SRC2_ON=0
+          Afe_Set_Reg(AFE_IRQ_CON,0x0,0x1);
+          Afe_Set_Reg(AFE_DAC_CON0,0x0,0x2);  // DL1_ON=0
+          Afe_Set_Reg(AFE_IR_CLR,0x1,0x1);
+          Afe_Set_Reg(AFE_IRQ_CON,0x0,0x2);  // bit1: I2S,  IRQ2_MCU_ON
+          Afe_Set_Reg(AFE_IR_CLR,0x2,0x2);           // bit1: I2S,  IRQ1_MCU_CLR
+          AudDrv_Clk_Off();
+      }
+   }
+*/
    Aud_Flush_cntr++;
 
    xlog_printk(ANDROID_LOG_INFO, "Sound","-AudDrv_flush cntr(%d)\n", Aud_Flush_cntr);
    return 0;
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_fasync
+ *
+ * DESCRIPTION
+ *  Notify the message to user space
+ *
+ * PARAMETERS
+ *  fp   [in]
+ *  flip [in]
+ *  mode [in]
+ *
+ * RETURNS
+ *  None
+ *
+ *****************************************************************************
+ */
 static int AudDrv_fasync(int fd, struct file *flip, int mode)
 {
    PRINTK_AUDDRV("AudDrv_fasync \n");
@@ -4045,6 +4519,12 @@ static int AudDrv_fasync(int fd, struct file *flip, int mode)
 }
 
 
+/*****************************************************************************
+ * STRUCT
+ *  VM Operations
+ *
+ *****************************************************************************
+ */
 void AudDrv_vma_open(struct vm_area_struct *vma)
 {
    xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_vma_open virt:%lx, phys:%lx, length:%lx \n",vma->vm_start, vma->vm_pgoff<<PAGE_SHIFT,vma->vm_end - vma->vm_start);
@@ -4077,6 +4557,12 @@ static int AudDrv_remap_mmap(struct file *flip, struct vm_area_struct *vma)
    return 0;
 }
 
+/*****************************************************************************
+ * STRUCT
+ *  File Operations and misc device
+ *
+ *****************************************************************************
+ */
 
 static struct file_operations AudDrv_fops = {
    .owner   = THIS_MODULE,
@@ -4096,6 +4582,15 @@ static struct miscdevice AudDrv_audio_device = {
    .fops = &AudDrv_fops,
 };
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Suspend_Clk_Off / AudDrv_Suspend_Clk_On
+ *
+ * DESCRIPTION
+ *  Enable/Disable AFE clock for suspend
+ *
+ *****************************************************************************
+ */
 void AudDrv_Suspend_Clk_On(void)
 {
    xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_Suspend_Clk_On Aud_AFE_Clk_cntr:%d ANA_Clk(%d) \n",Aud_AFE_Clk_cntr,Aud_ANA_Clk_cntr);
@@ -4117,6 +4612,9 @@ void AudDrv_Suspend_Clk_On(void)
             xlog_printk(ANDROID_LOG_ERROR, "Sound","Aud enable_clock MT65XX_PDN_AUDIO_I2S fail");
       }
       // Enable AFE clock
+/* No PLL CON2 in 6577
+      //Ana_Set_Reg(PLL_CON2,0x20,0x20);             // turn on AFE (26M Clock)
+*/
       Ana_Set_Reg(AUDIO_CON3,0x0,0x2);             // Enable Audio Bias (VaudlbiasDistrib)
       Afe_Set_Reg(AUDIO_TOP_CON0, 0x0, 0x00010000);  // bit16: power on AFE_CK_DIV_RST
 #else
@@ -4126,7 +4624,17 @@ void AudDrv_Suspend_Clk_On(void)
 
     if(Aud_ANA_Clk_cntr>0)
     {
+      #if !defined(USE_CCCI_SET_ANA_CLK)
         sc_request_mdbus_clk(SC_MDBUS_USER_AUDIO);
+      #else
+      /*
+      int i;
+      for(i = 0; i++; i< Suspend_Aud_ANA_Clk_cntr){
+          AudDrv_ANA_Clk_On();
+      }
+      */
+      Suspend_Aud_ANA_Clk_cntr = 0;
+      #endif
     }
    spin_unlock_bh(&auddrv_lock);
 }
@@ -4162,11 +4670,31 @@ void AudDrv_Suspend_Clk_Off(void)
 
     if(Aud_ANA_Clk_cntr>0)
     {
+      #if !defined(USE_CCCI_SET_ANA_CLK)
         sc_unrequest_mdbus_clk(SC_MDBUS_USER_AUDIO);
+      #else
+      Suspend_Aud_ANA_Clk_cntr = Aud_ANA_Clk_cntr;
+      /*
+      int i;
+      for(i = 0; i++; i< Suspend_Aud_ANA_Clk_cntr){
+          AudDrv_ANA_Clk_Off();
+      }
+      */
+      #endif
     }
    spin_unlock_bh(&auddrv_lock);
 }
 
+/*****************************************************************************
+ * PLATFORM DRIVER FUNCTION:
+ *
+ *  AudDrv_probe / AudDrv_suspend / AudDrv_resume / AudDrv_shutdown / AudDrv_remove
+ *
+ * DESCRIPTION
+ *  Linus Platform Driver
+ *
+ *****************************************************************************
+ */
 
 static int AudDrv_probe(struct platform_device *dev)
 {
@@ -4174,13 +4702,15 @@ static int AudDrv_probe(struct platform_device *dev)
    int value = 0;
    xlog_printk(ANDROID_LOG_INFO, "Sound","+AudDrv_probe \n");
 
+   Suspend_Aud_ANA_Clk_cntr = 0;
 
    //power on
    xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_probe +AudDrv_Clk_On\n");
-   Flag_AudDrv_ClkOn_1st = true;
+   Flag_AudDrv_ClkOn_1st = KAL_TRUE;
    AudDrv_Clk_On();
-   Flag_AudDrv_ClkOn_1st = false;
+   Flag_AudDrv_ClkOn_1st = KAL_FALSE;
    xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_probe -AudDrv_Clk_On\n");
+   AudDrv_ANA_Clk_On();
 
    //Speaker_Init();
    Ana_Init_Backup_Memory();
@@ -4193,7 +4723,6 @@ static int AudDrv_probe(struct platform_device *dev)
    Afe_Set_Reg(AFE_IRQ_MON   ,0x0,0xffffffff);
 
    // Init Analog Register
-   AudDrv_ANA_Clk_On();
    Ana_Set_Reg(AUDIO_CON0,0x0000,0xffff);
    Ana_Set_Reg(AUDIO_CON1,0x000C,0xffff);
    Ana_Set_Reg(AUDIO_CON2,0x000C,0xffff);
@@ -4342,7 +4871,7 @@ static int AudDrv_suspend(struct platform_device *dev, pm_message_t state)  // o
       return 0;
    }
 
-   if(IsSuspen == false)
+   if(IsSuspen == KAL_FALSE)
    {
       // when suspend , if is not in speech mode , close amp.
       if(/*AMP_Flag ==true &&*/ (SPH_Ctrl_State.bSpeechFlag== false) && (SPH_Ctrl_State.bVT== false) )
@@ -4358,14 +4887,20 @@ static int AudDrv_suspend(struct platform_device *dev, pm_message_t state)  // o
 		{
 			spin_unlock_bh(&auddrv_SphCtlState_lock);
         }
-      AudDrv_Clk_On();
   	    // Analog register setting
         AudDrv_ANA_Clk_On();
+        //AudDrv_Clk_On();
 	    #ifdef AUD_SRAMPRINTK
 		aee_sram_printk("AudDrv_suspend open_clock done\n");
 	   #else
       xlog_printk(ANDROID_LOG_INFO, "Sound","AudDrv_suspend open_clock done\n");
 	   #endif
+/*
+	  //SetAnaReg(AUDIO_LDO2,0x0000,0x0013);//Not to disable LD02 for record mute issue.
+	  Ana_Set_Reg(AUDIO_NCP1,0x0800,0x0E00);
+	  Ana_Set_Reg(AUDIO_REG1,0x0000,0x0001);
+	  //Ana_Set_Reg(AUDIO_GLB0,0x0001,0x0001);//Not to disable GLB0.
+*/
       Ana_Set_Reg(AUDIO_CON9,0x0000,0x0007);
       // Analog register reading
 		//Temp to disable[Charlie]
@@ -4410,9 +4945,9 @@ static int AudDrv_suspend(struct platform_device *dev, pm_message_t state)  // o
 	  	Ana_Set_Reg(AUDIO_CON22,0x0,0xffff);
 	  	Ana_Set_Reg(AUDIO_CON23,0x0,0xffff);
 	  	Ana_Set_Reg(AUDIO_CON31,0x0,0xffff);
-        AudDrv_ANA_Clk_Off();
 	  	//~
-	  	AudDrv_Clk_Off();
+	  	//AudDrv_Clk_Off();
+        AudDrv_ANA_Clk_Off();
 		#ifdef USE_TASKLET
       tasklet_disable(&magic_tasklet_handle);  // disable tasklet
 		#endif
@@ -4423,7 +4958,7 @@ static int AudDrv_suspend(struct platform_device *dev, pm_message_t state)  // o
 #endif
 
       hwPowerDown(MT65XX_POWER_LDO_VA2, "audio");
-      IsSuspen = true;// set suspend mode to true
+      IsSuspen = KAL_TRUE;// set suspend mode to true
 
    	spin_lock_bh(&auddrv_SphCtlState_lock);
 
@@ -4441,7 +4976,7 @@ static int AudDrv_resume(struct platform_device *dev) // wake up
 	#else
    xlog_printk(ANDROID_LOG_INFO, "Sound","+AudDrv_resume \n");
 	#endif
-   if(IsSuspen == true)
+   if(IsSuspen == KAL_TRUE)
    {
    	#ifdef AUD_SRAMPRINTK
       aee_sram_printk("AudDrv_resume Afe_Pwr_on:%d, Aud_AFE_Clk_cntr:%d, Aud_ANA_Clk_cntr:%d\n",Afe_Pwr_on,Aud_AFE_Clk_cntr,Aud_ANA_Clk_cntr);
@@ -4460,15 +4995,14 @@ static int AudDrv_resume(struct platform_device *dev) // wake up
       tasklet_enable(&magic_tasklet_handle); // enable tasklet
 		#endif
 
-      IsSuspen = false;  // set suspend mode to false
-      AudDrv_Clk_On();
+      IsSuspen = KAL_FALSE;  // set suspend mode to false
       AudDrv_ANA_Clk_On();
+      //AudDrv_Clk_On();
       #ifdef AUD_SRAMPRINTK
       aee_sram_printk(" AudDrv_resume open clk done \n");
       #else
       xlog_printk(ANDROID_LOG_INFO, "Sound"," AudDrv_resume open clk done \n");
       #endif
-      //slp_debug_for_audio();
       AudDrv_Recover_reg();
 		#ifdef AUD_SRAMPRINTK
 		aee_sram_printk(" AudDrv_resume AudDrv_Recover_reg done \n");
@@ -4494,8 +5028,8 @@ static int AudDrv_resume(struct platform_device *dev) // wake up
       #else
       xlog_printk(ANDROID_LOG_INFO, "Sound","Clk_Off start \n");
       #endif
+      //AudDrv_Clk_Off();
       AudDrv_ANA_Clk_Off();
-      AudDrv_Clk_Off();
 
       // when resume , if amp is closed , reopen it.
       #ifdef AUD_SRAMPRINTK
@@ -4568,6 +5102,22 @@ static int AudDrv_remove(struct platform_device *dev)
 	return 0;
 }
 
+/*****************************************************************************
+ * FUNCTION
+ *  AudDrv_Read_Procmem
+ *
+ * DESCRIPTION
+ *  dump AFE/Analog register
+ *  cat /proc/Audio
+ *
+ * PARAMETERS
+ *
+ *
+ * RETURNS
+ *  length
+ *
+ *****************************************************************************
+ */
 
 static int AudDrv_Read_Procmem(char *buf,char **start, off_t offset, int count , int *eof, void *data)
 {
@@ -4735,7 +5285,6 @@ AudDrv_Core_Clk_Off();
  *
  *****************************************************************************
  */
-
 
 static struct platform_driver AudDrv_driver = {
    .probe	 = AudDrv_probe,

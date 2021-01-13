@@ -1,4 +1,6 @@
-
+/******************************************************************************
+ *  INCLUDE LINUX HEADER
+ ******************************************************************************/
 #include <linux/kernel.h> 
 #include <linux/module.h> 
 #include <linux/init.h> 
@@ -28,6 +30,9 @@
 #include <linux/cdev.h>
 #include <linux/proc_fs.h>
 
+/******************************************************************************
+ *  INCLUDE LIBRARY
+ ******************************************************************************/
 #include <mach/sec_osal.h>
 #include "sec_mod.h"
 
@@ -37,10 +42,16 @@
 
 #define TRACE_FUNC()                MSG_FUNC(SEC_DEV_NAME)
 
+/**************************************************************************
+ *  EXTERNAL VARIABLE
+ **************************************************************************/
 extern const struct sec_ops         *sec_get_ops(void);
 extern bool                         bMsg;
 extern struct semaphore             hacc_sem;
 
+/*************************************************************************
+ *  GLOBAL VARIABLE
+ **************************************************************************/
 static struct sec_mod sec           = {0};
 static struct cdev                  sec_dev;
 
@@ -65,21 +76,33 @@ EXPORT_SYMBOL(sec_mm_sem);
 EXPORT_SYMBOL(osal_fp_sem);   
 #endif
 
+/**************************************************************************
+ *  EXTERNAL FUNCTION
+ **************************************************************************/
 extern int sec_get_random_id(unsigned int *rid);
 extern long sec_core_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 extern void sec_core_init (void);
 extern void sec_core_exit (void);
 
+/**************************************************************************
+ *  SEC DRIVER OPEN
+ **************************************************************************/ 
 static int sec_open(struct inode *inode, struct file *file)
 {
     return 0;
 }
 
+/**************************************************************************
+ *  SEC DRIVER RELEASE
+ **************************************************************************/ 
 static int sec_release(struct inode *inode, struct file *file)
 {
     return 0;
 }
 
+/**************************************************************************
+ *  SEC DRIVER IOCTL
+ **************************************************************************/ 
 static long sec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     return sec_core_ioctl(file, cmd, arg);
@@ -94,6 +117,9 @@ static struct file_operations sec_fops = {
     .unlocked_ioctl   = sec_ioctl
 };
 
+/**************************************************************************
+ *  SEC RID PROC FUNCTION
+ **************************************************************************/ 
 static int sec_proc_rid(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
     char *p = page;
@@ -113,6 +139,9 @@ static int sec_proc_rid(char *page, char **start, off_t off, int count, int *eof
     return len;
 }
 
+/**************************************************************************
+ *  SEC DRIVER INIT
+ **************************************************************************/ 
 static int sec_init(void)
 {
     int ret = 0;
@@ -155,6 +184,9 @@ exit:
 }
 
 
+/**************************************************************************
+ *  SEC DRIVER EXIT
+ **************************************************************************/ 
 static void sec_exit(void)
 {    
     remove_proc_entry("rid", NULL);
@@ -164,9 +196,59 @@ static void sec_exit(void)
     sec_core_exit();
 }
 
-module_init(sec_init);
-module_exit(sec_exit);
+/**************************************************************************
+ *  MASP PLATFORM DRIVER WRAPPER, FOR BUILD-IN SEQUENCE
+ **************************************************************************/ 
+int masp_probe(struct platform_device * dev)
+{
+    int ret = 0;
+    ret = sec_init();
+    return ret;
+}
 
+int  masp_remove(struct platform_device * dev)
+{
+    sec_exit();
+    return 0;
+}
+
+
+static struct platform_driver masp_driver = {
+		.probe	= masp_probe,
+		.remove  	= masp_remove,
+		.driver  = {
+			.name  = "masp",
+			.owner = THIS_MODULE,
+		},
+};
+
+static int __init masp_init(void)
+{
+    int ret;
+
+    ret = platform_driver_register(&masp_driver);
+
+    if (ret) 
+    {        	
+        printk(KERN_ERR "[%s] Reg platform driver failed (%d)\n", SEC_DEV_NAME, ret);
+    }
+
+    return ret;
+}
+
+
+static void __exit masp_exit(void)
+{
+    platform_driver_unregister(&masp_driver);
+}
+
+//module_init(sec_init);
+module_init(masp_init);
+module_exit(masp_exit);
+
+/**************************************************************************
+ *  EXPORT FUNCTION
+ **************************************************************************/ 
 EXPORT_SYMBOL(sec_get_random_id);
 
 MODULE_LICENSE("Proprietary");

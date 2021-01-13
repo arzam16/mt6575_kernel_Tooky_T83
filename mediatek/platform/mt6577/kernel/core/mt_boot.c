@@ -1,38 +1,3 @@
-/*****************************************************************************
-*  Copyright Statement:
-*  --------------------
-*  This software is protected by Copyright and the information contained
-*  herein is confidential. The software may not be copied and the information
-*  contained herein may not be used or disclosed except with the written
-*  permission of MediaTek Inc. (C) 2008
-*
-*  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
-*  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
-*  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
-*  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
-*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
-*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
-*  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
-*  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
-*  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
-*  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
-*  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
-*  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
-*
-*  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
-*  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
-*  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
-*  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
-*  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
-*
-*  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
-*  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
-*  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
-*  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
-*  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
-*
-*****************************************************************************/
-
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/fs.h>
@@ -48,13 +13,11 @@
 #include <linux/uaccess.h>
 #include <linux/platform_device.h>
 #include <linux/proc_fs.h>
-#include <linux/kernel.h>
 
 #include <mach/mt_boot.h>
 #include <mach/mt_reg_base.h>
 #include <mach/mt_typedefs.h>
 #include <mach/sbchk_base.h>
-#include <linux/version.h>
 
 
 #define MOD "BOOT"
@@ -237,7 +200,6 @@ EXPORT_SYMBOL(get_chip_id);
 /*****************************************************************************
  * sysfs interface
  *****************************************************************************/
-BOOTMODE g_boot_mode = UNKNOWN_BOOT;
 META_COM_TYPE g_meta_com_type = META_UNKNOWN_COM;
 unsigned int g_meta_com_id = 0;
 
@@ -369,88 +331,32 @@ static struct class *boot_class;
 static struct device *boot_device;
 
 
-/* return boot mode */
-BOOTMODE get_boot_mode(void)
-{
-    return g_boot_mode;
-}
-
-
-/*****************************************************************************
- * meta mode
- *****************************************************************************/
-/* for convenience, simply check is meta mode or not */
-bool is_meta_mode(void)
-{   
-    if(g_boot_mode == META_BOOT)
-    {   
-        return true;
-    }
-    else
-    {   
-        return false;
-    }
-}
-
-bool is_advanced_meta_mode(void)
-{
-    if (g_boot_mode == ADVMETA_BOOT)
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-}
-
 bool com_is_enable(void)  // usb android will check whether is com port enabled default. in normal boot it is default enabled. 
-{
-    if(g_boot_mode == NORMAL_BOOT)
-    {
+{	
+    if(get_boot_mode() == NORMAL_BOOT)
+	{	
         return false;
-    }
-    else
-    {
+	}
+	else
+	{	
         return true;
-    }
+	}
 }
 
-static int boot_mode_proc(char *page, char **start, off_t off,int count, int *eof, void *data)
+void set_meta_com(META_COM_TYPE type, unsigned int id)
 {
-    char *p = page;
-    int len = 0; 
+    g_meta_com_type = type;
+    g_meta_com_id = id;
+}
 
-    p += sprintf(p, "\n\rBOOT MODE : " );
-    switch(g_boot_mode)
-    {
-        case NORMAL_BOOT :
-            p += sprintf(p, "NORMAL BOOT\n");
-            break;
-        case META_BOOT :
-            p += sprintf(p, "META BOOT\n");
-            break;
-        case ADVMETA_BOOT :
-            p += sprintf(p, "Advanced META BOOT\n");
-            break;   
-        case ATE_FACTORY_BOOT :
-            p += sprintf(p, "ATE_FACTORY BOOT\n");
-            break;
-        case ALARM_BOOT :
-            p += sprintf(p, "ALARM BOOT\n");
-            break;
-        default :
-            p += sprintf(p, "UNKNOWN BOOT\n");
-            break;
-    }  
-    *start = page + off;
-    len = p - page;
-    if (len > off)
-        len -= off;
-    else
-        len = 0;
+META_COM_TYPE get_meta_com_type(void)
+{
+    return g_meta_com_type;
+}
 
-    return len < count ? len  : count;     
+unsigned int get_meta_com_id(void)
+{
+    return g_meta_com_id;
 }
 
 static ssize_t meta_com_type_show(struct device_driver *driver, char *buf)
@@ -484,6 +390,7 @@ DRIVER_ATTR(meta_com_id_info, 0644, meta_com_id_show, meta_com_id_store);
 static int __init boot_mod_init(void)
 {
     int ret;
+    BOOTMODE bm = get_boot_mode();
 
     /* allocate device major number */
     if (alloc_chrdev_region(&boot_dev_num, 0, 1, BOOT_DEV_NAME) < 0) {
@@ -527,10 +434,7 @@ static int __init boot_mod_init(void)
     }
     printk("[%s] CHIP[0x%04X,0x%04X,0x%04X]\n",MOD,get_chip_code(), get_chip_ver(), get_chip_id());
     
-    /* create proc entry at /proc/boot_mode */
-    create_proc_read_entry("boot_mode", S_IRUGO, NULL, boot_mode_proc, NULL);
-
-    if(g_boot_mode == META_BOOT || g_boot_mode == ADVMETA_BOOT)
+    if(bm == META_BOOT || bm == ADVMETA_BOOT || bm == ATE_FACTORY_BOOT || bm == FACTORY_BOOT)
     {
         /* register driver and create sysfs files */
         ret = driver_register(&meta_com_type_info.driver);
@@ -566,10 +470,6 @@ static void __exit boot_mod_exit(void)
 
 module_init(boot_mod_init);
 module_exit(boot_mod_exit);
-MODULE_DESCRIPTION("Mediatek Boot Information Querying Driver");
+MODULE_DESCRIPTION("MTK Boot Information Querying Driver");
 MODULE_LICENSE("Proprietary");
-EXPORT_SYMBOL(is_meta_mode);
-EXPORT_SYMBOL(is_advanced_meta_mode);
-EXPORT_SYMBOL(get_boot_mode);
 EXPORT_SYMBOL(boot_register_md_func);
-

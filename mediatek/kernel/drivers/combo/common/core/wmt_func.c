@@ -104,6 +104,18 @@ static INT32 wmt_func_wifi_off(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf);
 #endif
 
 
+#if CFG_FUNC_ANT_SUPPORT
+
+static INT32 wmt_func_ant_on(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf);
+static INT32 wmt_func_ant_off(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf);
+
+    WMT_FUNC_OPS wmt_func_ant_ops = {
+        //BT subsystem function on/off
+        .func_on = wmt_func_ant_on,
+        .func_off = wmt_func_ant_off
+    };
+#endif
+
 /*******************************************************************************
 *                           P R I V A T E   D A T A
 ********************************************************************************
@@ -282,6 +294,27 @@ INT32 wmt_func_bt_off(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
 
 #endif
 
+#if CFG_FUNC_ANT_SUPPORT
+
+INT32 _osal_inline_ wmt_func_ant_ctrl(ENUM_FUNC_STATE funcState)
+{
+    /*only need to send turn BT subsystem wmt command*/
+    return wmt_core_func_ctrl_cmd(WMTDRV_TYPE_ANT, (FUNC_ON == funcState) ? MTK_WCN_BOOL_TRUE : MTK_WCN_BOOL_FALSE);
+}
+
+INT32 wmt_func_ant_on(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
+{
+    return wmt_core_func_ctrl_cmd(WMTDRV_TYPE_ANT, MTK_WCN_BOOL_TRUE);
+}
+
+INT32 wmt_func_ant_off(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
+{
+    return wmt_core_func_ctrl_cmd(WMTDRV_TYPE_ANT, MTK_WCN_BOOL_FALSE);
+}
+
+#endif
+
+
 #if CFG_FUNC_GPS_SUPPORT
 
 INT32 _osal_inline_ wmt_func_gps_ctrl (ENUM_FUNC_STATE funcState)
@@ -301,7 +334,7 @@ INT32 wmt_func_gps_pre_ctrl(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf, ENUM_FUNC_S
     P_CMB_PIN_CTRL_REG pReg;
     P_CMB_PIN_CTRL pCmbPinCtrl;
     WMT_CTRL_DATA ctrlData;
-	WMT_IC_PIN_ID wmtIcPinId = WMT_IC_PIN_MAX;
+    WMT_IC_PIN_ID wmtIcPinId = WMT_IC_PIN_MAX;
     //sanity check 
     if (FUNC_ON != funcStatus && FUNC_OFF != funcStatus)
     {
@@ -323,33 +356,33 @@ INT32 wmt_func_gps_pre_ctrl(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf, ENUM_FUNC_S
         WMT_INFO_FUNC("ctrl GPS_SYNC_SET(%d) ok \n", funcStatus);
     }
     if((NULL == pOps->ic_pin_ctrl) || 
-		(0 > pOps->ic_pin_ctrl(
-		                       WMT_IC_PIN_GSYNC, 
-		                       FUNC_ON == funcStatus ? WMT_IC_PIN_MUX : WMT_IC_PIN_GPIO, 
-		                       1)))/*WMT_IC_PIN_GSYNC*/
+        (0 > pOps->ic_pin_ctrl(
+                               WMT_IC_PIN_GSYNC, 
+                               FUNC_ON == funcStatus ? WMT_IC_PIN_MUX : WMT_IC_PIN_GPIO, 
+                               1)))/*WMT_IC_PIN_GSYNC*/
     {
-	    pCmbPinCtrl = &gCmbPinCtrl[CMB_PIN_GSYNC_ID];
-	    regNum = pCmbPinCtrl->regNum;
-	    for (i = 0; i < regNum; i++)
-	    {
-	        pReg = FUNC_ON == funcStatus ? &pCmbPinCtrl->pFuncOnArray[i] : &pCmbPinCtrl->pFuncOffArray[i];
-	        regAddr = pReg->regAddr;
-	        regValue = pReg->regValue;
-	        regMask = pReg->regMask;
-	        
-	        iRet = wmt_core_reg_rw_raw(1, regAddr, &regValue, regMask);
-	        if (iRet) {
-	            WMT_ERR_FUNC("set reg for GPS_SYNC function fail(%d) \n", iRet);
-	            //TODO:[FixMe][Chaozhong] error handling?
-	            return -2;
-	        }
-	        
-	    }
+        pCmbPinCtrl = &gCmbPinCtrl[CMB_PIN_GSYNC_ID];
+        regNum = pCmbPinCtrl->regNum;
+        for (i = 0; i < regNum; i++)
+        {
+            pReg = FUNC_ON == funcStatus ? &pCmbPinCtrl->pFuncOnArray[i] : &pCmbPinCtrl->pFuncOffArray[i];
+            regAddr = pReg->regAddr;
+            regValue = pReg->regValue;
+            regMask = pReg->regMask;
+            
+            iRet = wmt_core_reg_rw_raw(1, regAddr, &regValue, regMask);
+            if (iRet) {
+                WMT_ERR_FUNC("set reg for GPS_SYNC function fail(%d) \n", iRet);
+                //TODO:[FixMe][Chaozhong] error handling?
+                return -2;
+            }
+            
+        }
     }
-	else
-	{
-	    WMT_INFO_FUNC("set reg for GPS_SYNC function okay by chip ic_pin_ctrl\n");
-	}
+    else
+    {
+        WMT_INFO_FUNC("set reg for GPS_SYNC function okay by chip ic_pin_ctrl\n");
+    }
     WMT_INFO_FUNC("ctrl combo chip gps sync function succeed\n");
     //turn on GPS lna ctrl function
     if (NULL != pConf)
@@ -375,12 +408,12 @@ INT32 wmt_func_gps_pre_ctrl(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf, ENUM_FUNC_S
         else
         {
             WMT_INFO_FUNC("combo chip pin(%s) used for gps lna\n", 0 == pConf->wmt_gps_lna_pin ? "EEDI" : "EEDO");
-			wmtIcPinId = 0 == pConf->wmt_gps_lna_pin ? WMT_IC_PIN_EEDI: WMT_IC_PIN_EEDO;
-			if((NULL == pOps->ic_pin_ctrl) || 
-		        (0 > pOps->ic_pin_ctrl(
-		                       wmtIcPinId, 
-		                       FUNC_ON == funcStatus ? WMT_IC_PIN_GPIO_HIGH : WMT_IC_PIN_GPIO_LOW, 
-		                       1)))/*WMT_IC_PIN_GSYNC*/
+            wmtIcPinId = 0 == pConf->wmt_gps_lna_pin ? WMT_IC_PIN_EEDI: WMT_IC_PIN_EEDO;
+            if((NULL == pOps->ic_pin_ctrl) || 
+                (0 > pOps->ic_pin_ctrl(
+                               wmtIcPinId, 
+                               FUNC_ON == funcStatus ? WMT_IC_PIN_GPIO_HIGH : WMT_IC_PIN_GPIO_LOW, 
+                               1)))/*WMT_IC_PIN_GSYNC*/
             {
                 if (0 == pConf->wmt_gps_lna_pin)
                 {
@@ -408,11 +441,11 @@ INT32 wmt_func_gps_pre_ctrl(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf, ENUM_FUNC_S
                     }
                 }
                 WMT_INFO_FUNC("ctrl combo chip gps lna succeed\n");
-			}
-			else
-			{
-			    WMT_INFO_FUNC("set reg for GPS_LNA function okay by chip ic_pin_ctrl\n");
-			}
+            }
+            else
+            {
+                WMT_INFO_FUNC("set reg for GPS_LNA function okay by chip ic_pin_ctrl\n");
+            }
         }
      }
     return 0;

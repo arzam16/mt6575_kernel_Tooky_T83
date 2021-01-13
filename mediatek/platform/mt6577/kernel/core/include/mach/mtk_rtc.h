@@ -38,6 +38,7 @@ typedef enum {
  */
 extern void rtc_gpio_enable_32k(rtc_gpio_user_t user);
 extern void rtc_gpio_disable_32k(rtc_gpio_user_t user);
+extern bool rtc_gpio_32k_status(void);
 
 /* for AUDIOPLL (deprecated) */
 extern void rtc_enable_abb_32k(void);
@@ -48,6 +49,8 @@ extern void rtc_enable_writeif(void);
 extern void rtc_disable_writeif(void);
 
 extern void rtc_mark_recovery(void);
+
+extern void rtc_mark_fast(void);
 
 extern u16 rtc_rdwr_uart_bits(u16 *val);
 
@@ -64,6 +67,7 @@ extern void rtc_read_pwron_alarm(struct rtc_wkalrm *alm);
 #define rtc_enable_writeif()		do {} while (0)
 #define rtc_disable_writeif()		do {} while (0)
 #define rtc_mark_recovery()		do {} while (0)
+#define rtc_mark_fast()		do {} while (0)
 #define rtc_rdwr_uart_bits(val)		({ 0; })
 #define rtc_bbpu_power_down()		do {} while (0)
 #define rtc_read_pwron_alarm(alm)	do {} while (0)

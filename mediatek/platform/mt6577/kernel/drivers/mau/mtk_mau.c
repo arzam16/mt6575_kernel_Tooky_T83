@@ -60,10 +60,6 @@
 #define ENABLE_MAU_INTERRUPT 1
 #endif
 
-#ifdef MTK_M4U_SUPPORT
-  extern M4U_DEBUG_FUNCTION_STRUCT _m4u_debug_func;
-#endif
-
 #ifndef SLEEP_MILLI_SEC
 #define SLEEP_MILLI_SEC(nMilliSec)\
     do { \
@@ -1084,12 +1080,7 @@ int MAU_Config(MTK_MAU_CONFIG* pMauConf)
     if (pMauConf->Mode == MAU_PA)
     {
         unsigned int portMask[4];
-        if(_m4u_debug_func.isInit==false)
-        {
-            MAU_WARN("M4U Init Fail");
-            return -1;
-        }
-        _m4u_debug_func.m4u_mau_get_physical_port(portMask);
+        m4u_mau_get_physical_port(portMask);
         pMauConf->InvalidMasterLARB0 &= portMask[0];
         pMauConf->InvalidMasterLARB1 &= portMask[1];
         pMauConf->InvalidMasterLARB2 &= portMask[2];
@@ -1127,12 +1118,7 @@ int MAU_Config(MTK_MAU_CONFIG* pMauConf)
 int MAU_get_port_with_m4u(unsigned  int start_addr, unsigned int end_addr)
 {
 #if defined MTK_M4U_SUPPORT
-    if(_m4u_debug_func.isInit==false)
-    {
-        MAU_WARN("M4U Init Fail ");
-        return -1;
-    }
-    _m4u_debug_func.m4u_mau_check_pagetable(start_addr, end_addr);
+    m4u_mau_check_pagetable(start_addr, end_addr);
 #endif
 
     return 0;

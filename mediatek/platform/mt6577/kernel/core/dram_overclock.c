@@ -39,8 +39,7 @@
 
 static int dram_clk;
 static spinlock_t lock;
-extern void mt6577_uart_update_sysclk(void);
-
+extern void *mtk_uart_update_sysclk(void)__attribute__((weak));
 #ifdef CONFIG_CACHE_L2X0
 // For avoiding imprecise external abort [L2 Slave Error]
 // In order to use l2x0_lock, the lock must be exported from arch/arm/mm/cache-l2x0.c
@@ -256,7 +255,16 @@ static int lpddr_overclock(int clk)
 	
     spin_unlock_irqrestore(&lock, flags);
 
-    mt6577_uart_update_sysclk();
+
+    if(mtk_uart_update_sysclk)
+    {
+       mtk_uart_update_sysclk();
+        /* END */
+    }
+    else
+    {
+      printk("UART Driver has not provide mtk_uart_update_sysclk\r\nPlease contact with Haow Wang \n");
+    }
 
     return 0;
 }
@@ -423,7 +431,16 @@ static int lpddr2_overclock(int clk)
 	
     spin_unlock_irqrestore(&lock, flags);
 
-    mt6577_uart_update_sysclk();
+
+    if(mtk_uart_update_sysclk)
+    {
+       mtk_uart_update_sysclk();
+        /* END */
+    }
+    else
+    {
+      printk("UART Driver has not provide mtk_uart_update_sysclk\r\nPlease contact with Haow Wang \n");
+    }
 
     return 0;
 }

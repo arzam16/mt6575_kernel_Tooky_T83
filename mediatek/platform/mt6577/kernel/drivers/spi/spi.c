@@ -22,7 +22,11 @@
 //#include <mach/mt_spi.h>
 #include <mach/mt_gpio.h>
 #include <mach/mt_spi.h>
+#include "mt_spi_hal.h"
 #include <mach/mt_clock_manager.h>
+#if (defined(CONFIG_MTK_FPGA))
+#define  CONFIG_MT_SPI_FPGA_ENABLE
+#endif
 
 /*open base log out*/
 //	#define SPI_DEBUG 
@@ -265,13 +269,17 @@ static void spi_gpio_reset(struct mt_spi_t *ms)
 
 static void enable_clk(void)
 {
+#if (!defined(CONFIG_MT_SPI_FPGA_ENABLE))
 	enable_clock(MT65XX_PDN_MM_SPI, "spi");
+#endif
 	return;
 }
 
 static void disable_clk(void)
 {
+#if (!defined(CONFIG_MT_SPI_FPGA_ENABLE))
 	disable_clock(MT65XX_PDN_MM_SPI, "spi");
+#endif
 	return;
 }
 #endif
@@ -1075,7 +1083,30 @@ static int mt_spi_setup ( struct spi_device *spidev )
 		}
 		SPI_DBG("device %s: set default at chip's runtime state\n", 
 			dev_name ( &spidev->dev ) );
+#if defined(CONFIG_ISDBT_NMI)
+		chip_config->setuptime = 10;
+		chip_config->holdtime = 10;
+		chip_config->high_time = 10;
+		chip_config->low_time = 10;
+			chip_config->cs_idletime = 2;
+			chip_config->ulthgh_thrsh = 0;
 
+			chip_config->cpol = 0;
+			chip_config->cpha = 0;
+			
+			chip_config->rx_mlsb = 1; 
+			chip_config->tx_mlsb = 1;
+
+			chip_config->tx_endian = 0;
+			chip_config->rx_endian = 0;
+
+		chip_config->com_mod = DMA_TRANSFER;
+			chip_config->pause = 0;
+			chip_config->finish_intr = 1;
+			chip_config->deassert = 0;
+			chip_config->ulthigh = 0;
+			chip_config->tckdly = 0;
+		#else
 		chip_config->setuptime = 3;
 		chip_config->holdtime = 3;
 		chip_config->high_time = 10;
@@ -1098,6 +1129,7 @@ static int mt_spi_setup ( struct spi_device *spidev )
 		chip_config->deassert = 0;
 		chip_config->ulthigh = 0;
 		chip_config->tckdly = 0;
+		#endif
 		
 		spidev->controller_data = chip_config;
 	}

@@ -1,37 +1,3 @@
-/*****************************************************************************
- *  Copyright Statement:
- *  --------------------
- *  This software is protected by Copyright and the information contained
- *  herein is confidential. The software may not be copied and the information
- *  contained herein may not be used or disclosed except with the written
- *  permission of MediaTek Inc. (C) 2008
- *
- *  BY OPENING THIS FILE, BUYER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- *  THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- *  RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO BUYER ON
- *  AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- *  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- *  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- *  NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- *  SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- *  SUPPLIED WITH THE MEDIATEK SOFTWARE, AND BUYER AGREES TO LOOK ONLY TO SUCH
- *  THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. MEDIATEK SHALL ALSO
- *  NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO BUYER'S
- *  SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN FORUM.
- *
- *  BUYER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND CUMULATIVE
- *  LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- *  AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- *  OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY BUYER TO
- *  MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- *  THE TRANSACTION CONTEMPLATED HEREUNDER SHALL BE CONSTRUED IN ACCORDANCE
- *  WITH THE LAWS OF THE STATE OF CALIFORNIA, USA, EXCLUDING ITS CONFLICT OF
- *  LAWS PRINCIPLES.  ANY DISPUTES, CONTROVERSIES OR CLAIMS ARISING THEREOF AND
- *  RELATED THERETO SHALL BE SETTLED BY ARBITRATION IN SAN FRANCISCO, CA, UNDER
- *  THE RULES OF THE INTERNATIONAL CHAMBER OF COMMERCE (ICC).
- *
- *****************************************************************************/
 #if defined(MTK_HDMI_SUPPORT)
 #include <linux/string.h>
 
@@ -40,7 +6,7 @@
 #include "mach/irqs.h"
 
 #include "hdmi_drv.h"
-#include <linux/autoconf.h>
+#include <generated/autoconf.h>
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/init.h>
@@ -76,7 +42,7 @@
 #include <asm/uaccess.h>
 #include <linux/slab.h>
 
-#include <linux/autoconf.h>
+#include <generated/autoconf.h>
 #include <linux/mm.h>
 #include <linux/init.h>
 #include <linux/fb.h>
@@ -125,6 +91,10 @@
 #include "I2C.h"
 
 #include "hdmi_drv.h"
+
+//GPIO_HDMI_POWER_CONTROL
+//for EVB, power is always on, so no need for power control
+#define USE_GPIO_HDMI_POWER_CONTROL 0
 
 #define TDA_TRY(fct) { \
       err=(fct);                                                        \
@@ -956,8 +926,8 @@ static void hdmi_drv_get_params(HDMI_PARAMS *params)
 
 	params->clk_pol           = HDMI_POLARITY_FALLING;
 	params->de_pol            = HDMI_POLARITY_RISING;
-	params->vsync_pol         = HDMI_POLARITY_RISING;
-	params->hsync_pol         = HDMI_POLARITY_RISING;
+	params->vsync_pol         = HDMI_POLARITY_FALLING;
+	params->hsync_pol         = HDMI_POLARITY_FALLING;
 
 #if defined(USING_720P)
 	HDMI_LOG("[hdmi_drv]720p\n");
@@ -999,6 +969,7 @@ static void hdmi_drv_get_params(HDMI_PARAMS *params)
 	params->output_mode = HDMI_OUTPUT_MODE_VIDEO_MODE;
     params->is_force_awake  = 0;
     params->is_force_landscape = 0;
+    params->scaling_factor = 5;
 }
 
 #if 0
@@ -1174,6 +1145,7 @@ _tda19989_hdcp_off(this);
          }
       }
    }
+    tmdlHdmiTxSetBScreen(this->tda.instance, TMDL_HDMITX_PATTERN_BLUE /*TMDL_HDMITX_PATTERN_CBAR8*/);
 #endif
     //tda19989_colorbar(true);
     //return 0;
@@ -1289,44 +1261,46 @@ static int last_hot_plug_detect_status = 0;
 
 static int hdmi_hpd_detect_kthread(void *data)
 {
-        tda_instance *this = g_inst;
-        //int ret = 0;
-		int hpd_result = 0;
-        struct sched_param param = { .sched_priority = RTPM_PRIO_SCRN_UPDATE };
+    tda_instance *this = g_inst;
+    //int ret = 0;
+    int hpd_result = 0;
+    struct sched_param param = { .sched_priority = RTPM_PRIO_SCRN_UPDATE };
 
-        tmdlHdmiTxRxSense_t rx_sense_status = TMDL_HDMITX_RX_SENSE_INVALID;
-        HDMI_FUNC();
+    tmdlHdmiTxRxSense_t rx_sense_status = TMDL_HDMITX_RX_SENSE_INVALID;
+    HDMI_FUNC();
 
-        sched_setscheduler(current, SCHED_RR, &param);
+    sched_setscheduler(current, SCHED_RR, &param);
 
-        for( ;; ) 
-        {
-                //ret =tmdlHdmiTxHandleInterrupt(this->tda.instance);
-                //HDMI_LOG("%s, return %d\n", __func__, ret);
-                //HDMI_LOG("%s, mdelay begin\n", __func__);
-                tmdlHdmiTxGetHPDStatus(this->tda.instance,&this->tda.hot_plug_detect);
-                tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
-                this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
-				hpd_result = (this->tda.hot_plug_detect || this->tda.rx_device_active);
-                 if(hpd_result != last_hot_plug_detect_status)
-                {    
-                    HDMI_LOG("==============hdmi detect============\n");
-                     HDMI_LOG("this->tda.rx_device_active=%d, this->tda.hot_plug_detect=%d\n", this->tda.rx_device_active, this->tda.hot_plug_detect);
-                    HDMI_LOG("=====================================\n");                     
-                  tmdlHdmiTxHandleInterrupt(this->tda.instance);
-                }
-                 
-                 last_hot_plug_detect_status = hpd_result;
-                msleep(500);
-                
-                if (kthread_should_stop())
-                {
-                        HDMI_LOG("%s, kthread stop\n", __func__);
-                        break;
-                }
+    for( ;; ) 
+    {
+        //ret =tmdlHdmiTxHandleInterrupt(this->tda.instance);
+        //HDMI_LOG("%s, return %d\n", __func__, ret);
+        //HDMI_LOG("%s, mdelay begin\n", __func__);
+        tmdlHdmiTxGetHPDStatus(this->tda.instance,&this->tda.hot_plug_detect);
+        tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
+        this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
+        hpd_result = (this->tda.hot_plug_detect || this->tda.rx_device_active);
+        if(hpd_result != last_hot_plug_detect_status)
+        {    
+            HDMI_LOG("==============hdmi detect============\n");
+            HDMI_LOG("this->tda.rx_device_active=%d, this->tda.hot_plug_detect=%d\n", 
+                    this->tda.rx_device_active, this->tda.hot_plug_detect);
+            HDMI_LOG("=====================================\n");                     
+            //tmdlHdmiTxHandleInterrupt(this->tda.instance);
         }
 
-        return 0;
+        tmdlHdmiTxHandleInterrupt(this->tda.instance);
+        last_hot_plug_detect_status = hpd_result;
+        msleep(500);
+
+        if (kthread_should_stop())
+        {
+            HDMI_LOG("%s, kthread stop\n", __func__);
+            break;
+        }
+    }
+
+    return 0;
 }
 
 static int hdmi_drv_init(void)
@@ -1366,7 +1340,7 @@ static int hdmi_drv_exit(void)
         return 0;
 }
 
-void hdmi_drv_power_on(void)
+int hdmi_drv_power_on(void)
 {
     int err = 0;
     tda_instance *this = g_inst;
@@ -1375,6 +1349,8 @@ void hdmi_drv_power_on(void)
     HDMI_FUNC();
 
       resume_i2c();
+#if USE_GPIO_HDMI_POWER_CONTROL 
+
 #if defined 	GPIO_HDMI_POWER_CONTROL
     mt_set_gpio_mode(GPIO_HDMI_POWER_CONTROL, GPIO_MODE_00);
     mt_set_gpio_dir(GPIO_HDMI_POWER_CONTROL, GPIO_DIR_OUT);
@@ -1382,7 +1358,9 @@ void hdmi_drv_power_on(void)
 #else
 	HDMI_LOG("FATAL ERROR!!!, HDMI GPIO is not defined -- GPIO_HDMI_POWER_CONTROL\n");		
 #endif
-    _tda19989_tx_init(g_inst);
+
+#endif
+    TDA_TRY(_tda19989_tx_init(g_inst));
        tmdlHdmiTxGetHPDStatus(this->tda.instance,&this->tda.hot_plug_detect);
         HDMI_LOG("%s, before enter standby, hot_plug_detect=%d\n", __func__, this->tda.hot_plug_detect);
 
@@ -1395,6 +1373,7 @@ void hdmi_drv_power_on(void)
             TDA_TRY(tmdlHdmiTxHandleInterrupt(this->tda.instance));
             TDA_TRY(tmdlHdmiTxHandleInterrupt(this->tda.instance));
         }
+#if USE_GPIO_HDMI_POWER_CONTROL 
 
 #if defined 	GPIO_HDMI_POWER_CONTROL
 	    mt_set_gpio_out(GPIO_HDMI_POWER_CONTROL, 1);
@@ -1402,6 +1381,7 @@ void hdmi_drv_power_on(void)
 		HDMI_LOG("FATAL ERROR!!!, HDMI GPIO is not defined -- GPIO_HDMI_POWER_CONTROL\n"); 	 
 #endif
 
+#endif
        
        tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
        this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
@@ -1426,7 +1406,7 @@ void hdmi_drv_power_on(void)
         wake_up_process(hdmi_hpd_detect_task);
 
 TRY_DONE:
-	return ;
+	return err;
 }
 
 
@@ -1447,6 +1427,7 @@ void hdmi_drv_power_off(void)
        }
     kthread_stop(hdmi_hpd_detect_task);
     _tda19989_tx_exit(g_inst);
+#if USE_GPIO_HDMI_POWER_CONTROL
 
 #if defined 	GPIO_HDMI_POWER_CONTROL
     mt_set_gpio_mode(GPIO_HDMI_POWER_CONTROL, GPIO_MODE_00);
@@ -1456,6 +1437,7 @@ void hdmi_drv_power_off(void)
 	HDMI_LOG("FATAL ERROR!!!, HDMI GPIO is not defined -- GPIO_HDMI_POWER_CONTROL\n");	 
 #endif
 		
+#endif
     suspend_i2c();
 		
 	last_hot_plug_detect_status = 0;
@@ -1474,7 +1456,7 @@ HDMI_STATE hdmi_drv_get_state(void)
     tmdlHdmiTxGetRXSenseStatus(this->tda.instance, &rx_sense_status);
     this->tda.rx_device_active = (rx_sense_status == TMDL_HDMITX_RX_SENSE_ACTIVE) ? true: false;
 
-    if(this->tda.hot_plug_detect && this->tda.rx_device_active)
+    if(this->tda.hot_plug_detect || this->tda.rx_device_active)
         return HDMI_STATE_ACTIVE;
     else
         return HDMI_STATE_NO_DEVICE;

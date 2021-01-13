@@ -283,7 +283,13 @@ static struct usb_descriptor_header *acm_ss_function[] = {
 
 /* static strings, in UTF-8 */
 static struct usb_string acm_string_defs[] = {
+	//<2012/10/02-yaotsulin, Change USB configuration VID/PID for RSD request
+#if 1
+	[ACM_CTRL_IDX].s = "6575 COM(data_if)",
+#else
 	[ACM_CTRL_IDX].s = "CDC Abstract Control Model (ACM)",
+#endif
+	//>2012/10/02-yaotsulin
 	[ACM_DATA_IDX].s = "CDC ACM Data",
 	[ACM_IAD_IDX ].s = "CDC Serial",
 	{  /* ZEROES END LIST */ },

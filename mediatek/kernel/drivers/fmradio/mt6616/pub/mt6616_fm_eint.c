@@ -1,9 +1,31 @@
+/* mt6626_fm_eint.c
+ *
+ * (C) Copyright 2009
+ * MediaTek <www.MediaTek.com>
+ * Hongcheng <hongcheng.xia@MediaTek.com>
+ *
+ * mt6626 FM Radio Driver -- EINT functions
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include "fm_typedef.h"
 #include "fm_dbg.h"
 #include "fm_err.h"
 #include "fm_eint.h"
 
-#ifdef MT6516
+#if 0//def MT6516
 #include <mach/mt6516_eint.h>
 #include <mach/mt6516_gpio.h>
 #else
@@ -24,7 +46,7 @@ struct fm_eint_interface {
 };
 
 
-#ifdef MT6516
+#if 0//def MT6516
 extern void MT6516_EINTIRQUnmask(fm_u32 line);
 extern void MT6516_EINTIRQMask(fm_u32 line);
 extern void MT6516_EINT_Set_HW_Debounce(fm_u8 eintno, fm_u32 ms);
@@ -35,7 +57,7 @@ extern void MT6516_EINT_Registration(fm_u8 eintno, kal_bool Dbounce_En,
 #endif
 
 static struct fm_eint_interface fm_eint_ops = {
-#ifdef MT6516
+#if 0//def MT6516
     .mask = MT6516_EINTIRQMask,
     .unmask = MT6516_EINTIRQUnmask,
     .set_hw_debounce = MT6516_EINT_Set_HW_Debounce,

@@ -39,10 +39,6 @@ static int print_whose_status = 0;  //0: MAU's stauts 1: MPU's status
 static char debug_buffer[4096];
 
 
-#ifdef MTK_M4U_SUPPORT
-M4U_DEBUG_FUNCTION_STRUCT _m4u_debug_func;
-EXPORT_SYMBOL(_m4u_debug_func);
-#endif
 
 static char STR_HELP[] =
     "\n"
@@ -237,23 +233,9 @@ static void process_dbg_opt(const char *opt)
     if (0 == strncmp(opt, "m4u_monitor:", 12))
     {
         if (0 == strncmp(opt + 12, "on", 2)) {
-            if(_m4u_debug_func.isInit)
-            {
-            	 _m4u_debug_func.m4u_perf_timer_on();
-            }
-            else
-            {
-            	 MAU_ERROR("m4u debug struct is invalid !");
-            }
+            	 m4u_perf_timer_on();
         } else if (0 == strncmp(opt + 12, "off", 3)) {
-            if(_m4u_debug_func.isInit)
-            {
-            	 _m4u_debug_func.m4u_perf_timer_off();
-            }
-            else
-            {
-            	 MAU_ERROR("m4u debug struct is invalid !");
-            }
+            	 m4u_perf_timer_off();
         } else {
             goto Error;
         }
@@ -261,40 +243,21 @@ static void process_dbg_opt(const char *opt)
     else if (0 == strncmp(opt, "m4u_log:", 8))
     {
         if (0 == strncmp(opt + 8, "on", 2)) {
-            if(_m4u_debug_func.isInit)
-            {
-            	 _m4u_debug_func.m4u_log_on();
-            }
-            else
-            {
-            	 MAU_ERROR("m4u debug struct is invalid !");
-            }
+            	 m4u_log_on();
         } else if (0 == strncmp(opt + 8, "off", 3)) {
-            if(_m4u_debug_func.isInit)
-            {
-            	 _m4u_debug_func.m4u_log_off();
-            }
-            else
-            {
-            	 MAU_ERROR("m4u debug struct is invalid !");
-            }
+            	 m4u_log_off();
         } else {
             goto Error;
         }
     }
     else if (0 == strncmp(opt, "m4u_debug:", 10))
     {
-            if(_m4u_debug_func.isInit)
             {
 		            unsigned int command;
 		            char *p = (char *)opt + 10;
 		            command = (unsigned int) simple_strtoul(p, &p, 10);
 		            MAU_INFO("m4u_debug_command, command=%d ", command);
-		            _m4u_debug_func.m4u_debug_command(command);
-            }
-            else
-            {
-            	 MAU_ERROR("m4u debug struct is invalid !");
+		            m4u_debug_command(command);
             }
     }
     else if (0 == strncmp(opt, "cat:", 4))

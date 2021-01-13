@@ -1,38 +1,3 @@
-/* Copyright Statement:
- *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
- */
-/* MediaTek Inc. (C) 2010. All rights reserved.
- *
- * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
- * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
- */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -52,6 +17,7 @@
 #include "kd_flashlight.h"
 #include <asm/io.h>
 #include <asm/uaccess.h>
+#include <linux/xlog.h>
 //#include <mach/mt6516_typedefs.h>
 //#include <mach/mt6516_gpt_sw.h>
 
@@ -68,29 +34,26 @@
 /******************************************************************************
  * Debug configuration
 ******************************************************************************/
-#define PFX "[LEDS_STROBE]"
+#define TAG_NAME "[dummy_flashlight.c]"
 #define PK_DBG_NONE(fmt, arg...)    do {} while (0)
-#define PK_DBG_FUNC(fmt, arg...)    printk(KERN_INFO PFX "%s: " fmt, __FUNCTION__ ,##arg)
+#define PK_DBG_FUNC(fmt, arg...)    xlog_printk(ANDROID_LOG_DEBUG  , TAG_NAME, KERN_INFO  "%s: " fmt, __FUNCTION__ ,##arg)
+#define PK_WARN(fmt, arg...)        xlog_printk(ANDROID_LOG_WARNING, TAG_NAME, KERN_WARNING  "%s: " fmt, __FUNCTION__ ,##arg)
+#define PK_NOTICE(fmt, arg...)      xlog_printk(ANDROID_LOG_DEBUG  , TAG_NAME, KERN_NOTICE  "%s: " fmt, __FUNCTION__ ,##arg)
+#define PK_INFO(fmt, arg...)        xlog_printk(ANDROID_LOG_INFO   , TAG_NAME, KERN_INFO  "%s: " fmt, __FUNCTION__ ,##arg)
+#define PK_TRC_FUNC(f)              xlog_printk(ANDROID_LOG_DEBUG  , TAG_NAME,  "<%s>\n", __FUNCTION__);
+#define PK_TRC_VERBOSE(fmt, arg...) xlog_printk(ANDROID_LOG_VERBOSE, TAG_NAME,  fmt, ##arg)
+#define PK_ERROR(fmt, arg...)       xlog_printk(ANDROID_LOG_ERROR  , TAG_NAME, KERN_ERR "%s: " fmt, __FUNCTION__ ,##arg)
 
-#define PK_WARN(fmt, arg...)        printk(KERN_WARNING PFX "%s: " fmt, __FUNCTION__ ,##arg)
-#define PK_NOTICE(fmt, arg...)      printk(KERN_NOTICE PFX "%s: " fmt, __FUNCTION__ ,##arg)
-#define PK_INFO(fmt, arg...)        printk(KERN_INFO PFX "%s: " fmt, __FUNCTION__ ,##arg)
-#define PK_TRC_FUNC(f)              printk(PFX "<%s>\n", __FUNCTION__);
-#define PK_TRC_VERBOSE(fmt, arg...) printk(PFX fmt, ##arg)
 
-//#define DEBUG_LEDS_STROBE
-#ifdef DEBUG_LEDS_STROBE
-#define PK_DBG PK_DBG_FUNC
-#define PK_TRC PK_DBG_NONE //PK_TRC_FUNC
-#define PK_VER PK_DBG_NONE //PK_TRC_VERBOSE
-#define IH_DBG PK_DBG_NONE
-#define PK_ERR(fmt, arg...)         printk(KERN_ERR PFX "%s: " fmt, __FUNCTION__ ,##arg)
+#define DEBUG_LEDS_STROBE
+#ifdef  DEBUG_LEDS_STROBE
+	#define PK_DBG PK_DBG_FUNC
+	#define PK_VER PK_TRC_VERBOSE
+	#define PK_ERR PK_ERROR
 #else
-#define PK_DBG(a,...)
-#define PK_TRC(a,...)
-#define PK_VER(a,...)
-#define IH_DBG(a,...)
-#define PK_ERR(a,...)
+	#define PK_DBG(a,...)
+	#define PK_VER(a,...)
+	#define PK_ERR(a,...)
 #endif
 
 #if 0
@@ -120,7 +83,7 @@ static int dummy_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
 {
     int i4RetValue = 0;
     int iFlashType = (int)FLASHLIGHT_NONE;
-    
+
     switch(cmd)
     {
         case FLASHLIGHTIOC_G_FLASHTYPE:
@@ -136,7 +99,7 @@ static int dummy_flashlight_ioctl(MUINT32 cmd, MUINT32 arg)
                 i4RetValue = -EPERM;
             }
             break;
-            
+
     	default :
     		PK_DBG("ERROR Cmd ID \n");
     		//i4RetValue = -EPERM;
@@ -149,7 +112,7 @@ static int dummy_flashlight_open(void *pArg)
 {
     return 0;
 }
- 
+
 static int dummy_flashlight_release(void *pArg)
 {
     return 0;
@@ -162,7 +125,7 @@ FLASHLIGHT_FUNCTION_STRUCT	dummyFlashlightFunc=
 	dummy_flashlight_ioctl
 };
 
-MUINT32 dummyFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc) { 
+MUINT32 dummyFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc) {
     if (pfFunc!=NULL) {
         *pfFunc=&dummyFlashlightFunc;
     }

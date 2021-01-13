@@ -672,6 +672,12 @@ static int __init parse_tag_mem32(const struct tag *tag)
 
 __tagtable(ATAG_MEM, parse_tag_mem32);
 
+static int __init parse_tag_mem64(const struct tag *tag)
+{
+	return arm_add_memory(tag->u.mem64.start, tag->u.mem64.size);
+}
+
+__tagtable(ATAG_MEM64, parse_tag_mem64);
 #if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
 struct screen_info screen_info = {
  .orig_video_lines	= 30,
@@ -718,12 +724,9 @@ static int __init parse_tag_serialnr(const struct tag *tag)
 
 __tagtable(ATAG_SERIAL, parse_tag_serialnr);
 
-unsigned int UbVbat=0;
-
 static int __init parse_tag_revision(const struct tag *tag)
 {
 	system_rev = tag->u.revision.rev;
-       UbVbat = tag->u.revision.vbat;
 	return 0;
 }
 
@@ -1105,10 +1108,14 @@ static int c_show(struct seq_file *m, void *v)
 
 	seq_puts(m, "\n");
 
+#if 0 // TO-FIX by Marcos
 	if (get_chip_id() == 0)
                 seq_printf(m, "Hardware\t: %s\n", machine_name);
         else
                 seq_printf(m, "Hardware\t: MT%X\n", get_chip_id());
+#else
+	seq_printf(m, "Hardware\t: %s\n", machine_name);
+#endif	
 	//seq_printf(m, "Hardware\t: %s\n", machine_name);
 	seq_printf(m, "Revision\t: %04x\n", system_rev);
 	seq_printf(m, "Serial\t\t: %08x%08x\n",

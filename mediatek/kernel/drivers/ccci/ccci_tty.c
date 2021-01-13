@@ -404,7 +404,7 @@ static int ccci_tty_write(struct tty_struct *tty, const unsigned char *buf, int 
 			tty_instance->ready = 1; 			
 			tty_instance->shared_mem->tx_control.write = write_back;
 			
-			if (ret == CCCI_MD_NOT_READY) {
+			if (ret == CCCI_MD_NOT_READY || ret == CCCI_RESET_NOT_READY) {
 				CCCI_MSG_INF("tty", "ttyC%d write fail when Modem not ready\n", tty_instance->tty->index);
 				//mutex_unlock(&ccci_tty_lock);
 				mutex_unlock(&tty_instance->ccci_tty_mutex);

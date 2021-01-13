@@ -28,23 +28,20 @@
 
 #include "sdio_ops.h"
 
-extern u32 sdio_enable_tune;
-extern u32 sdio_tune_flag;
-
-
-
-static int process_sdio_pending_irqs(struct mmc_card *card)
+static int process_sdio_pending_irqs(struct mmc_host *host)
 {
+	struct mmc_card *card = host->card;
 	int i, ret, count;
 	unsigned char pending;
 	struct sdio_func *func;
 
 	/*
 	 * Optimization, if there is only 1 function interrupt registered
-	 * call irq handler directly
+	 * and we know an IRQ was signaled then call irq handler directly.
+	 * Otherwise do the full probe.
 	 */
 	func = card->sdio_single_irq;
-	if (func) {
+	if (func && host->sdio_irq_pending) {
 		func->irq_handler(func);
 		return 1;
 	}
@@ -121,7 +118,8 @@ static int sdio_irq_thread(void *_host)
 		ret = __mmc_claim_host(host, &host->sdio_irq_thread_abort);
 		if (ret)
 			break;
-		ret = process_sdio_pending_irqs(host->card);
+		ret = process_sdio_pending_irqs(host);
+		host->sdio_irq_pending = false;
 		mmc_release_host(host);
 
 		/*
@@ -149,15 +147,6 @@ static int sdio_irq_thread(void *_host)
 					period = idle_period;
 			}
 		}
-
-		/* Add the CRC/Timeout handling for exit the sdio_irq_thread in Real WIFI ETT.
-		 *
-		 */	
-		if(unlikely(sdio_enable_tune) && unlikely(sdio_tune_flag)) {
-			printk(KERN_ERR"SDIO Error handling in sdio_irq_thread\n");
-			break;
-		}
-			
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (host->caps & MMC_CAP_SDIO_IRQ) {
@@ -212,11 +201,6 @@ static int sdio_card_irq_put(struct mmc_card *card)
 
 	if (!--host->sdio_irqs) {
 		atomic_set(&host->sdio_irq_thread_abort, 1);
-		
-		if(!host->sdio_irq_thread->real_cred) {
-			printk(KERN_ERR"SDIO ignore kthread_stop in sdio_release_irq\n");
-			return 0;
-		}
 		kthread_stop(host->sdio_irq_thread);
 	}
 

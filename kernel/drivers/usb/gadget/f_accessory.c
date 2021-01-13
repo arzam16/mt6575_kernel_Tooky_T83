@@ -482,7 +482,7 @@ static int acc_unregister_hid(struct acc_dev *dev, int id)
 	return 0;
 }
 
-static int __init create_bulk_endpoints(struct acc_dev *dev,
+static int create_bulk_endpoints(struct acc_dev *dev,
 				struct usb_endpoint_descriptor *in_desc,
 				struct usb_endpoint_descriptor *out_desc)
 {
@@ -1158,14 +1158,11 @@ err:
 	return ret;
 }
 
-/* 'acc_disconnect' defined but not used */
-#if 0
 static void acc_disconnect(void)
 {
 	/* unregister all HID devices if USB is disconnected */
 	kill_all_hid_devices(_acc_dev);
 }
-#endif
 
 static void acc_cleanup(void)
 {

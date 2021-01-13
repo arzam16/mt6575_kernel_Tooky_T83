@@ -53,6 +53,10 @@
 
 #define CFG_SUBSYS_COEX_NEED 0
 
+#define CFG_WMT_COREDUMP_ENABLE 0
+
+#define CFG_WMT_MULTI_PATCH (1)
+
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************
@@ -63,20 +67,18 @@
 ********************************************************************************
 */
 
-static UCHAR gDefPatchName[NAME_MAX + 1];
 static UCHAR gFullPatchName[NAME_MAX + 1];
 static const WMT_IC_INFO_S *gp_mt6628_info = NULL;
-
-#ifndef CFG_IC_MT6628
-
+static WMT_PATCH gp_mt6628_patch_info;
+static WMT_CO_CLOCK gCoClockEn = WMT_CO_CLOCK_DIS;
+#if 0
 static UCHAR WMT_WAKEUP_DIS_GATE_CMD[] = {0x1, 0x3, 0x01, 0x00, 0x04};
 static UCHAR WMT_WAKEUP_DIS_GATE_EVT[] = {0x2, 0x3, 0x02, 0x0, 0x0, 0x04};
-#endif
 
-#if 0
 static UCHAR WMT_WAKEUP_EN_GATE_CMD[] = {0x1, 0x3, 0x01, 0x00, 0x05};
 static UCHAR WMT_WAKEUP_EN_GATE_EVT[] = {0x2, 0x3, 0x02, 0x0, 0x0, 0x05};
 #endif
+
 static UCHAR WMT_QUERY_BAUD_CMD[] = {0x01, 0x04, 0x01, 0x00, 0x02};
 static UCHAR WMT_QUERY_BAUD_EVT_115200[] = {0x02, 0x04, 0x06, 0x00, 0x00, 0x02, 0x00, 0xC2, 0x01, 0x00};
 static UCHAR WMT_QUERY_BAUD_EVT_X[] = {0x02, 0x04, 0x06, 0x00, 0x00, 0x02, 0xAA, 0xAA, 0xAA, 0xBB};
@@ -94,6 +96,13 @@ static UCHAR WMT_RESET_EVT[] = {0x02, 0x07, 0x01, 0x00, 0x00};
 #if CFG_WMT_BT_PORT2
 static UCHAR WMT_BTP2_CMD[] = {0x01, 0x10, 0x03, 0x00, 0x01, 0x03, 0x01};
 static UCHAR WMT_BTP2_EVT[] = {0x02, 0x10, 0x01, 0x00, 0x00};
+#endif
+
+#if CFG_WMT_MULTI_PATCH
+static UCHAR WMT_PATCH_ADDRESS_CMD[] = {0x01,0x08,0x10,0x00,0x01,0x01,0x00,0x01,0xD4,0x01,0x09,0xF0,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff};
+static UCHAR WMT_PATCH_ADDRESS_EVT[] = {0x02,0x08,0x04,0x00,0x00,0x00,0x00,0x01};
+static UCHAR WMT_PATCH_P_ADDRESS_CMD[] = {0x01,0x08,0x10,0x00,0x01,0x01,0x00,0x01,0x48,0x03,0x09,0xF0,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff};
+static UCHAR WMT_PATCH_P_ADDRESS_EVT[] = {0x02,0x08,0x04,0x00,0x00,0x00,0x00,0x01};
 #endif
 
 /*coex cmd/evt++*/
@@ -132,30 +141,78 @@ static UCHAR WMT_SET_OSC32K_BYPASS_CMD[]= {0x01, 0x0A, 0x01, 0x00, 0x05};
 static UCHAR WMT_SET_OSC32K_BYPASS_EVT[]= {0x02, 0x0A, 0x01, 0x00, 0x00};
 #endif
 
+#if 0
 //to enable dump feature
 static UINT8  WMT_CORE_DUMP_EN_CMD[] = {0x01, 0x0F, 0x02, 0x00, 0x03, 0x01};
 static UINT8  WMT_CORE_DUMP_EN_EVT[] = {0x02, 0x0F, 0x01, 0x00, 0x00};
 //to get system stack dump when f/w assert
-#if 0
 static UCHAR  WMT_CORE_DUMP_LEVEL_01_CMD[] = {0x1, 0x0F, 0x07, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 static UCHAR  WMT_CORE_DUMP_LEVEL_01_EVT[] = {0x2, 0x0F, 0x01, 0x00, 0x00};
-#endif
 //to get task and system stack dump when f/w assert
-#if 0
 static UCHAR  WMT_CORE_DUMP_LEVEL_02_CMD[] = {0x1, 0x0F, 0x07, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-#endif
 static UCHAR  WMT_CORE_DUMP_LEVEL_02_EVT[] = {0x2, 0x0F, 0x01, 0x00, 0x00};
 //to get bt related memory dump when f/w assert
-#if 0
 static UCHAR  WMT_CORE_DUMP_LEVEL_03_CMD[] = {0x1, 0x0F, 0x07, 0x00, 0x03, 0x00, 0x00, 0x09, 0xF0, 0x00, 0x0A};
 static UCHAR  WMT_CORE_DUMP_LEVEL_03_EVT[] = {0x2, 0x0F, 0x01, 0x00, 0x00};
 #endif
-
 //to get full dump when f/w assert
 static UCHAR  WMT_CORE_DUMP_LEVEL_04_CMD[] = {0x1, 0x0F, 0x07, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-#if 0
 static UCHAR  WMT_CORE_DUMP_LEVEL_04_EVT[] = {0x2, 0x0F, 0x01, 0x00, 0x00};
+
+static UCHAR  WMT_CORE_CO_CLOCK_CMD[] = {0x1, 0x0A, 0x02, 0x00, 0x08, 0x03};
+static UCHAR  WMT_CORE_CO_CLOCK_EVT[] = {0x2, 0x0A, 0x01, 0x00, 0x00};
+
+
+#if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+static UCHAR WMT_SET_I2S_SLAVE_REG_CMD[] = {0x01, 0x08, 0x10, 0x00/*length*/
+    ,0x01 /* op: w */
+    ,0x01 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+    ,0x78, 0x00, 0x05, 0x80/*addr:0x80050078*/
+    ,0x00, 0x00, 0x11, 0x01/*value:0x11010000*/
+    ,0x00, 0x00, 0x77, 0x07/*mask:0x07770000*/
+};
+static UCHAR WMT_SET_I2S_SLAVE_REG_EVT[] = {0x02, 0x08, 0x04, 0x00/*length*/
+    ,0x00 /*S: 0*/
+    ,0x00 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+};
+
+static UCHAR WMT_SET_DAI_TO_PAD_REG_CMD[] = {0x01, 0x08, 0x10, 0x00/*length*/
+    ,0x01 /* op: w */
+    ,0x01 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+    ,0x74, 0x00, 0x05, 0x80/*addr:0x80050074*/
+    ,0x44, 0x44, 0x00, 0x00/*value:0x11010000*/
+    ,0x77, 0x77, 0x00, 0x00/*mask:0x07770000*/
+};
+
+static UCHAR WMT_SET_DAI_TO_PAD_REG_EVT[] = {0x02, 0x08, 0x04, 0x00/*length*/
+    ,0x00 /*S: 0*/
+    ,0x00 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+};
+static UCHAR WMT_SET_DAI_REG_CMD[] = {0x01, 0x08, 0x10, 0x00/*length*/
+    ,0x01 /* op: w */
+    ,0x01 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+    ,0xA0, 0x00, 0x05, 0x80/*addr:0x80050074*/
+    ,0x04, 0x00, 0x00, 0x00/*value:0x11010000*/
+    ,0x04, 0x00, 0x00, 0x00/*mask:0x07770000*/
+};
+static UCHAR WMT_SET_DAI_REG_EVT[] = {0x02, 0x08, 0x04, 0x00/*length*/
+    ,0x00 /*S: 0*/
+    ,0x00 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+};
 #endif
+
 
 #ifndef CFG_IC_MT6628 //For MT6628 no need to set ALLEINT registers, done in f/w
 /* enable all interrupt */
@@ -311,6 +368,31 @@ static UCHAR WMT_SET_MCUIRQ_REG_EVT[] = {0x02, 0x08, 0x04, 0x00/*length*/
 #endif
 #endif
 
+static UCHAR WMT_SET_CRYSTAL_TRIMING_CMD[] = {0x01, 0x12, 0x02, 0x00, 0x01, 0x00};
+static UCHAR WMT_SET_CRYSTAL_TRIMING_EVT[] = {0x02, 0x12, 0x02, 0x00, 0x01, 0x00};
+
+static UCHAR WMT_GET_CRYSTAL_TRIMING_CMD[] = {0x01, 0x12, 0x02, 0x00, 0x00, 0x00};
+static UCHAR WMT_GET_CRYSTAL_TRIMING_EVT[] = {0x02, 0x12, 0x02, 0x00, 0x00, 0x00};
+
+/* set sdio driving */
+static UCHAR WMT_SET_SDIO_DRV_REG_CMD[] = {0x01, 0x08, 0x10, 0x00/*length*/
+    ,0x01 /* op: w */
+    ,0x01 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+    ,0x50, 0x00, 0x05, 0x80/*addr:0x80050050*/
+    ,0x44, 0x44, 0x04, 0x00/*value:0x00044444*/
+    ,0x77, 0x77, 0x07, 0x00/*mask:0x00077777*/
+};
+
+static UCHAR WMT_SET_SDIO_DRV_REG_EVT[] = {0x02, 0x08, 0x04, 0x00/*length*/
+    ,0x00 /*S: 0*/
+    ,0x00 /*type: reg */
+    ,0x00 /*rev*/
+    ,0x01 /*1 registers*/
+};
+
+
 #ifndef CFG_IC_MT6628
 
 /* stp sdio init scripts */
@@ -331,6 +413,7 @@ static struct init_script init_table_1_2[] =
     INIT_CMD(WMT_SET_BAUD_CMD_X, WMT_SET_BAUD_EVT, "set baud rate"),
 };
 
+
 static struct init_script init_table_2[] =
 {
     INIT_CMD(WMT_QUERY_BAUD_CMD, WMT_QUERY_BAUD_EVT_X, "query baud X"),
@@ -343,6 +426,17 @@ static struct init_script init_table_3[] =
     INIT_CMD(WMT_BTP2_CMD, WMT_BTP2_EVT, "set bt port2"),
 #endif
 };
+
+static struct init_script set_crystal_timing_script[] =
+{
+    INIT_CMD(WMT_SET_CRYSTAL_TRIMING_CMD, WMT_SET_CRYSTAL_TRIMING_EVT, "set crystal trim value"),
+};
+
+static struct init_script get_crystal_timing_script[] =
+{
+    INIT_CMD(WMT_GET_CRYSTAL_TRIMING_CMD, WMT_GET_CRYSTAL_TRIMING_EVT, "get crystal trim value"),
+};
+
 
 #if 0
 static struct init_script init_table_3_1[] =
@@ -367,8 +461,10 @@ static struct init_script init_table_5_1[] = {
 };
 
 static struct init_script init_table_6[] = {
+#if 0
     INIT_CMD(WMT_CORE_DUMP_EN_CMD, WMT_CORE_DUMP_EN_EVT, "configure memory and core dump"),
-    INIT_CMD(WMT_CORE_DUMP_LEVEL_04_CMD, WMT_CORE_DUMP_LEVEL_02_EVT , "setup core dump level"),
+#endif
+    INIT_CMD(WMT_CORE_DUMP_LEVEL_04_CMD, WMT_CORE_DUMP_LEVEL_04_EVT , "setup core dump level"),
 };
 
 #if 0
@@ -400,7 +496,7 @@ static struct init_script set_registers[] =
 
 static struct init_script coex_table[] = {
      INIT_CMD(WMT_COEX_SETTING_CONFIG_CMD, WMT_COEX_SETTING_CONFIG_EVT, "coex_wmt"),
-		 
+         
 #if CFG_SUBSYS_COEX_NEED
 //no need in MT6628
      INIT_CMD(WMT_BT_COEX_SETTING_CONFIG_CMD, WMT_BT_COEX_SETTING_CONFIG_EVT, "coex_bt"),
@@ -409,6 +505,24 @@ static struct init_script coex_table[] = {
      INIT_CMD(WMT_MISC_COEX_SETTING_CONFIG_CMD, WMT_MISC_COEX_SETTING_CONFIG_EVT, "coex_misc"),
 #endif
 };
+static struct init_script osc_type_table[] = {
+     INIT_CMD(WMT_CORE_CO_CLOCK_CMD, WMT_CORE_CO_CLOCK_EVT, "osc_type"),
+};
+
+#if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+static struct init_script merge_pcm_table[] =
+{
+    INIT_CMD(WMT_SET_I2S_SLAVE_REG_CMD, WMT_SET_I2S_SLAVE_REG_EVT, "I2S_Slave"),
+    INIT_CMD(WMT_SET_DAI_TO_PAD_REG_CMD, WMT_SET_DAI_TO_PAD_REG_EVT, "DAI_PAD"),
+    INIT_CMD(WMT_SET_DAI_REG_CMD, WMT_SET_DAI_REG_EVT, "DAI_EVT"),
+};
+#endif
+
+
+static struct init_script sdio_driving_table[] = {
+     INIT_CMD(WMT_SET_SDIO_DRV_REG_CMD, WMT_SET_SDIO_DRV_REG_EVT, "sdio_driving"),
+};
+
 
 /* MT6628 Chip Version and Info Table */
 static const WMT_IC_INFO_S mt6628_info_table[] = {
@@ -418,18 +532,45 @@ static const WMT_IC_INFO_S mt6628_info_table[] = {
         .cChipVersion      = WMT_IC_VER_E1,
         .cPatchNameExt     = WMT_IC_PATCH_E1_EXT,
         //need to refine?
-        .eWmtHwVer        = WMTHWVER_MT6620_E1,
+        .eWmtHwVer        = WMTHWVER_E1,
         .bWorkWithoutPatch = MTK_WCN_BOOL_FALSE,
-        .bPsmSupport       = MTK_WCN_BOOL_FALSE,
+        .bPsmSupport       = MTK_WCN_BOOL_TRUE,
     }, 
     {
         .u4HwVer            = 0x8A10,
         .cChipName         = WMT_IC_NAME_MT6628,
         .cChipVersion      = WMT_IC_VER_E2,
         .cPatchNameExt     = WMT_IC_PATCH_E2_EXT,
-        .eWmtHwVer        = WMTHWVER_MT6620_E2,
+        .eWmtHwVer        = WMTHWVER_E2,
         .bWorkWithoutPatch = MTK_WCN_BOOL_FALSE,
-        .bPsmSupport       = MTK_WCN_BOOL_FALSE,
+        .bPsmSupport       = MTK_WCN_BOOL_TRUE,
+    }, 
+    {
+        .u4HwVer            = 0x8B10,
+        .cChipName         = WMT_IC_NAME_MT6628,
+        .cChipVersion      = WMT_IC_VER_E3,
+        .cPatchNameExt     = WMT_IC_PATCH_E2_EXT,
+        .eWmtHwVer        = WMTHWVER_E3,
+        .bWorkWithoutPatch = MTK_WCN_BOOL_FALSE,
+        .bPsmSupport       = MTK_WCN_BOOL_TRUE,
+    }, 
+    {
+        .u4HwVer            = 0x8B11,
+        .cChipName         = WMT_IC_NAME_MT6628,
+        .cChipVersion      = WMT_IC_VER_E4,
+        .cPatchNameExt     = WMT_IC_PATCH_E2_EXT,
+        .eWmtHwVer        = WMTHWVER_E4,
+        .bWorkWithoutPatch = MTK_WCN_BOOL_FALSE,
+        .bPsmSupport       = MTK_WCN_BOOL_TRUE,
+    }, 
+    {
+        .u4HwVer            = 0x8a11,
+        .cChipName         = WMT_IC_NAME_MT6628,
+        .cChipVersion      = WMT_IC_VER_E5,
+        .cPatchNameExt     = WMT_IC_PATCH_E2_EXT,
+        .eWmtHwVer        = WMTHWVER_E5,
+        .bWorkWithoutPatch = MTK_WCN_BOOL_FALSE,
+        .bPsmSupport       = MTK_WCN_BOOL_TRUE,
     }
 };
 
@@ -472,12 +613,26 @@ mt6628_find_wmt_ic_info (
 static INT32
 wmt_stp_init_coex (VOID);
 
-static INT32
-mt6628_update_patch_name (VOID);
+#if CFG_WMT_MULTI_PATCH
+static INT32 mt6628_patch_dwn (UINT32 index);
+static INT32 mt6628_patch_info_prepare(VOID);
+#else
+static INT32 mt6628_patch_dwn (VOID);
+#endif
+
+static INT32 
+mt6628_co_clock_ctrl(WMT_CO_CLOCK on);
+static WMT_CO_CLOCK mt6628_co_clock_get(VOID);
 
 static INT32
-mt6628_patch_dwn (VOID);
+mt6628_crystal_triming_set (VOID);
 
+
+static MTK_WCN_BOOL mt6628_quick_sleep_flag_get(VOID);
+
+static MTK_WCN_BOOL mt6628_aee_dump_flag_get(VOID);
+
+static INT32 mt6628_set_sdio_driving(void);
 
 /*******************************************************************************
 *                            P U B L I C   D A T A
@@ -491,6 +646,10 @@ const WMT_IC_OPS wmt_ic_ops_mt6628 = {
     .sw_deinit = mt6628_sw_deinit,
     .ic_pin_ctrl = mt6628_pin_ctrl,
     .ic_ver_check = mt6628_ver_check,
+    .co_clock_ctrl = mt6628_co_clock_ctrl,
+    .is_quick_sleep  = mt6628_quick_sleep_flag_get,
+    .is_aee_dump_support = mt6628_aee_dump_flag_get,
+    .trigger_stp_assert = NULL,
 };
 
 /*******************************************************************************
@@ -509,7 +668,11 @@ mt6628_sw_init (
     UINT32 ctrlPa1;
     UINT32 ctrlPa2;
     UINT32 hw_ver;
-
+#if CFG_WMT_MULTI_PATCH
+    UINT32 patch_num = 0;
+    UINT32 patch_index = 0;
+#endif
+    WMT_CTRL_DATA ctrlData;
     WMT_DBG_FUNC(" start\n");
 
     osal_assert(NULL != gp_mt6628_info);
@@ -526,6 +689,7 @@ mt6628_sw_init (
     //4 <3.1> start init for sdio
 #ifndef CFG_IC_MT6628 //For MT6628 no need to do this operation
     if (WMT_HIF_SDIO == pWmtHifConf->hifType) {
+        wmt_lib_ps_set_idle_time(STP_PSM_SDIO_IDLE_TIME_SLEEP);
         /* 1. enable all INT32 */
         /* 2. disable mcu gate (only MT6628E1/E2) */
         iRet = wmt_core_init_script(init_table_1_1, osal_array_size(init_table_1_1));
@@ -600,23 +764,49 @@ mt6628_sw_init (
     }
 
     /* 9. download patch */
+#if CFG_WMT_MULTI_PATCH
+    /* 9.1 Let launcher to search patch info */
+    iRet = mt6628_patch_info_prepare();
+	if (iRet) {
+		WMT_ERR_FUNC("patch info perpare fail(%d)\n", iRet);
+		return -8;
+	}
+
+    /* 9.2 Read patch number */
+    ctrlPa1 = 0;
+    ctrlPa2 = 0;
+	wmt_core_ctrl(WMT_CTRL_GET_PATCH_NUM, &ctrlPa1, &ctrlPa2);
+	patch_num = ctrlPa1;
+	WMT_INFO_FUNC("patch total num = [%d]\n", patch_num);
+
+    /* 9.3 Multi-patch Patch download */
+    for (patch_index = 0; patch_index < patch_num; patch_index++) {
+		iRet = mt6628_patch_dwn(patch_index);
+		if (iRet) {
+			WMT_ERR_FUNC("patch dwn fail (%d),patch_index(%d)\n", iRet, patch_index);
+        	return -12;
+		}
+		iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
+	    if (iRet) {
+	        WMT_ERR_FUNC("init_table_3 fail(%d)\n", iRet);
+	        return -13;
+	    }
+	}
+#else
+    /* 9.3 Patch download */
     iRet = mt6628_patch_dwn();
-	//If patch download fail, we just ignore this error and let chip init process goes on
-#if 0    
+    //If patch download fail, we just ignore this error and let chip init process goes on
     if (iRet) {
-        WMT_ERR_FUNC("patch dwn fail (%d)\n", iRet);
-        return -8;
-    }
-    else {
-        WMT_INFO_FUNC("patch dwn ok\n");
-    }
-#endif	
+        WMT_ERR_FUNC("patch dwn fail (%d), just omit\n", iRet);
+    } 
+#endif // End of #if CFG_WMT_MULTI_PATCH
+
     /* 10. WMT Reset command */
     iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
     if (iRet) {
         WMT_ERR_FUNC("init_table_3 fail(%d)\n", iRet);
         return -9;
-    }	
+    }    
     iRet = wmt_stp_init_coex();
     if (iRet) {
         WMT_ERR_FUNC("init_coex fail(%d)\n", iRet);
@@ -625,24 +815,10 @@ mt6628_sw_init (
     else {
         WMT_INFO_FUNC("init_coex ok\n");
     }
+	
+    mt6628_crystal_triming_set();
 
-#if 0
-    /*10-2 enable 32K By Pass Mode*/
-    //if hwVer = E3/E4, please enable 32K by pass mode.
-    //does not support mt6628E1/E2, always enable 32k bypass mode
-    //if ((hwVer == 0x8a10 || hwVer == 0x8a11))
-    {
-        WMT_INFO_FUNC("WMT-CORE: init_table_6 OSC32K");
-        iRet = wmt_core_init_script(init_table_6, osal_array_size(init_table_6));
-        if (iRet == 0) {
-            WMT_DBG_FUNC("WMT-CORE: init_table_6 OSC32K, successful\n");
-        }
-        else {
-            WMT_WARN_FUNC("init table 6 OSC32K fail, continue init...\n");
-            /*return -11;*/
-        }
-    }
-#endif
+    mt6628_set_sdio_driving();
 
     if (WMT_HIF_UART == pWmtHifConf->hifType) {
         /* 11. Set chip STP options */
@@ -663,7 +839,7 @@ mt6628_sw_init (
         }
         WMT_INFO_FUNC("enable host STP-UART-FULL mode\n");
         /*13. wait for 10ms, enough for chip do mechanism switch.(at least 2ms is needed)*/
-        osal_msleep(10);
+        osal_sleep_ms(10);
         /* 14. Query chip STP options (TEST-ONLY) */
         /* 15. Query baud rate (stp, TEST-ONLY) */
         iRet = wmt_core_init_script(init_table_5, osal_array_size(init_table_5));
@@ -673,6 +849,28 @@ mt6628_sw_init (
         }
     }
 
+    if (WMT_CO_CLOCK_EN == mt6628_co_clock_get())
+    {
+        WMT_INFO_FUNC("co-clock enabled.\n");
+		
+		iRet = wmt_core_init_script(osc_type_table, osal_array_size(osc_type_table));
+        if (iRet) {
+            WMT_ERR_FUNC("osc_type_table fail(%d), goes on\n", iRet);
+			return -15;
+        }
+    }
+	else
+	{
+	    WMT_INFO_FUNC("co-clock disabled.\n");
+	}
+    #if (MTK_WCN_CMB_MERGE_INTERFACE_SUPPORT)
+	    iRet = wmt_core_init_script(merge_pcm_table, osal_array_size(merge_pcm_table));
+        if (iRet) {
+            WMT_ERR_FUNC("merge_pcm_table fail(%d), goes on\n", iRet);
+            return -15;
+        }
+	#endif
+	
     /* 15. Set FM strap */
     WMT_STRAP_CONF_CMD_FM_COMM[5] = (UCHAR)pWmtHifConf->au4StrapConf[0];
     WMT_STRAP_CONF_EVT[5] = (UCHAR)pWmtHifConf->au4StrapConf[0];
@@ -681,7 +879,7 @@ mt6628_sw_init (
         WMT_ERR_FUNC("init_table_5_1 fm mode(%d) fail(%d)\n",
             pWmtHifConf->au4StrapConf[0],
             iRet);
-        return -15;
+        return -16;
     }
     WMT_INFO_FUNC("set fm mode (%d) ok\n", pWmtHifConf->au4StrapConf[0]);
 
@@ -689,29 +887,44 @@ mt6628_sw_init (
         iRet = wmt_core_init_script(set_registers, osal_array_size(set_registers));
         if (iRet) {
             WMT_ERR_FUNC("set_registers fail(%d)", iRet);
-            return -16;
+            return -17;
         }
 #endif
 
-    iRet = wmt_core_init_script(init_table_6, osal_array_size(init_table_6));
-    if (iRet) {
-        WMT_ERR_FUNC("init_table_6 core dump setting fail(%d)\n",
-            iRet);
-        return -15;
-    } else {
-        WMT_INFO_FUNC("set dump mode (%d) ok\n", iRet);
+#if CFG_WMT_COREDUMP_ENABLE
+    /*Open Core Dump Function @QC begin*/
+    mtk_wcn_stp_coredump_flag_ctrl(1);
+#endif
+    if (0 != mtk_wcn_stp_coredump_flag_get())
+    {
+        iRet = wmt_core_init_script(init_table_6, osal_array_size(init_table_6));
+        if (iRet) {
+            WMT_ERR_FUNC("init_table_6 core dump setting fail(%d)\n",
+                iRet);
+            return -18;
+        } else {
+            WMT_INFO_FUNC("enable mt662x firmware coredump\n");
+        }
+    }
+    else
+    {
+        WMT_INFO_FUNC("disable mt662x firmware coredump. hifType: %d\n", pWmtHifConf->hifType);
     }
 
-#if 0
-    /* 16. trace32 dump when fw assert*/
-    {
-        INT32 val = 0x00000001;
-        WMT_INFO_FUNC("WMT-CORE: enable assert dump");
-        wmt_reg_rw_raw(1, 0x0100092c, &val, 0xFFFFFFFF);
-    }
+#if 1
+	ctrlData.ctrlId = WMT_CTRL_SET_STP_DBG_INFO;
+	ctrlData.au4CtrlData[0] = wmt_ic_ops_mt6628.icId;
+	ctrlData.au4CtrlData[1] = (UINT32)gp_mt6628_info->cChipVersion;
+	ctrlData.au4CtrlData[2] = (UINT32)&gp_mt6628_patch_info;
+	iRet = wmt_ctrl(&ctrlData);
+	if (iRet) {
+		WMT_ERR_FUNC("set dump info fail(%d)\n",iRet);
+        return -16;
+	}
 #endif
 
 #if CFG_WMT_PS_SUPPORT
+    if (WMT_HIF_UART == pWmtHifConf->hifType) {
     osal_assert(NULL != gp_mt6628_info);
     if (NULL != gp_mt6628_info) {
        if (MTK_WCN_BOOL_FALSE != gp_mt6628_info->bPsmSupport) {
@@ -720,6 +933,12 @@ mt6628_sw_init (
        else {
            wmt_lib_ps_disable();
        }
+    }
+    }
+    else if (WMT_HIF_SDIO == pWmtHifConf->hifType) {
+        /* COMMON SDIO is used different PS from UART, so disable current ps support
+           Note: using wmt_lib_ps_ctrl() due to wmt_lib_ps_disable() cannot clear gPsEnable setting */
+        wmt_lib_ps_ctrl(0);
     }
 #endif
 
@@ -734,11 +953,13 @@ mt6628_sw_deinit (
     WMT_DBG_FUNC(" start\n");
 
 #if CFG_WMT_PS_SUPPORT
+    if (WMT_HIF_UART == pWmtHifConf->hifType) {
     osal_assert(NULL != gp_mt6628_info);
     if ( (NULL != gp_mt6628_info)
         && (MTK_WCN_BOOL_FALSE != gp_mt6628_info->bPsmSupport) ) {
            wmt_lib_ps_disable();
        }
+    }
 #endif
 
     gp_mt6628_info = NULL;
@@ -757,7 +978,7 @@ mt6628_aif_ctrl (
 
     if ( (flag & WMT_LIB_AIF_FLAG_MASK) == WMT_LIB_AIF_FLAG_SHARE ) {
         WMT_INFO_FUNC("PCM & I2S PIN SHARE\n");
-		#if 0
+        #if 0
         switch (state) {
         case WMT_IC_AIF_0:
             /* BT_PCM_OFF & FM line in/out */
@@ -787,15 +1008,15 @@ mt6628_aif_ctrl (
             ret = -1;
             break;
         }
-		#else
-		WMT_WARN_FUNC("TBD!!");
-		ret = 0;
-		#endif
+        #else
+        WMT_WARN_FUNC("TBD!!");
+        ret = 0;
+        #endif
     }
     else {
          /*PCM & I2S separate*/
         WMT_INFO_FUNC("PCM & I2S PIN SEPARATE\n");
-		#if 0
+        #if 0
         switch (state) {
         case WMT_IC_AIF_0:
             /* BT_PCM_OFF & FM line in/out */
@@ -832,33 +1053,33 @@ mt6628_aif_ctrl (
             ret = -1;
             break;
         }
-		#else
-		switch (state) {
-		case WMT_IC_AIF_0:
+        #else
+        switch (state) {
+        case WMT_IC_AIF_0:
             /* BT_PCM_OFF & FM line in/out */
-			ret = 0;
-	    break;
-		case WMT_IC_AIF_1:
-            /* BT_PCM_ON & FM line in/out */
-			ret = 0;
-	    break;
-			
-        case WMT_IC_AIF_2:
-			/* BT_PCM_OFF & FM I2S */
-			val = 0x01110000;
-			ret = wmt_core_reg_rw_raw(1, 0x80050078, &val, 0x0FFF0000);
-			
-			break;
-		case WMT_IC_AIF_3:
             ret = 0;
-	    break;
-		
-		default:
-			WMT_ERR_FUNC("unsupported state (%d) \n", state);
+        break;
+        case WMT_IC_AIF_1:
+            /* BT_PCM_ON & FM line in/out */
+            ret = 0;
+        break;
+            
+        case WMT_IC_AIF_2:
+            /* BT_PCM_OFF & FM I2S */
+            val = 0x01110000;
+            ret = wmt_core_reg_rw_raw(1, 0x80050078, &val, 0x0FFF0000);
+            
+            break;
+        case WMT_IC_AIF_3:
+            ret = 0;
+        break;
+        
+        default:
+            WMT_ERR_FUNC("unsupported state (%d) \n", state);
             ret = -1;
            break;
-		}
-		#endif
+        }
+        #endif
     }
 
     if (!ret) {
@@ -935,6 +1156,41 @@ mt6628_pin_ctrl (
 
     return ret;
 }
+
+INT32 mt6628_co_clock_ctrl(WMT_CO_CLOCK on)
+{
+    INT32 iRet = 0;
+    if ((WMT_CO_CLOCK_DIS <= on) && (WMT_CO_CLOCK_MAX > on))
+    {
+        gCoClockEn = on;
+	}
+    else
+    {
+        WMT_DBG_FUNC("MT6628: error parameter:%d\n", on);
+		iRet = -1;
+    }
+	WMT_DBG_FUNC("MT6628: Co-clock %s\n", (gCoClockEn == WMT_CO_CLOCK_DIS) ? "disabled" : "enabled");	
+	
+    return iRet;
+}
+
+static MTK_WCN_BOOL mt6628_quick_sleep_flag_get(VOID)
+{
+    return MTK_WCN_BOOL_TRUE;
+}
+
+
+static MTK_WCN_BOOL mt6628_aee_dump_flag_get(VOID)
+{
+    return MTK_WCN_BOOL_TRUE;    
+}
+
+
+WMT_CO_CLOCK mt6628_co_clock_get(VOID)
+{
+    return gCoClockEn;
+}
+
 
 
 static INT32
@@ -1046,9 +1302,9 @@ wmt_stp_init_coex (VOID)
     WMT_GEN_CONF *pWmtGenConf;
 
     #define COEX_WMT  0
-	
+    
 #if CFG_SUBSYS_COEX_NEED
-	//no need for MT6628
+    //no need for MT6628
     #define COEX_BT   1
     #define COEX_WIFI 2
     #define COEX_PTA  3
@@ -1115,7 +1371,7 @@ wmt_stp_init_coex (VOID)
             coex_table[COEX_WMT].str,
             coex_table[COEX_WMT].cmdSz);
     }
-	
+    
 #if CFG_SUBSYS_COEX_NEED
     coex_table[COEX_BT].cmd[9]=   pWmtGenConf->coex_bt_rssi_upper_limit;
     coex_table[COEX_BT].cmd[10]=  pWmtGenConf->coex_bt_rssi_mid_limit;
@@ -1166,6 +1422,399 @@ wmt_stp_init_coex (VOID)
 }
 
 
+static INT32 mt6628_set_sdio_driving(void)
+{
+    INT32 ret = 0;
+
+    UINT32 addr;
+    WMT_GEN_CONF *pWmtGenConf;
+    UINT32 drv_val = 0;
+
+    /*Get wmt config*/
+    ret = wmt_core_ctrl(WMT_CTRL_GET_WMT_CONF, &addr, 0);
+    if (ret) {
+        WMT_ERR_FUNC("ctrl GET_WMT_CONF fail(%d)\n", ret);
+        return -1;
+    }
+    WMT_INFO_FUNC("ctrl GET_WMT_CONF ok(0x%08lx)\n", addr);
+
+    pWmtGenConf = (P_WMT_GEN_CONF)addr;
+    
+    /*Check if WMT.cfg exists*/
+    if (pWmtGenConf->cfgExist == 0) {
+        WMT_INFO_FUNC("cfgExist == 0, skip config chip\n");
+        /*if WMT.cfg not existed, still return success and adopt the default value*/
+        return 0;
+    }
+        
+    drv_val = pWmtGenConf->sdio_driving_cfg;
+    
+    /*Dump the sdio driving related info*/
+    WMT_INFO_FUNC("sdio driving:0x%x\n", drv_val);
+
+    sdio_driving_table[0].cmd[12]= (UCHAR)((drv_val & 0x00000077UL) >> 0);  // DAT0 and DAT1
+    sdio_driving_table[0].cmd[13]= (UCHAR)((drv_val & 0x00007700UL) >> 8);  // DAT2 and DAT3
+    sdio_driving_table[0].cmd[14]= (UCHAR)((drv_val & 0x00070000UL) >> 16); // CMD
+
+    ret = wmt_core_init_script(sdio_driving_table, sizeof(sdio_driving_table)/sizeof(sdio_driving_table[0]));
+
+    return ret;
+}
+
+
+static INT32
+mt6628_crystal_triming_set (VOID)
+{
+    INT32 iRet = 0;
+	PUINT8 pbuf = NULL;
+	UINT32 bufLen = 0;
+	WMT_CTRL_DATA ctrlData;
+    UINT32 uCryTimOffset = 0x6D;
+	MTK_WCN_BOOL bIsNvramExist = MTK_WCN_BOOL_FALSE;
+    CHAR cCrystalTimingOffset = 0x0;
+	UCHAR cCrystalTiming = 0x0;
+	INT32 iCrystalTiming = 0x0;
+	MTK_WCN_BOOL bIsCrysTrimEnabled = MTK_WCN_BOOL_FALSE;
+	UINT32 u4Res;
+	bIsNvramExist = MTK_WCN_BOOL_FALSE;
+	/**/
+	ctrlData.ctrlId = WMT_CTRL_CRYSTAL_TRIMING_GET;
+	ctrlData.au4CtrlData[0] = (UINT32)"/data/nvram/APCFG/APRDEB/WIFI";
+    ctrlData.au4CtrlData[1] = (UINT32)&pbuf;
+    ctrlData.au4CtrlData[2] = (UINT32)&bufLen;
+
+	iRet = wmt_ctrl(&ctrlData);
+    if (0 != iRet) {
+        WMT_ERR_FUNC("MT6628: WMT_CTRL_CRYSTAL_TRIMING_GET fail:%d \n", iRet);
+		bIsNvramExist = MTK_WCN_BOOL_FALSE;
+		bIsCrysTrimEnabled = MTK_WCN_BOOL_FALSE;
+		cCrystalTimingOffset = 0x0;
+		cCrystalTiming = 0x0;		
+		iRet = -1;
+    }
+	else
+	{
+	    WMT_DBG_FUNC("MT6628: nvram pBuf(0x%08x), bufLen(%d)\n", pbuf, bufLen);
+		if (bufLen < (uCryTimOffset + 1))
+		{
+		    WMT_ERR_FUNC("MT6628: nvram len(%d) too short, crystalTimging value offset(%d)\n", bufLen, uCryTimOffset);
+			bIsNvramExist = MTK_WCN_BOOL_FALSE;
+			bIsCrysTrimEnabled = MTK_WCN_BOOL_FALSE;
+			cCrystalTimingOffset = 0x0;
+			cCrystalTiming = 0x0;
+		}
+		else
+		{
+		    bIsNvramExist = MTK_WCN_BOOL_TRUE;
+			cCrystalTimingOffset = *(pbuf + uCryTimOffset);
+			if(cCrystalTimingOffset & 0x80)
+			{
+			    bIsCrysTrimEnabled = MTK_WCN_BOOL_TRUE;
+				cCrystalTimingOffset = (UCHAR)cCrystalTimingOffset & 0x7f;			
+			}
+			WMT_DBG_FUNC("cCrystalTimingOffset (%d), bIsCrysTrimEnabled(%d)\n", cCrystalTimingOffset, bIsCrysTrimEnabled);
+		}
+		ctrlData.ctrlId = WMT_CTRL_CRYSTAL_TRIMING_PUT;
+		ctrlData.au4CtrlData[0] = (UINT32)"/data/nvram/APCFG/APRDEB/WIFI";
+		iRet = wmt_ctrl(&ctrlData);
+        if (0 != iRet) {
+			WMT_ERR_FUNC("MT6628: WMT_CTRL_CRYSTAL_TRIMING_PUT fail:%d \n", iRet);
+			iRet = -2;
+        }
+		else
+		{
+		    WMT_DBG_FUNC("MT6628: WMT_CTRL_CRYSTAL_TRIMING_PUT succeed\n");
+		}
+	}
+    if ((MTK_WCN_BOOL_TRUE == bIsNvramExist) && (MTK_WCN_BOOL_TRUE == bIsCrysTrimEnabled))
+    {
+        /*get CrystalTiming value before set it*/
+		iRet = wmt_core_tx(get_crystal_timing_script[0].cmd, get_crystal_timing_script[0].cmdSz, &u4Res, MTK_WCN_BOOL_FALSE);
+        if (iRet || (u4Res != get_crystal_timing_script[0].cmdSz)) {
+            WMT_ERR_FUNC("WMT-CORE: write (%s) iRet(%d) cmd len err(%d, %d) \n", get_crystal_timing_script[0].str, iRet, u4Res, get_crystal_timing_script[0].cmdSz);
+            iRet = -3;
+			goto done;
+        }
+        /* EVENT BUF */
+        osal_memset(get_crystal_timing_script[0].evt, 0, get_crystal_timing_script[0].evtSz);
+        iRet = wmt_core_rx(get_crystal_timing_script[0].evt, get_crystal_timing_script[0].evtSz, &u4Res);
+        if (iRet || (u4Res != get_crystal_timing_script[0].evtSz)) {
+            WMT_ERR_FUNC("WMT-CORE: read (%s) iRet(%d) evt len err(rx:%d, exp:%d) \n", get_crystal_timing_script[0].str, iRet, u4Res, get_crystal_timing_script[0].evtSz);
+            mtk_wcn_stp_dbg_dump_package();
+			iRet = -4;
+            goto done;
+        }
+        
+	    iCrystalTiming = WMT_GET_CRYSTAL_TRIMING_EVT[5] & 0x7f;
+        if (cCrystalTimingOffset & 0x40)
+        {
+            /*nagative offset value*/
+			iCrystalTiming = iCrystalTiming + cCrystalTimingOffset - 128;
+        }
+		else
+		{
+		    iCrystalTiming += cCrystalTimingOffset;
+		}
+		WMT_DBG_FUNC("iCrystalTiming (0x%x)\n", iCrystalTiming);
+		cCrystalTiming = iCrystalTiming > 0x7f ? 0x7f : iCrystalTiming;
+		cCrystalTiming = iCrystalTiming < 0 ? 0 : iCrystalTiming;
+		WMT_DBG_FUNC("cCrystalTiming (0x%x)\n", cCrystalTiming);
+        //set_crystal_timing_script
+		WMT_SET_CRYSTAL_TRIMING_CMD[5] = cCrystalTiming;
+        WMT_GET_CRYSTAL_TRIMING_EVT[5] = cCrystalTiming;
+		
+		iRet = wmt_core_init_script(set_crystal_timing_script, osal_array_size(set_crystal_timing_script));
+        if (iRet) {
+            WMT_ERR_FUNC("set_crystal_timing_script fail(%d)\n", iRet);
+            iRet = -5;
+        }
+		else
+		{
+		    WMT_DBG_FUNC("set crystal timing value (0x%x) succeed\n", WMT_SET_CRYSTAL_TRIMING_CMD[5]);
+			iRet = wmt_core_init_script(get_crystal_timing_script, osal_array_size(get_crystal_timing_script));
+	        if (iRet) {
+	            WMT_ERR_FUNC("get_crystal_timing_script fail(%d)\n", iRet);
+	            iRet = -6;
+	        }
+			else
+			{
+			    WMT_INFO_FUNC("succeed, updated crystal timing value (0x%x)\n", WMT_GET_CRYSTAL_TRIMING_EVT[5]);
+			    iRet = 0x0;
+			}
+		}
+    }
+done:
+	return iRet;	
+}
+
+
+#if CFG_WMT_MULTI_PATCH
+static INT32 mt6628_patch_info_prepare(VOID)
+{
+	INT32 iRet = -1;
+	WMT_CTRL_DATA ctrlData;
+
+	ctrlData.ctrlId = WMT_CTRL_PATCH_SEARCH;
+	iRet = wmt_ctrl(&ctrlData);
+
+	return iRet;
+}
+
+
+static INT32
+mt6628_patch_dwn (UINT32 index)
+{
+    INT32 iRet = -1;
+    P_WMT_PATCH patchHdr;
+    PUINT8 pbuf;
+    UINT32 patchSize;
+    UINT32 fragSeq;
+    UINT32 fragNum;
+    UINT16 fragSize = 0;
+    UINT16 cmdLen;
+    UINT32 offset;
+    UINT32 u4Res;
+    UINT8 evtBuf[8];
+    UINT8 addressevtBuf[12];
+	UCHAR addressByte[4];
+    PCHAR cDataTime = NULL;
+    /*PCHAR cPlat = NULL;*/
+    UINT16 u2HwVer = 0;
+    UINT16 u2SwVer = 0;
+    UINT32 u4PatchVer = 0;
+    UINT32 patchSizePerFrag = 0;
+    WMT_CTRL_DATA ctrlData;
+
+    /*1.check hardware information */
+    if (NULL == gp_mt6628_info) {
+        WMT_ERR_FUNC("null gp_mt6628_info!\n");
+        return -1;
+    }
+
+    osal_memset(gFullPatchName, 0, osal_sizeof(gFullPatchName));
+
+    ctrlData.ctrlId = WMT_CTRL_GET_PATCH_INFO;
+	ctrlData.au4CtrlData[0] = index + 1;
+	ctrlData.au4CtrlData[1] = (UINT32)&gFullPatchName;
+	ctrlData.au4CtrlData[2] = (UINT32)&addressByte;
+	iRet = wmt_ctrl(&ctrlData);
+	WMT_INFO_FUNC("the %d time valid patch found: (%s)\n", index+1, gFullPatchName);
+
+    //<2.2> read patch content
+	ctrlData.ctrlId = WMT_CTRL_GET_PATCH;
+	ctrlData.au4CtrlData[0] = (UINT32)NULL;
+	ctrlData.au4CtrlData[1] = (UINT32)&gFullPatchName;
+	ctrlData.au4CtrlData[2] = (UINT32)&pbuf;
+	ctrlData.au4CtrlData[3] = (UINT32)&patchSize;
+	iRet = wmt_ctrl(&ctrlData);
+	if (iRet) {
+		WMT_ERR_FUNC("wmt_core: WMT_CTRL_GET_PATCH fail:%d \n", iRet);
+		iRet -= 1;
+		goto done;
+	}
+    
+    /* |<-BCNT_PATCH_BUF_HEADROOM(8) bytes dummy allocated->|<-patch file->| */
+    pbuf += BCNT_PATCH_BUF_HEADROOM;
+    /* patch file with header:
+     * |<-patch header: 28 Bytes->|<-patch body: X Bytes ----->|
+     */
+    patchHdr = (P_WMT_PATCH)pbuf;
+    // check patch file information
+
+    cDataTime = patchHdr->ucDateTime;
+    u2HwVer = patchHdr->u2HwVer;
+    u2SwVer = patchHdr->u2SwVer;
+    u4PatchVer = patchHdr->u4PatchVer;
+    /*cPlat = &patchHdr->ucPLat[0];*/
+
+    cDataTime[15] = '\0';
+    if (index == 0) {
+        WMT_INFO_FUNC("===========================================\n");
+        WMT_INFO_FUNC("[Combo Patch] Built Time = %s\n", cDataTime);
+        WMT_INFO_FUNC("[Combo Patch] Hw Ver = 0x%x\n", ((u2HwVer & 0x00ff) << 8) | ((u2HwVer & 0xff00) >> 8));
+        WMT_INFO_FUNC("[Combo Patch] Sw Ver = 0x%x\n", ((u2SwVer & 0x00ff) << 8) | ((u2SwVer & 0xff00) >> 8));
+        WMT_INFO_FUNC("[Combo Patch] Ph Ver = 0x%04x\n",  ((u4PatchVer & 0xff000000) >> 24) | ((u4PatchVer & 0x00ff0000) >> 16));
+        WMT_INFO_FUNC("[Combo Patch] Platform = %c%c%c%c\n", patchHdr->ucPLat[0],
+            patchHdr->ucPLat[1], patchHdr->ucPLat[2], patchHdr->ucPLat[3]);
+        WMT_INFO_FUNC("===========================================\n");
+    }
+    
+    /* remove patch header:
+         * |<-patch body: X Bytes (X=patchSize)--->|
+         */
+    patchSize -= sizeof(WMT_PATCH);
+    pbuf += sizeof(WMT_PATCH);
+    patchSizePerFrag = DEFAULT_PATCH_FRAG_SIZE;
+  /* reserve 1st patch cmd space before patch body
+     *        |<-WMT_CMD: 5Bytes->|<-patch body: X Bytes (X=patchSize)----->|
+     */
+    osal_memcpy(&gp_mt6628_patch_info, patchHdr, osal_sizeof(WMT_PATCH));
+    pbuf -= sizeof(WMT_PATCH_CMD);
+
+    fragNum = patchSize / patchSizePerFrag;
+    fragNum += ((fragNum * patchSizePerFrag) == patchSize) ? 0 : 1;
+
+    WMT_DBG_FUNC("patch size(%d) fragNum(%d)\n", patchSize, fragNum);
+
+
+    /*send wmt part patch address command*/
+	iRet = wmt_core_tx((PUINT8)&WMT_PATCH_ADDRESS_CMD[0], sizeof(WMT_PATCH_ADDRESS_CMD), &u4Res, MTK_WCN_BOOL_FALSE);
+	if (iRet || (u4Res != sizeof(WMT_PATCH_ADDRESS_CMD))) {
+		WMT_ERR_FUNC("wmt_core:wmt patch address CMD fail(%d),size(%d)\n", iRet, u4Res);
+		iRet -= 1;
+		goto done;
+	}
+	osal_memset(addressevtBuf, 0, sizeof(addressevtBuf));
+	iRet = wmt_core_rx(addressevtBuf,sizeof(WMT_PATCH_ADDRESS_EVT), &u4Res);
+	if (iRet || (u4Res != sizeof(WMT_PATCH_ADDRESS_EVT))) {
+		WMT_ERR_FUNC("wmt_core:wmt patch address EVT fail(%d),size(%d)\n", iRet, u4Res);
+		iRet -= 1;
+		goto done;
+	}
+#if CFG_CHECK_WMT_RESULT
+    if (osal_memcmp(addressevtBuf, WMT_PATCH_ADDRESS_EVT, osal_sizeof(WMT_PATCH_ADDRESS_EVT)) != 0) {
+        WMT_ERR_FUNC("wmt_core: write WMT_PATCH_ADDRESS_CMD status fail\n");
+        iRet -= 1;
+		goto done;
+    }
+#endif
+
+	/*send part patch address command*/
+	osal_memcpy(&WMT_PATCH_P_ADDRESS_CMD[12], addressByte, osal_sizeof(addressByte));
+	WMT_INFO_FUNC("4 bytes address command:0x%02x,0x%02x,0x%02x,0x%02x", 
+        WMT_PATCH_P_ADDRESS_CMD[12],
+        WMT_PATCH_P_ADDRESS_CMD[13],
+        WMT_PATCH_P_ADDRESS_CMD[14],
+        WMT_PATCH_P_ADDRESS_CMD[15]);
+	iRet = wmt_core_tx((PUINT8)&WMT_PATCH_P_ADDRESS_CMD[0], sizeof(WMT_PATCH_P_ADDRESS_CMD), &u4Res,MTK_WCN_BOOL_FALSE);
+	if (iRet || (u4Res != sizeof(WMT_PATCH_P_ADDRESS_CMD))) {
+		WMT_ERR_FUNC("wmt_core:wmt part patch address CMD fail(%d),size(%d),index(%d)\n", iRet, u4Res, index);
+		iRet -= 1;
+		goto done;
+	}
+	osal_memset(addressevtBuf, 0, sizeof(addressevtBuf));
+	iRet = wmt_core_rx(addressevtBuf,sizeof(WMT_PATCH_P_ADDRESS_EVT), &u4Res);
+	if (iRet || (u4Res != sizeof(WMT_PATCH_P_ADDRESS_EVT))) {
+		WMT_ERR_FUNC("wmt_core:wmt patch address EVT fail(%d),size(%d),index(%d)\n", iRet, u4Res, index);
+		iRet -= 1;
+		goto done;
+	}
+#if CFG_CHECK_WMT_RESULT
+    if (osal_memcmp(addressevtBuf, WMT_PATCH_P_ADDRESS_EVT, osal_sizeof(WMT_PATCH_ADDRESS_EVT)) != 0) {
+        WMT_ERR_FUNC("wmt_core: write WMT_PATCH_ADDRESS_CMD status fail,index(%d)\n",index);
+        iRet -= 1;
+		goto done;
+    }
+#endif
+
+    /* send all fragments */
+    offset = sizeof(WMT_PATCH_CMD);
+    fragSeq = 0;
+    while (fragSeq < fragNum) {
+        WMT_DBG_FUNC("patch size(%d) fragNum(%d)\n", patchSize, fragNum);
+        if (fragSeq == (fragNum-1)) {
+            /* last fragment */
+            fragSize = patchSize - fragSeq * patchSizePerFrag;
+            WMT_PATCH_CMD[4] = WMT_PATCH_FRAG_LAST;
+        }
+        else {
+            fragSize = patchSizePerFrag;
+            WMT_PATCH_CMD[4] = (fragSeq == 0) ? WMT_PATCH_FRAG_1ST: WMT_PATCH_FRAG_MID;
+        }
+        /* update length field in CMD:flag+frag*/
+        cmdLen = 1 + fragSize;
+        osal_memcpy(&WMT_PATCH_CMD[2], &cmdLen, 2);
+        /* copy patch CMD to buf (overwrite last 5-byte in prev frag) */
+        osal_memcpy(pbuf + offset - sizeof(WMT_PATCH_CMD), WMT_PATCH_CMD, sizeof(WMT_PATCH_CMD));
+
+        //iRet = (*kal_stp_tx)(pbuf + offset - sizeof(WMT_PATCH_CMD), fragSize + sizeof(WMT_PATCH_CMD), &u4Res);
+        iRet = wmt_core_tx(pbuf + offset - sizeof(WMT_PATCH_CMD), fragSize + sizeof(WMT_PATCH_CMD), &u4Res, MTK_WCN_BOOL_FALSE);
+        if (iRet || (u4Res != fragSize + sizeof(WMT_PATCH_CMD))) {
+            WMT_ERR_FUNC("wmt_core: write fragSeq(%d) size(%d, %d) fail(%d)\n", fragSeq, fragSize + sizeof(WMT_PATCH_CMD), u4Res, iRet );
+            iRet -= 1;
+            break;
+        }
+        WMT_DBG_FUNC("wmt_core: write fragSeq(%d) size(%d, %d) ok\n",
+            fragSeq, fragSize + sizeof(WMT_PATCH_CMD), u4Res);
+
+        osal_memset(evtBuf, 0, sizeof(evtBuf));
+        //iRet = (*kal_stp_rx)(evtBuf, sizeof(WMT_PATCH_EVT), &u4Res);
+        iRet = wmt_core_rx(evtBuf, sizeof(WMT_PATCH_EVT), &u4Res);
+        if (iRet || (u4Res != sizeof(WMT_PATCH_EVT))) {
+            WMT_ERR_FUNC("wmt_core: read WMT_PATCH_EVT length(%d, %d) fail(%d)\n", sizeof(WMT_PATCH_EVT), u4Res, iRet);
+            iRet -= 1;
+            break;
+        }
+#if CFG_CHECK_WMT_RESULT
+        if (osal_memcmp(evtBuf, WMT_PATCH_EVT, sizeof(WMT_PATCH_EVT)) != 0) {
+            WMT_ERR_FUNC("wmt_core: compare WMT_PATCH_EVT result error rx(%d):[%02X,%02X,%02X,%02X,%02X] exp(%d):[%02X,%02X,%02X,%02X,%02X]\n",
+                u4Res, evtBuf[0], evtBuf[1], evtBuf[2], evtBuf[3], evtBuf[4], sizeof(WMT_PATCH_EVT), WMT_PATCH_EVT[0], WMT_PATCH_EVT[1], WMT_PATCH_EVT[2], WMT_PATCH_EVT[3], WMT_PATCH_EVT[4]);
+            iRet -= 1;
+            break;
+        }
+#endif
+        WMT_DBG_FUNC("wmt_core: read WMT_PATCH_EVT length(%d, %d) ok\n", sizeof(WMT_PATCH_EVT), u4Res);
+        offset += patchSizePerFrag;
+        ++fragSeq;
+    }
+
+    WMT_INFO_FUNC("wmt_core: patch dwn:%d frag(%d, %d) %s\n",
+        iRet, fragSeq, fragSize, (!iRet && (fragSeq == fragNum)) ? "ok": "fail");
+
+    if (fragSeq != fragNum) {
+        iRet -= 1;
+    }
+done:
+    /* WMT_CTRL_FREE_PATCH always return 0 */
+    //wmt_core_ctrl(WMT_CTRL_FREE_PATCH, NULL, NULL);
+    ctrlData.ctrlId = WMT_CTRL_FREE_PATCH;
+	ctrlData.au4CtrlData[0] = index + 1;
+	wmt_ctrl(&ctrlData);
+    
+    return iRet;
+}
+
+#else
 static INT32
 mt6628_patch_dwn (VOID)
 {
@@ -1193,50 +1842,35 @@ mt6628_patch_dwn (VOID)
         WMT_ERR_FUNC("null gp_mt6628_info!\n");
         return -1;
     }
-	//<2> search patch and read patch content
-	//<2.1> search patch
-	ctrlData.ctrlId = WMT_CTRL_PATCH_SEARCH;
-	iRet = wmt_ctrl(&ctrlData);
-	if (0 == iRet)
-	{
-	    //patch with correct Hw Ver Major Num found
-		ctrlData.ctrlId = WMT_CTRL_GET_PATCH_NAME;
+    //<2> search patch and read patch content
+    //<2.1> search patch
+    ctrlData.ctrlId = WMT_CTRL_PATCH_SEARCH;
+    iRet = wmt_ctrl(&ctrlData);
+    if (0 == iRet)
+    {
+        //patch with correct Hw Ver Major Num found
+        ctrlData.ctrlId = WMT_CTRL_GET_PATCH_NAME;
         ctrlData.au4CtrlData[0] = (UINT32)&gFullPatchName;
         iRet = wmt_ctrl(&ctrlData);
-		
+        
         WMT_INFO_FUNC("valid patch found: (%s)\n", gFullPatchName);
-		//<2.2> read patch content
+        //<2.2> read patch content
         ctrlData.ctrlId = WMT_CTRL_GET_PATCH;
         ctrlData.au4CtrlData[0] = (UINT32)NULL;
         ctrlData.au4CtrlData[1] = (UINT32)&gFullPatchName;
         
-	}
-	else
-	{
-#if 0
-    if (mt6628_update_patch_name()) {
-        WMT_ERR_FUNC("invalid patch name, ommit patch download process.\n");
-        return -1;
     }
-#endif
-        //patch with correct Hw Ver Major Num not found
-        ctrlData.ctrlId = WMT_CTRL_GET_PATCH_NAME;
-        ctrlData.au4CtrlData[0] = (UINT32)&gDefPatchName;
-        iRet = wmt_ctrl(&ctrlData);
-        //<2.2> Update patch name
-        mt6628_update_patch_name();
-		//<2.3> read patch content
-        ctrlData.ctrlId = WMT_CTRL_GET_PATCH;
-        ctrlData.au4CtrlData[0] = (UINT32)&gDefPatchName;
-        ctrlData.au4CtrlData[1] = (UINT32)&gFullPatchName;
-        
-	}
+    else
+    {
+        iRet -= 1;
+        return iRet;
+    }
     ctrlData.au4CtrlData[2] = (UINT32)&pbuf;
     ctrlData.au4CtrlData[3] = (UINT32)&patchSize;
     iRet = wmt_ctrl(&ctrlData);
     if (iRet) {
         WMT_ERR_FUNC("wmt_core: WMT_CTRL_GET_PATCH fail:%d \n", iRet);
-        iRet = -2;
+        iRet -= 1;
         goto done;
     }
 
@@ -1264,13 +1898,6 @@ mt6628_patch_dwn (VOID)
         patchHdr->ucPLat[1], patchHdr->ucPLat[2], patchHdr->ucPLat[3]);
     WMT_INFO_FUNC("===========================================\n");
 
-    // TODO: [FixMe][George]shall we check sw_ver against fw_ver read from chip?!
-    if (MTK_WCN_BOOL_FALSE ==
-        wmt_core_patch_check(((patchHdr->u2SwVer & 0x00ff) << 8) | ((patchHdr->u2SwVer & 0xff00) >> 8), gp_mt6628_info->u4HwVer)
-        ) {
-        iRet = -3;
-        goto done;
-    }
     /* remove patch header:
          * |<-patch body: X Bytes (X=patchSize)--->|
          */
@@ -1280,6 +1907,7 @@ mt6628_patch_dwn (VOID)
   /* reserve 1st patch cmd space before patch body
      *        |<-WMT_CMD: 5Bytes->|<-patch body: X Bytes (X=patchSize)----->|
      */
+    osal_memcpy(&gp_mt6628_patch_info, patchHdr, osal_sizeof(WMT_PATCH));
     pbuf -= sizeof(WMT_PATCH_CMD);
 
     fragNum = patchSize / patchSizePerFrag;
@@ -1312,7 +1940,7 @@ mt6628_patch_dwn (VOID)
         iRet = wmt_core_tx(pbuf + offset - sizeof(WMT_PATCH_CMD), fragSize + sizeof(WMT_PATCH_CMD), &u4Res, MTK_WCN_BOOL_FALSE);
         if (iRet || (u4Res != fragSize + sizeof(WMT_PATCH_CMD))) {
             WMT_ERR_FUNC("wmt_core: write fragSeq(%d) size(%d, %d) fail(%d)\n", fragSeq, fragSize + sizeof(WMT_PATCH_CMD), u4Res, iRet );
-            iRet = -4;
+            iRet -= 1;
             break;
         }
         WMT_DBG_FUNC("wmt_core: write fragSeq(%d) size(%d, %d) ok\n",
@@ -1323,26 +1951,18 @@ mt6628_patch_dwn (VOID)
         iRet = wmt_core_rx(evtBuf, sizeof(WMT_PATCH_EVT), &u4Res);
         if (iRet || (u4Res != sizeof(WMT_PATCH_EVT))) {
             WMT_ERR_FUNC("wmt_core: read WMT_PATCH_EVT length(%d, %d) fail(%d)\n", sizeof(WMT_PATCH_EVT), u4Res, iRet);
-            iRet = -5;
+            iRet -= 1;
             break;
         }
 #if CFG_CHECK_WMT_RESULT
         if (osal_memcmp(evtBuf, WMT_PATCH_EVT, sizeof(WMT_PATCH_EVT)) != 0) {
             WMT_ERR_FUNC("wmt_core: compare WMT_PATCH_EVT result error rx(%d):[%02X,%02X,%02X,%02X,%02X] exp(%d):[%02X,%02X,%02X,%02X,%02X]\n",
                 u4Res, evtBuf[0], evtBuf[1], evtBuf[2], evtBuf[3], evtBuf[4], sizeof(WMT_PATCH_EVT), WMT_PATCH_EVT[0], WMT_PATCH_EVT[1], WMT_PATCH_EVT[2], WMT_PATCH_EVT[3], WMT_PATCH_EVT[4]);
-            iRet = -6;
+            iRet -= 1;
             break;
         }
 #endif
-        WMT_DBG_FUNC("wmt_core: read WMT_PATCH_EVT length(%d, %d) ok\n",
-            sizeof(WMT_PATCH_EVT), u4Res);
-
-#if 0
-        WMT_DBG_FUNC("wmt_core: send patch frag(%d) [%02X,%02X,%02X,%02X,%02X] (%d) ok",
-            fragSeq, WMT_PATCH_CMD[0], WMT_PATCH_CMD[1], WMT_PATCH_CMD[2],
-            WMT_PATCH_CMD[3], WMT_PATCH_CMD[4], fragSize);
-#endif
-
+        WMT_DBG_FUNC("wmt_core: read WMT_PATCH_EVT length(%d, %d) ok\n", sizeof(WMT_PATCH_EVT), u4Res);
         offset += patchSizePerFrag;
         ++fragSeq;
     }
@@ -1351,59 +1971,14 @@ mt6628_patch_dwn (VOID)
         iRet, fragSeq, fragSize, (!iRet && (fragSeq == fragNum)) ? "ok": "fail");
 
     if (fragSeq != fragNum) {
-        iRet = -7;
+        iRet -= 1;
     }
 done:
     /* WMT_CTRL_FREE_PATCH always return 0 */
     wmt_core_ctrl(WMT_CTRL_FREE_PATCH, NULL, NULL);
-    if ( (iRet == -2) || (iRet == -3) ) {
-        /*no patch found or patch version does not match with hw version, we check if patch is mandatory or not, if yes, return iRet, if not return 0*/
-        if (MTK_WCN_BOOL_FALSE != gp_mt6628_info->bWorkWithoutPatch) {
-            iRet = 0;
-        }
-    }
 
     return iRet;
 }
 
-static INT32
-mt6628_update_patch_name (VOID)
-{
-    INT32 len;
-    UCHAR cTmpPatchName[NAME_MAX + 1] = {0};
+#endif
 
-    /*init.get hardware version */
-    // TODO:[FixMe][GeorgeKuo]: check using memcpy or strncpy???
-    /*osal_memcpy (gFullPatchName, gDefPatchName, osal_strlen(gDefPatchName));*/
-    strncpy(gFullPatchName, gDefPatchName, osal_sizeof(gFullPatchName));
-
-    /*1.check hardware information */
-    if (NULL == gp_mt6628_info) {
-        WMT_ERR_FUNC("null gp_mt6628_info!\n");
-        osal_memset(gFullPatchName, 0, osal_sizeof(gFullPatchName));
-        return -1;
-    }
-
-    /*2.make possible firmware patch name with original name and hardware version*/
-    if ( (osal_strlen(gDefPatchName) > osal_strlen(WMT_IC_PATCH_TAIL))
-        && ((osal_strlen(gDefPatchName) + osal_strlen(WMT_IC_PATCH_DUMMY_EXT) <= NAME_MAX))
-        ) {
-        len = osal_strlen(gDefPatchName) - osal_strlen(WMT_IC_PATCH_TAIL);
-        osal_memcpy (cTmpPatchName, gDefPatchName, len > NAME_MAX ? NAME_MAX : len);
-        osal_memcpy (cTmpPatchName + osal_strlen(cTmpPatchName), gp_mt6628_info->cPatchNameExt, osal_strlen(gp_mt6628_info->cPatchNameExt));
-        osal_memcpy (cTmpPatchName + osal_strlen(cTmpPatchName), WMT_IC_PATCH_TAIL, osal_strlen(WMT_IC_PATCH_TAIL));
-        cTmpPatchName[osal_strlen(cTmpPatchName)] = '\0';
-    }
-    else {
-        WMT_ERR_FUNC("invalid default firmware patch name (%s)\n", gDefPatchName);
-        osal_memset(gFullPatchName, 0, osal_sizeof(gFullPatchName));
-        return -2;
-    }
-
-    /*patch with versioned name exist , update cFullPatchName with full named patch*/
-    osal_memcpy (gFullPatchName, cTmpPatchName, osal_strlen(cTmpPatchName));
-    *(gFullPatchName + osal_strlen(cTmpPatchName)) = '\0';
-    WMT_INFO_FUNC("full firmware patch name: %s\n", cTmpPatchName);
-
-    return 0;
-}

@@ -100,19 +100,8 @@ typedef struct
 
 /* CCCI callback function prototype */
 typedef void (*CCCI_CALLBACK)(CCCI_BUFF_T *buff, void *private_data);
+typedef void (*LG_DTOR_CB)(struct logical_channel *lg_ch);
 
-/* CCCI status */
-/*
-typedef enum
-{
-    CCCI_IDLE = 0x00,
-    CCCI_ACTIVE_READ = 0x01,ror: expected specifier-qualifier-list before 'CCCI_BUFF_T'
-
-    CCCI_ACTIVE_WRITE = 0x02,
-    CCCI_ACTIVE_ISR = 0x04
-} CCCI_STATE_T;
-*/
-/* CCCI control structure */
 
 typedef enum {
 	CCCI_ENABLED=0x0,
@@ -204,7 +193,7 @@ struct logical_layer
 	int lc_num;
 	struct logical_channel **lg_array;
 //	struct logical_channel *(*find)(struct logical_layer *lg_layer,int num);
-	int (*add_client)(struct logical_layer *lg_layer,int num,int buf_num,struct logical_channel **);
+	int (*add_client)(struct logical_layer *lg_layer,int num,int buf_num,char *name,void *private_data,CCCI_CALLBACK callback,LG_DTOR_CB lg_dtor);
 	int (*remove_client)(struct logical_layer *lg_layer,int num);
 	int (*process_data)(struct logical_layer *,CCCI_BUFF_T *,int in,int drop);
 	void (*dump)(struct logical_layer *lg_layer,unsigned int nr);
@@ -401,8 +390,9 @@ void my_mem_dump(int *mem, int size,void (*end)(void),char *fmt,...);
 
 #define CCCI_IOC_MAGIC 'C'
 #define CCCI_IOC_MD_RESET				_IO(CCCI_IOC_MAGIC, 0)
-#define CCCI_IOC_PCM_BASE_ADDR			_IOR(CCCI_IOC_MAGIC, 2, unsigned int)
-#define CCCI_IOC_PCM_LEN				_IOR(CCCI_IOC_MAGIC, 3, unsigned int)
+#define CCCI_IOC_GET_MD_STATE			_IOR(CCCI_IOC_MAGIC, 1, unsigned int) // audio
+#define CCCI_IOC_PCM_BASE_ADDR			_IOR(CCCI_IOC_MAGIC, 2, unsigned int) // audio
+#define CCCI_IOC_PCM_LEN				_IOR(CCCI_IOC_MAGIC, 3, unsigned int) // audio
 #define CCCI_IOC_FORCE_MD_ASSERT		_IO(CCCI_IOC_MAGIC, 4)
 #define CCCI_IOC_ALLOC_MD_LOG_MEM		_IO(CCCI_IOC_MAGIC, 5)
 #define CCCI_IOC_DO_MD_RST				_IO(CCCI_IOC_MAGIC, 6)
@@ -413,9 +403,6 @@ void my_mem_dump(int *mem, int size,void (*end)(void),char *fmt,...);
 #define CCCI_IOC_SEND_START_MD_REQUEST	_IO(CCCI_IOC_MAGIC, 11)
 #define CCCI_IOC_DO_STOP_MD				_IO(CCCI_IOC_MAGIC, 12)
 #define CCCI_IOC_DO_START_MD			_IO(CCCI_IOC_MAGIC, 13)
-#define CCCI_IOC_FORCE_FD			    _IOW(CCCI_IOC_MAGIC, 16, unsigned int)
-#define CCCI_IOC_AP_ENG_BUILD		    _IOW(CCCI_IOC_MAGIC, 17, unsigned int)
-#define CCCI_IOC_GET_MD_MEM_SIZE		_IOR(CCCI_IOC_MAGIC, 18, unsigned int)
 
 #endif  /* !__CCCI_LAYER_H__ */
 

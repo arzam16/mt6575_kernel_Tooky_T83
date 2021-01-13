@@ -1,38 +1,3 @@
-/* Copyright Statement:
- *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
- */
-/* MediaTek Inc. (C) 2010. All rights reserved.
- *
- * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
- * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
- * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
- * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
- * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
- * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
- * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
- *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
- */
-
 /*
  * Copyright (C) 2010 MediaTek, Inc.
  *
@@ -141,7 +106,8 @@
  *     bit 10     : RTC_GPIO_USER_BT bit
  *     bit 11     : RTC_GPIO_USER_FM bit
  *     bit 12     : RTC_GPIO_USER_PMIC bit
- *     bit 13 - 14: reserved bits
+ *     bit 13     : Fast Boot
+ *     bit 14     : reserved bits
  *     bit 15     : Debug bit
  */
 
@@ -273,6 +239,27 @@ void rtc_gpio_disable_32k(rtc_gpio_user_t user)
 }
 EXPORT_SYMBOL(rtc_gpio_disable_32k);
 
+bool rtc_gpio_32k_status()
+{
+	unsigned long flags;
+	u16 pdn1, con;
+	bool ret=false;
+	
+	spin_lock_irqsave(&rtc_lock, flags);
+	pdn1 = rtc_read(RTC_PDN1);
+	con = rtc_read(RTC_CON);
+	spin_unlock_irqrestore(&rtc_lock, flags);
+
+	if(con & 0x0020)
+		ret = false;
+	else
+		ret = true;
+
+	rtc_xinfo("RTC_GPIO 32k status(RTC_PDN1=0x%x)(RTC_CON=0x%x)\n",pdn1, con);
+	return ret;
+}
+EXPORT_SYMBOL(rtc_gpio_32k_status);
+
 void rtc_enable_abb_32k(void)
 {
 	u16 con;
@@ -329,6 +316,18 @@ void rtc_mark_recovery(void)
 	spin_lock_irqsave(&rtc_lock, flags);
 	pdn1 = rtc_read(RTC_PDN1) & ~0x0030;
 	rtc_write(RTC_PDN1, pdn1 | 0x0010);
+	rtc_write_trigger();
+	spin_unlock_irqrestore(&rtc_lock, flags);
+}
+
+void rtc_mark_fast(void)
+{
+	u16 pdn1;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rtc_lock, flags);
+	pdn1 = rtc_read(RTC_PDN1);
+	rtc_write(RTC_PDN1, pdn1 | 0x2000);
 	rtc_write_trigger();
 	spin_unlock_irqrestore(&rtc_lock, flags);
 }
@@ -610,6 +609,7 @@ static int rtc_ops_read_time(struct device *dev, struct rtc_time *tm)
 
 	return 0;
 }
+
 
 static int rtc_ops_set_time(struct device *dev, struct rtc_time *tm)
 {

@@ -1,9 +1,104 @@
+/*
+** $Id: @(#) gl_p2p_cfg80211.c@@
+*/
+
+/*! \file   gl_p2p_cfg80211.c
+    \brief  Main routines of Linux driver interface for Wi-Fi Direct
+            using cfg80211 interface
+
+    This file contains the main routines of Linux driver for MediaTek Inc. 802.11
+    Wireless LAN Adapters.
+*/
 
 
 
+/*
+** $Log: gl_p2p_cfg80211.c $
+**
+** 05 21 2013 yuche.tsai
+** [ALPS00625499] [GN_WIFI]wifi????????
+** Fix compile warning.
+**
+** 01 30 2013 yuche.tsai
+** [ALPS00455459] [GN_WIFI]??wifi direct???????????
+** Fix possible race condition under GO mode.
+** 
+** 09 12 2012 wcpadmin
+** [ALPS00276400] Remove MTK copyright and legal header on GPL/LGPL related packages
+** .
+** 
+** 09 05 2012 wh.su
+** [ALPS00351547] [6577JB][WiFi direct]The 3rd device fail to establish p2p connection with GO sometimes
+** sync with the ICS code.
+** 
+** 08 31 2012 yuche.tsai
+** [ALPS00349585] [6577JB][WiFi direct][KE]Establish p2p connection while both device have connected to AP previously,one device reboots automatically with KE
+** Fix possible KE when concurrent & disconnect.
+** 
+** 08 21 2012 yuche.tsai
+** NULL
+** Fix compile warning.
+** 
+** 08 20 2012 yuche.tsai
+** NULL
+** Fix possible KE issue.
+** 
+** 08 17 2012 yuche.tsai
+** NULL
+** Fix compile warning.
+** 
+** 08 16 2012 yuche.tsai
+** NULL
+** Fix compile warning.
+** 
+** 08 14 2012 yuche.tsai
+** NULL
+** Fix p2p bug find on ALPS.JB trunk.
+**
+** 07 26 2012 yuche.tsai
+** [ALPS00324337] [ALPS.JB][Hot-Spot] Driver update for Hot-Spot
+** Update driver code of ALPS.JB for hot-spot.
+**
+** 07 19 2012 yuche.tsai
+** NULL
+** Code update for JB.
+ *
+ * 07 17 2012 yuche.tsai
+ * NULL
+ * Fix compile error for JB.
+ *
+ * 07 17 2012 yuche.tsai
+ * NULL
+ * Compile no error before trial run.
+ *
+ * 09 21 2010 kevin.huang
+ * [WCXRP00000054] [MT6620 Wi-Fi][Driver] Restructure driver for second Interface
+ * Isolate P2P related function for Hardware Software Bundle
+ *
+ * 07 08 2010 cp.wu
+ *
+ * [WPD00003833] [MT6620 and MT5931] Driver migration - move to new repository.
+ *
+ * 06 06 2010 kevin.huang
+ * [WPD00003832][MT6620 5931] Create driver base
+ * [MT6620 5931] Create driver base
+ *
+ * 05 31 2010 cp.wu
+ * [WPD00003831][MT6620 Wi-Fi] Add framework for Wi-Fi Direct support
+ * add cfg80211 interface, which is to replace WE, for further extension
+ *
+**
+*/
 
+/*******************************************************************************
+*                         C O M P I L E R   F L A G S
+********************************************************************************
+*/
 
-
+/*******************************************************************************
+*                    E X T E R N A L   R E F E R E N C E S
+********************************************************************************
+*/
 
 #include "config.h"
 
@@ -13,14 +108,45 @@
 #include <linux/wireless.h>
 #include <linux/ieee80211.h>
 #include <net/cfg80211.h>
+#include <linux/can/netlink.h>
+#include <net/netlink.h>
 
 #include "precomp.h"
+#include "gl_cfg80211.h"
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wformat"
+#endif
 
+/*******************************************************************************
+*                              C O N S T A N T S
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                             D A T A   T Y P E S
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                            P U B L I C   D A T A
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                           P R I V A T E   D A T A
+********************************************************************************
+*/
 
+/*******************************************************************************
+*                                 M A C R O S
+********************************************************************************
+*/
+
+/*******************************************************************************
+*                   F U N C T I O N   D E C L A R A T I O N S
+********************************************************************************
+*/
 
 
 BOOLEAN
@@ -31,6 +157,10 @@ mtk_p2p_cfg80211func_channel_format_switch(
     IN P_ENUM_CHNL_EXT_T prChnlSco
     );
 
+/*******************************************************************************
+*                              F U N C T I O N S
+********************************************************************************
+*/
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32)
 int mtk_p2p_cfg80211_add_key(
@@ -102,6 +232,7 @@ int mtk_p2p_cfg80211_add_key(
             TRUE,
             TRUE,
             &u4BufLen);
+	printk("wlanoidSetAddP2PKey return %d\n", rStatus);
     if (rStatus == WLAN_STATUS_SUCCESS)
 		i4Rslt = 0;
 
@@ -187,8 +318,9 @@ mtk_p2p_cfg80211_set_default_key (
     prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
 
     // not implemented yet
-
-    return -EINVAL;
+/*work around aosp defualt supplicant fail*/
+	return WLAN_STATUS_SUCCESS;
+    //return -EINVAL;
 }
 
 int mtk_p2p_cfg80211_get_station(
@@ -240,7 +372,9 @@ int mtk_p2p_cfg80211_get_station(
 int
 mtk_p2p_cfg80211_scan (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
     struct net_device *ndev,
+#endif
     struct cfg80211_scan_request *request
     )
 {
@@ -342,7 +476,7 @@ mtk_p2p_cfg80211_scan (
         prSsid = request->ssids;
         prSsidStruct = (P_P2P_SSID_STRUCT_T)prRfChannelInfo;
         if (request->n_ssids) {
-            ASSERT(prSsidStruct == &(prMsgScanRequest->arChannelListInfo[u4Idx]));
+            ASSERT(prSsidStruct == (P_P2P_SSID_STRUCT_T)(&(prMsgScanRequest->arChannelListInfo[u4Idx])));
             prMsgScanRequest->prSSID = prSsidStruct;
         }
 
@@ -473,6 +607,9 @@ mtk_p2p_cfg80211_leave_ibss(
 int
 mtk_p2p_cfg80211_set_txpower(
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+    struct wireless_dev *wdev,
+#endif
     enum nl80211_tx_power_setting type,
     int mbm
     )
@@ -491,6 +628,10 @@ mtk_p2p_cfg80211_set_txpower(
 int
 mtk_p2p_cfg80211_get_txpower(
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+		struct wireless_dev *wdev,
+#endif
+
     int *dbm
     )
 {
@@ -540,6 +681,11 @@ mtk_p2p_cfg80211_start_ap (
     P_MSG_P2P_START_AP_T prP2pStartAPMsg = (P_MSG_P2P_START_AP_T)NULL;
     PUINT_8 pucBuffer = (PUINT_8)NULL;
 //    P_IE_SSID_T prSsidIE = (P_IE_SSID_T)NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+	
+			struct wireless_dev *wdev=dev->ieee80211_ptr;
+			struct cfg80211_chan_def  *chandef=&wdev->preset_chandef;
+#endif
 
     do {
         if ((wiphy == NULL) || (settings == NULL)) {
@@ -547,8 +693,18 @@ mtk_p2p_cfg80211_start_ap (
         }
 
         DBGLOG(P2P, TRACE, ("mtk_p2p_cfg80211_start_ap.\n"));
+		
         prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+#if 1
+		mtk_p2p_cfg80211_set_channel (wiphy,  chandef);
+#else
+							prGlueInfo->prAdapter->rWifiVar.prP2PConnSettings->ucOperatingChnl=(chandef->chan->center_freq-2407)/5;
+		prGlueInfo->prAdapter->rWifiVar.prP2PConnSettings->eBand=BAND_2G4;
+#endif
+#endif
+		
         prP2pBcnUpdateMsg = (P_MSG_P2P_BEACON_UPDATE_T)cnmMemAlloc(
                                                                 prGlueInfo->prAdapter,
                                                                 RAM_TYPE_MSG,
@@ -768,6 +924,25 @@ mtk_p2p_cfg80211_change_beacon (
                             MSG_SEND_METHOD_BUF);
 
 ////////////////////////////
+/**
+ * struct cfg80211_beacon_data - beacon data
+ * @head: head portion of beacon (before TIM IE)
+ *     or %NULL if not changed
+ * @tail: tail portion of beacon (after TIM IE)
+ *     or %NULL if not changed
+ * @head_len: length of @head
+ * @tail_len: length of @tail
+ * @beacon_ies: extra information element(s) to add into Beacon frames or %NULL
+ * @beacon_ies_len: length of beacon_ies in octets
+ * @proberesp_ies: extra information element(s) to add into Probe Response
+ *      frames or %NULL
+ * @proberesp_ies_len: length of proberesp_ies in octets
+ * @assocresp_ies: extra information element(s) to add into (Re)Association
+ *      Response frames or %NULL
+ * @assocresp_ies_len: length of assocresp_ies in octets
+ * @probe_resp_len: length of probe response template (@probe_resp)
+ * @probe_resp: probe response template (AP mode only)
+ */
 //struct cfg80211_beacon_data {
 //        const u8 *head, *tail;
 //        const u8 *beacon_ies;
@@ -1019,9 +1194,15 @@ mtk_p2p_cfg80211_disassoc (
 int
 mtk_p2p_cfg80211_remain_on_channel (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)    
+    struct wireless_dev *wdev,
+#else
     struct net_device *dev,
+#endif
     struct ieee80211_channel *chan,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)    
     enum nl80211_channel_type channel_type,
+#endif
     unsigned int duration,
     u64 *cookie
     )
@@ -1034,7 +1215,11 @@ mtk_p2p_cfg80211_remain_on_channel (
 
     do {
         if ((wiphy == NULL) ||
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)    
+				(wdev == NULL) ||
+#else
                 (dev == NULL) ||
+#endif
                 (chan == NULL) ||
                 (cookie == NULL)) {
             break;
@@ -1061,7 +1246,7 @@ mtk_p2p_cfg80211_remain_on_channel (
 
 
         mtk_p2p_cfg80211func_channel_format_switch(chan,
-                                                    channel_type,
+                                                    NL80211_CHAN_HT20,//4 KH Need Check
                                                     &prMsgChnlReq->rChannelInfo,
                                                     &prMsgChnlReq->eChnlSco);
 
@@ -1084,7 +1269,11 @@ mtk_p2p_cfg80211_remain_on_channel (
 int
 mtk_p2p_cfg80211_cancel_remain_on_channel (
     struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)    
+    struct wireless_dev *wdev,
+#else
     struct net_device *dev,
+#endif
     u64 cookie
     )
 {
@@ -1093,7 +1282,13 @@ mtk_p2p_cfg80211_cancel_remain_on_channel (
     P_MSG_P2P_CHNL_ABORT_T prMsgChnlAbort = (P_MSG_P2P_CHNL_ABORT_T)NULL;
 
     do {
-        if ((wiphy == NULL) || (dev == NULL)) {
+        if ((wiphy == NULL) || 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+			(wdev == NULL)
+#else
+			(dev == NULL)
+#endif
+			) {
             break;
         }
 
@@ -1127,10 +1322,19 @@ mtk_p2p_cfg80211_cancel_remain_on_channel (
 
 int
 mtk_p2p_cfg80211_mgmt_tx (
-    struct wiphy *wiphy, struct net_device *dev,
-    struct ieee80211_channel *chan, bool offchan,
+    struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)    
+    struct wireless_dev *wdev,
+#else
+    struct net_device *dev,
+#endif
+    struct ieee80211_channel *chan,
+    bool offchan,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)    
     enum nl80211_channel_type channel_type,
-    bool channel_type_valid, unsigned int wait,
+    bool channel_type_valid,
+#endif
+    unsigned int wait,
     const u8 *buf,
     size_t len,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
@@ -1151,7 +1355,11 @@ mtk_p2p_cfg80211_mgmt_tx (
         if ((wiphy == NULL) ||
                 (buf == NULL) ||
                 (len == 0) ||
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+				(wdev == NULL) ||
+#else
                 (dev == NULL) ||
+#endif
                 (cookie == NULL)) {
             break;
         }
@@ -1435,7 +1643,7 @@ mtk_p2p_cfg80211_disconnect (
         mboxSendMsg(prGlueInfo->prAdapter,
                                 MBOX_ID_0,
                                 (P_MSG_HDR_T)prDisconnMsg,
-                                MSG_SEND_METHOD_UNBUF);
+                                MSG_SEND_METHOD_BUF);
 
         i4Rslt = 0;
     } while (FALSE);
@@ -1524,30 +1732,44 @@ mtk_p2p_cfg80211_change_iface (
 int
 mtk_p2p_cfg80211_set_channel (
     IN struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+    struct cfg80211_chan_def *chandef
+#else
     IN struct net_device *dev,
     IN struct ieee80211_channel *chan,
-    IN enum nl80211_channel_type channel_type)
+    IN enum nl80211_channel_type channel_type
+#endif
+)
+
 {
     INT_32 i4Rslt = -EINVAL;
     P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T)NULL;
     RF_CHANNEL_INFO_T rRfChnlInfo;
 
     do {
-        if ((wiphy == NULL) ||
-                (dev == NULL) ||
-                (chan == NULL)) {
+        if ((wiphy == NULL) 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
+                || (dev == NULL) ||
+                (chan == NULL)
+#endif           
+                ) {
             break;
         }
 
         DBGLOG(P2P, TRACE, ("mtk_p2p_cfg80211_set_channel.\n"));
 
         prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+		mtk_p2p_cfg80211func_channel_format_switch(chandef->chan, 
+                                        chandef->width, 
+                                        &rRfChnlInfo,
+                                        NULL);
+#else
         mtk_p2p_cfg80211func_channel_format_switch(chan,
                                         channel_type,
                                         &rRfChnlInfo,
                                         NULL);
-
+#endif
         p2pFuncSetChannel(prGlueInfo->prAdapter, &rRfChnlInfo);
 
         i4Rslt = 0;
@@ -1594,7 +1816,11 @@ while (FALSE);
 void
 mtk_p2p_cfg80211_mgmt_frame_register (
     IN struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+    struct wireless_dev *wdev,
+#else
     IN struct net_device *dev,
+#endif  
     IN u16 frame_type,
     IN bool reg
     )
@@ -1606,7 +1832,12 @@ mtk_p2p_cfg80211_mgmt_frame_register (
 
     do {
         if ((wiphy == NULL) ||
-                (dev == NULL)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+				(wdev == NULL)
+#else
+                (dev == NULL)
+#endif
+                ) {
             break;
         }
 
@@ -1643,15 +1874,17 @@ mtk_p2p_cfg80211_mgmt_frame_register (
 
         
 
-        prGlueInfo->u4Flag |= GLUE_FLAG_FRAME_FILTER;
+        if((prGlueInfo->prAdapter != NULL)  && (prGlueInfo->prAdapter->fgIsP2PRegistered == TRUE)){
+
+           prGlueInfo->u4Flag |= GLUE_FLAG_FRAME_FILTER;
 
         /* wake up main thread */
         wake_up_interruptible(&prGlueInfo->waitq);
 
-        if (in_interrupt()) {
-            DBGLOG(P2P, TRACE, ("It is in interrupt level\n"));
+           if (in_interrupt()) {
+              DBGLOG(P2P, TRACE, ("It is in interrupt level\n"));
+           }
         }
-
 
 
 #if 0
@@ -1758,7 +1991,7 @@ int mtk_p2p_cfg80211_testmode_cmd(
 {
     P_GLUE_INFO_T prGlueInfo = NULL;
     P_NL80211_DRIVER_TEST_PARAMS prParams = (P_NL80211_DRIVER_TEST_PARAMS)NULL;
-    BOOLEAN fgIsValid = FALSE;
+    INT_32 i4Status = -EINVAL;
 
     ASSERT(wiphy);
 
@@ -1766,9 +1999,14 @@ int mtk_p2p_cfg80211_testmode_cmd(
 
 	DBGLOG(P2P, TRACE, ("mtk_p2p_cfg80211_testmode_cmd\n"));
     
-    if(data && len)
+ 
+    if(data && len) {
         prParams = (P_NL80211_DRIVER_TEST_PARAMS)data;
-
+    }
+	else {
+		DBGLOG(P2P, ERROR, ("mtk_p2p_cfg80211_testmode_cmd, data is NULL\n"));
+		return i4Status;
+	}
     if(prParams->index >> 24 == 0x01) { 
         /* New version */
         prParams->index = prParams->index & ~ BITS(24,31);
@@ -1776,6 +2014,8 @@ int mtk_p2p_cfg80211_testmode_cmd(
     else {  
         /* Old version*/
         mtk_p2p_cfg80211_testmode_p2p_sigma_pre_cmd(wiphy, data, len); 
+		i4Status = 0;
+        return i4Status;
     }
 
     /* Clear the version byte */
@@ -1784,22 +2024,26 @@ int mtk_p2p_cfg80211_testmode_cmd(
 	if(prParams){
 		switch(prParams->index){
 		    case 1: /* P2P Simga */
-			    if(mtk_p2p_cfg80211_testmode_p2p_sigma_cmd(wiphy, data, len))
-					fgIsValid = TRUE;
+			    i4Status = mtk_p2p_cfg80211_testmode_p2p_sigma_cmd(wiphy, data, len);
 			    break;
+#if CFG_SUPPORT_WFD 
 			case 2: /* WFD */
+				i4Status = mtk_p2p_cfg80211_testmode_wfd_update_cmd(wiphy, data, len);
 			    break;
+#endif
             case 3: /* Hotspot Client Management */
-                if(mtk_p2p_cfg80211_testmode_hotspot_block_list_cmd(wiphy, data, len))
-					fgIsValid = TRUE;
+                i4Status = mtk_p2p_cfg80211_testmode_hotspot_block_list_cmd(wiphy, data, len);
+                break;
+			case 0x10:
+				i4Status = mtk_cfg80211_testmode_get_sta_statistics(wiphy, data, len, prGlueInfo);
                 break;
 			default:
-				fgIsValid = TRUE;
+				i4Status = -EINVAL;
 			    break;
 		}
 	}
 
-	return fgIsValid;
+	return i4Status;
 
 }
 
@@ -1829,7 +2073,7 @@ int mtk_p2p_cfg80211_testmode_p2p_sigma_pre_cmd(
 	prP2pSpecificBssInfo = prGlueInfo->prAdapter->rWifiVar.prP2pSpecificBssInfo;
     prP2pConnSettings = prGlueInfo->prAdapter->rWifiVar.prP2PConnSettings;
 
-	DBGLOG(P2P, TRACE, ("mtk_p2p_cfg80211_testmode_cmd\n"));
+	DBGLOG(P2P, TRACE, ("mtk_p2p_cfg80211_testmode_p2p_sigma_pre_cmd\n"));
 
 	if(data && len)
 		memcpy(&rParams, data, len);
@@ -2018,6 +2262,17 @@ mtk_p2p_cfg80211_testmode_p2p_sigma_cmd(
       case 109: /* Max Clients*/
           kalP2PSetMaxClients(prGlueInfo, value);
           break;
+      case 110: /* Hotspot WPS mode */
+            kalIoctl(prGlueInfo,
+                wlanoidSetP2pWPSmode,
+                &value,
+                sizeof(value),
+                FALSE,
+                FALSE,
+                TRUE,
+                TRUE,
+                &u4Leng);  
+          break;
       default:
           break;
     }
@@ -2025,6 +2280,106 @@ mtk_p2p_cfg80211_testmode_p2p_sigma_cmd(
     return status;
 
 }
+
+#if CFG_SUPPORT_WFD
+int
+mtk_p2p_cfg80211_testmode_wfd_update_cmd(
+    IN struct wiphy *wiphy,
+    IN void *data,
+    IN int len)
+{
+    P_GLUE_INFO_T prGlueInfo = NULL;
+    P_NL80211_DRIVER_WFD_PARAMS prParams = (P_NL80211_DRIVER_WFD_PARAMS)NULL;
+    int status = 0;
+    P_WFD_CFG_SETTINGS_T prWfdCfgSettings = (P_WFD_CFG_SETTINGS_T)NULL;
+    P_MSG_WFD_CONFIG_SETTINGS_CHANGED_T prMsgWfdCfgUpdate = (P_MSG_WFD_CONFIG_SETTINGS_CHANGED_T)NULL;
+
+    ASSERT(wiphy);
+
+    prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
+
+    prParams = (P_NL80211_DRIVER_WFD_PARAMS)data;
+
+
+    DBGLOG(P2P, INFO, ("mtk_p2p_cfg80211_testmode_wfd_update_cmd\n"));
+
+#if 1
+
+    DBGLOG(P2P, INFO,("WFD Enable:%x\n", prParams->WfdEnable));
+    DBGLOG(P2P, INFO,("WFD Session Available:%x\n", prParams->WfdSessionAvailable));
+    DBGLOG(P2P, INFO,("WFD Couple Sink Status:%x\n", prParams->WfdCoupleSinkStatus));
+    //aucReserved0[2]
+    DBGLOG(P2P, INFO,("WFD Device Info:%x\n", prParams->WfdDevInfo));
+    DBGLOG(P2P, INFO,("WFD Control Port:%x\n", prParams->WfdControlPort));
+    DBGLOG(P2P, INFO,("WFD Maximum Throughput:%x\n", prParams->WfdMaximumTp));
+    DBGLOG(P2P, INFO,("WFD Extend Capability:%x\n", prParams->WfdExtendCap));
+    DBGLOG(P2P, INFO,("WFD Couple Sink Addr "MACSTR" \n", MAC2STR(prParams->WfdCoupleSinkAddress)));
+    DBGLOG(P2P, INFO,("WFD Associated BSSID "MACSTR" \n", MAC2STR(prParams->WfdAssociatedBssid)));
+    //UINT_8 aucVideolp[4];
+    //UINT_8 aucAudiolp[4];
+    DBGLOG(P2P, INFO,("WFD Video Port:%x\n", prParams->WfdVideoPort));
+    DBGLOG(P2P, INFO,("WFD Audio Port:%x\n", prParams->WfdAudioPort));
+    DBGLOG(P2P, INFO,("WFD Flag:%x\n", prParams->WfdFlag));
+    DBGLOG(P2P, INFO,("WFD Policy:%x\n", prParams->WfdPolicy));
+    DBGLOG(P2P, INFO,("WFD State:%x\n", prParams->WfdState));
+    //UINT_8 aucWfdSessionInformationIE[24*8];
+    DBGLOG(P2P, INFO,("WFD Session Info Length:%x\n", prParams->WfdSessionInformationIELen));
+    //UINT_8 aucReserved1[2];
+    DBGLOG(P2P, INFO,("WFD Primary Sink Addr "MACSTR" \n", MAC2STR(prParams->aucWfdPrimarySinkMac)));
+    DBGLOG(P2P, INFO,("WFD Secondary Sink Addr "MACSTR" \n", MAC2STR(prParams->aucWfdSecondarySinkMac)));
+    DBGLOG(P2P, INFO,("WFD Advanced Flag:%x\n", prParams->WfdAdvanceFlag));
+    DBGLOG(P2P, INFO,("WFD Sigma mode:%x\n", prParams->WfdSigmaMode));
+    //UINT_8 aucReserved2[64];
+    //UINT_8 aucReserved3[64];
+    //UINT_8 aucReserved4[64];
+
+#endif
+
+    prWfdCfgSettings = &(prGlueInfo->prAdapter->rWifiVar.prP2pFsmInfo->rWfdConfigureSettings);
+
+    kalMemCopy(&prWfdCfgSettings->u4WfdCmdType, &prParams->WfdCmdType, sizeof(WFD_CFG_SETTINGS_T));
+
+    prMsgWfdCfgUpdate = cnmMemAlloc(prGlueInfo->prAdapter, RAM_TYPE_MSG, sizeof(MSG_WFD_CONFIG_SETTINGS_CHANGED_T));
+
+    if (prMsgWfdCfgUpdate == NULL) {
+        ASSERT(FALSE);
+        return status;
+    }
+
+    prMsgWfdCfgUpdate->rMsgHdr.eMsgId = MID_MNY_P2P_WFD_CFG_UPDATE;
+    prMsgWfdCfgUpdate->prWfdCfgSettings = prWfdCfgSettings;
+
+
+    mboxSendMsg(prGlueInfo->prAdapter,
+                        MBOX_ID_0,
+                        (P_MSG_HDR_T)prMsgWfdCfgUpdate,
+                        MSG_SEND_METHOD_BUF);
+#if 0 // Test Only
+//    prWfdCfgSettings->ucWfdEnable = 1;
+//    prWfdCfgSettings->u4WfdFlag |= WFD_FLAGS_DEV_INFO_VALID;
+    prWfdCfgSettings->u4WfdFlag |= WFD_FLAGS_DEV_INFO_VALID;
+    prWfdCfgSettings->u2WfdDevInfo = 123;
+    prWfdCfgSettings->u2WfdControlPort = 456;
+    prWfdCfgSettings->u2WfdMaximumTp = 789;
+
+
+    prWfdCfgSettings->u4WfdFlag |= WFD_FLAGS_SINK_INFO_VALID;
+    prWfdCfgSettings->ucWfdCoupleSinkStatus = 0xAB;
+    {
+        UINT_8 aucTestAddr[MAC_ADDR_LEN] = {0x77, 0x66, 0x55, 0x44, 0x33, 0x22};
+        COPY_MAC_ADDR(prWfdCfgSettings->aucWfdCoupleSinkAddress, aucTestAddr);
+    }
+
+    prWfdCfgSettings->u4WfdFlag |= WFD_FLAGS_EXT_CAPABILITY_VALID;
+    prWfdCfgSettings->u2WfdExtendCap = 0xCDE;
+
+#endif
+
+    return status;
+
+}
+#endif /*  CFG_SUPPORT_WFD */
+
 
 
 int

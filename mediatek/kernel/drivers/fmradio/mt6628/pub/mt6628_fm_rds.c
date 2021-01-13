@@ -1,3 +1,25 @@
+/* mt6628_rds.c
+ *
+ * (C) Copyright 2009
+ * MediaTek <www.MediaTek.com>
+ * hongcheng <hongcheng.xia@MediaTek.com>
+ *
+ * mt6628 FM Radio Driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include "fm_typedef.h"
 #include "fm_dbg.h"
 #include "fm_err.h"
@@ -201,7 +223,8 @@ static void mt6628_RDS_Init_Data(rds_t *pstRDSData)
 {
     fm_memset(pstRDSData, 0 , sizeof(rds_t));
     bRDS_FirstIn = fm_true;
-
+	
+	pstRDSData->event_status = 0x0000;
     fm_memset(pstRDSData->RT_Data.TextData, 0x20, sizeof(pstRDSData->RT_Data.TextData));
     fm_memset(pstRDSData->PS_Data.PS, '\0', sizeof(pstRDSData->PS_Data.PS));
     fm_memset(pstRDSData->PS_ON, 0x20, sizeof(pstRDSData->PS_ON));
@@ -218,23 +241,28 @@ fm_bool mt6628_RDS_OnOff(rds_t *dst, fm_bool bFlag)
         mt6628_RDS_Init_Data(dst);
         mt6628_RDS_enable();
     } else {
+    	mt6628_RDS_Init_Data(dst);
         mt6628_RDS_disable();
     }
 
     return fm_true;
 }
 
-DEFINE_RDSLOG(rds_log);
+DEFINE_RDSLOG(mt6628_rds_log);
 
+/* mt6628_RDS_Efm_s32_Handler    -    response FM RDS interrupt
+ * @fm - main data structure of FM driver
+ * This function first get RDS raw data, then call RDS spec parser
+ */
 static fm_s32 mt6628_rds_parser(rds_t *rds_dst, struct rds_rx_t *rds_raw, fm_s32 rds_size, fm_u16(*getfreq)(void))
 {
-    rds_log.log_in(&rds_log, rds_raw, rds_size);
+    mt6628_rds_log.log_in(&mt6628_rds_log, rds_raw, rds_size);
     return rds_parser(rds_dst, rds_raw, rds_size, getfreq);
 }
 
 static fm_s32 mt6628_rds_log_get(struct rds_rx_t *dst, fm_s32 *dst_len)
 {
-    return rds_log.log_out(&rds_log, dst, dst_len);
+    return mt6628_rds_log.log_out(&mt6628_rds_log, dst, dst_len);
 }
 
 static fm_s32 mt6628_rds_gc_get(struct rds_group_cnt_t *dst, rds_t *rdsp)
@@ -247,7 +275,7 @@ static fm_s32 mt6628_rds_gc_reset(rds_t *rdsp)
     return rds_grp_counter_reset(&rdsp->gc);
 }
 
-fm_s32 fm_rds_ops_register(struct fm_lowlevel_ops *ops)
+fm_s32 MT6628fm_rds_ops_register(struct fm_lowlevel_ops *ops)
 {
     fm_s32 ret = 0;
 
@@ -276,7 +304,7 @@ fm_s32 fm_rds_ops_register(struct fm_lowlevel_ops *ops)
     return ret;
 }
 
-fm_s32 fm_rds_ops_unregister(struct fm_lowlevel_ops *ops)
+fm_s32 MT6628fm_rds_ops_unregister(struct fm_lowlevel_ops *ops)
 {
     fm_s32 ret = 0;
 

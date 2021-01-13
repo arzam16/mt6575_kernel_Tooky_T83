@@ -1,4 +1,4 @@
-/* alps/ALPS_SW/TRUNK/MAIN/alps/kernel/include/linux/hwmsensor.h
+/* alps
  *
  * (C) Copyright 2009 
  * MediaTek <www.MediaTek.com>
@@ -75,6 +75,28 @@
 #define HWM_SENSOR_DEV                  "/dev/hwmsensor"
 #define C_MAX_HWMSEN_EVENT_NUM          4 
 /*----------------------------------------------------------------------------*/
+#define ACC_PL_DEV_NAME                 "m_acc_pl"
+#define ACC_INPUTDEV_NAME               "m_acc_input"
+#define ACC_MISC_DEV_NAME               "m_acc_misc"
+#define MAG_PL_DEV_NAME                 "m_mag_pl"
+#define MAG_INPUTDEV_NAME               "m_mag_input"
+#define MAG_MISC_DEV_NAME               "m_mag_misc"
+#define GYRO_PL_DEV_NAME                	"m_gyro_pl"
+#define GYRO_INPUTDEV_NAME              	"m_gyro_input"
+#define GYRO_MISC_DEV_NAME              	"m_gyro_misc"
+#define ALSPS_PL_DEV_NAME                	"m_alsps_pl"
+#define ALSPS_INPUTDEV_NAME              "m_alsps_input"
+#define ALSPS_MISC_DEV_NAME              "m_alsps_misc"
+#define BARO_PL_DEV_NAME                	"m_baro_pl"
+#define BARO_INPUTDEV_NAME              "m_baro_input"
+#define BARO_MISC_DEV_NAME              "m_baro_misc"
+#define TEMP_PL_DEV_NAME                	"m_temp_pl"
+#define TEMP_INPUTDEV_NAME              	"m_temp_input"
+#define TEMP_MISC_DEV_NAME              	"m_temp_misc"
+
+#define BATCH_PL_DEV_NAME               	"m_batch_pl"
+#define BATCH_INPUTDEV_NAME             	"m_batch_input"
+#define BATCH_MISC_DEV_NAME             	"m_batch_misc"
 
 #define EVENT_TYPE_SENSOR				0x01
 #define EVENT_SENSOR_ACCELERATION		SENSOR_ACCELEROMETER

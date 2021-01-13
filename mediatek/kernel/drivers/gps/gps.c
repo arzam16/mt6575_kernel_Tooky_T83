@@ -37,9 +37,9 @@
 #include <linux/semaphore.h>
 #include <linux/version.h>
 
-#include <mach/mt_devs.h>
-#include <mach/mt_typedefs.h>
 
+#include <mach/devs.h>
+#include <mach/mt_typedefs.h>
 
 /****************************************************************************** 
  * Function Configuration

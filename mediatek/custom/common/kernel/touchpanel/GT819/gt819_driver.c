@@ -27,6 +27,10 @@
 #include <linux/completion.h>
 #include <asm/uaccess.h>
 
+#include <mach/mt_pm_ldo.h>
+#include <mach/mt_typedefs.h>
+#include <mach/mt_boot.h>
+
 #include "tpd_custom_gt819.h"
 #include "tpd.h"
 #include <cust_eint.h>
@@ -61,8 +65,9 @@ static int tpd_def_calmat_local[8] = TPD_CALIBRATION_MATRIX;
 static void tpd_eint_interrupt_handler(void);
 static int touch_event_handler(void *unused);
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info);
+static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
 static int tpd_i2c_remove(struct i2c_client *client);
+#if 0
 extern void mt65xx_eint_unmask(unsigned int line);
 extern void mt65xx_eint_mask(unsigned int line);
 extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
@@ -70,7 +75,7 @@ extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
 extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
                                      kal_bool ACT_Polarity, void (EINT_FUNC_PTR)(void),
                                      kal_bool auto_umask);
-
+#endif
 static struct i2c_client *i2c_client = NULL;
 static const struct i2c_device_id tpd_i2c_id[] = {{"mtk-tpd",0},{}};
 static unsigned short force[] = {0, 0xAA, I2C_CLIENT_END,I2C_CLIENT_END};
@@ -108,7 +113,7 @@ static u8 cfg_data[] =
 };
 
 
-static int tpd_i2c_detect(struct i2c_client *client, int kind, struct i2c_board_info *info) {
+static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info) {
     strcpy(info->type, "mtk-tpd");
     return 0;
 }
@@ -129,7 +134,9 @@ static int i2c_read_bytes( struct i2c_client *client, u8 addr, u8 *rxbuf, int le
         if ( left > MAX_I2C_TRANSFER_SIZE )
         {
             rxbuf[offset] = ( addr+offset ) & 0xFF;
-            i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG | I2C_WR_FLAG | I2C_RS_FLAG;
+            i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
+            i2c_client->ext_flag = I2C_WR_FLAG | I2C_RS_FLAG;
+            
             retry = 0;
             while ( i2c_master_send(i2c_client, &rxbuf[offset], (MAX_I2C_TRANSFER_SIZE << 8 | 1)) < 0 )
             {
@@ -149,7 +156,8 @@ static int i2c_read_bytes( struct i2c_client *client, u8 addr, u8 *rxbuf, int le
         {
             
             rxbuf[offset] = ( addr+offset ) & 0xFF;
-            i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG | I2C_WR_FLAG | I2C_RS_FLAG;
+            i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
+            i2c_client->ext_flag = I2C_WR_FLAG | I2C_RS_FLAG;
             
             retry = 0;
             while ( i2c_master_send(i2c_client, &rxbuf[offset], (left << 8 | 1)) < 0 )
@@ -168,6 +176,7 @@ static int i2c_read_bytes( struct i2c_client *client, u8 addr, u8 *rxbuf, int le
         }
     }
     i2c_client->addr = i2c_client->addr & I2C_MASK_FLAG;
+    i2c_client->ext_flag = 0;
     
     return 0;
 }
@@ -182,6 +191,7 @@ static int i2c_write_bytes( struct i2c_client *client, u16 addr, u8 *txbuf, int 
     struct i2c_msg msg = 
     {
         .addr = ((client->addr&I2C_MASK_FLAG )|(I2C_ENEXT_FLAG )),
+        .ext_flag = i2c_client->ext_flag | I2C_ENEXT_FLAG,
         .flags = 0,
         .buf = buffer
     };
@@ -246,7 +256,13 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     i2c_client = client;
     
     printk("MediaTek touch panel i2c probe\n");
-    client->addr = 0x55;
+    //client->addr = 0x55;
+    
+    //Power on
+    hwPowerOn(TPD_POWER_LDO, VOL_3300, "TP");
+    printk("MediaTek touch panel sets hwPowerOn!!!\n");
+    //msleep(10);
+    
     #ifndef TPD_NO_GPIO 
 
     mt_set_gpio_mode(GPIO_CTP_RST_PIN, GPIO_CTP_RST_PIN_M_GPIO);
@@ -308,10 +324,10 @@ static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     
     tpd_load_status = 1;
     
-    mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
-    mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
-    mt65xx_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_EN, CUST_EINT_TOUCH_PANEL_POLARITY, tpd_eint_interrupt_handler, 1);
-    mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
+    //mt65xx_eint_set_sens(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_SENSITIVE);
+    //mt65xx_eint_set_hw_debounce(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_DEBOUNCE_CN);
+	mt_eint_registration(CUST_EINT_TOUCH_PANEL_NUM, CUST_EINT_TOUCH_PANEL_TYPE, tpd_eint_interrupt_handler, 1);
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
     
     printk("MediaTek touch panel i2c probe success\n");
     
@@ -357,7 +373,7 @@ static int touch_event_handler(void *unused) {
     static u8 buffer[ TPD_POINT_INFO_LEN*MAX_FINGER_NUM ];
     int x, y, size, max_finger_id = 0, finger_num = 0;
     //int finger_num = 0;
-    static u8 id_mask = 0;
+    //static u8 id_mask = 0;
     u16 cur_mask;
     int idx, valid_point, lastIdx = 0;
     int ret = 0;
@@ -517,13 +533,14 @@ int tpd_local_init(void)
 }
 
 /* Function to manage low power suspend */
-void tpd_suspend(struct i2c_client *client, pm_message_t message)
+//void tpd_suspend(struct i2c_client *client, pm_message_t message)
+static void tpd_suspend( struct early_suspend *h )
 {
     int ret = 0;
     //int retry = 0;
     u8 Wrbuf[1] = {1};
     tpd_halt = 1;
-    mt65xx_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
+    mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
     TPD_DEBUG("GT819 call suspend\n");
     
     ret = i2c_write_bytes(i2c_client, TPD_POWER_MODE_REG, &Wrbuf[0], 1);
@@ -534,7 +551,7 @@ void tpd_suspend(struct i2c_client *client, pm_message_t message)
     }
     
     //Turn off GPIO
-    
+    /*
     TPD_DEBUG("Turn off GPIO..\n");
     mt_set_gpio_mode(GPIO70, GPIO_MODE_00);
     mt_set_gpio_dir(GPIO70, GPIO_DIR_OUT);
@@ -543,13 +560,16 @@ void tpd_suspend(struct i2c_client *client, pm_message_t message)
     mt_set_gpio_mode(GPIO100, GPIO_MODE_00);
     mt_set_gpio_dir(GPIO100, GPIO_DIR_OUT);
     mt_set_gpio_out(GPIO100, GPIO_OUT_ZERO);
+    */
 }
 
 /* Function to manage power-on resume */
-void tpd_resume(struct i2c_client *client)
+//void tpd_resume(struct i2c_client *client)
+static void tpd_resume( struct early_suspend *h )
 {   
     TPD_DEBUG("GT819 call resume\n");  
     
+    /*
     TPD_DEBUG("Turn on GPIO..\n");
     mt_set_gpio_mode(GPIO70, GPIO_MODE_00);
     mt_set_gpio_dir(GPIO70, GPIO_DIR_OUT);
@@ -558,6 +578,7 @@ void tpd_resume(struct i2c_client *client)
 	mt_set_gpio_mode(GPIO100, GPIO_MODE_00);
     mt_set_gpio_dir(GPIO100, GPIO_DIR_OUT);
     mt_set_gpio_out(GPIO100, GPIO_OUT_ONE);
+    */
   
     mt_set_gpio_mode(GPIO_CTP_EINT_PIN, GPIO_CTP_EINT_PIN_M_GPIO);
     mt_set_gpio_dir(GPIO_CTP_EINT_PIN, GPIO_DIR_OUT);
@@ -567,7 +588,7 @@ void tpd_resume(struct i2c_client *client)
     mt_set_gpio_mode(GPIO_CTP_EINT_PIN, GPIO_CTP_EINT_PIN_M_EINT);
     mt_set_gpio_dir(GPIO_CTP_EINT_PIN, GPIO_DIR_IN);
     mt_set_gpio_pull_enable(GPIO_CTP_EINT_PIN, GPIO_PULL_DISABLE);
-    mt65xx_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM); 
+    mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM); 
     tpd_halt = 0;
 }
 
@@ -601,4 +622,3 @@ static void __exit tpd_driver_exit(void) {
 
 module_init(tpd_driver_init);
 module_exit(tpd_driver_exit);
-

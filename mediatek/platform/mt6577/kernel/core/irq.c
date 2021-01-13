@@ -42,7 +42,9 @@ void mt_irq_mask(struct irq_data *data)
     u32 mask = 1 << (irq % 32);
 
     if (irq < NR_GIC_SGI) {
-        printk(KERN_CRIT "Fail to disable interrupt %d\n", irq);
+         /*Note: workaround for false alarm:"Fail to disable interrupt 14"*/
+        if (irq != FIQ_DBG_SGI)
+           printk(KERN_CRIT "Fail to disable interrupt %d\n", irq);
         return ;
     }
 
@@ -60,7 +62,9 @@ void mt_irq_unmask(struct irq_data *data)
     u32 mask = 1 << (irq % 32);
 
     if (irq < NR_GIC_SGI) {
-        printk(KERN_CRIT "Fail to enable interrupt %d\n", irq);
+     /*Note: workaround for false alarm:"Fail to enable interrupt 14"*/
+        if (irq != FIQ_DBG_SGI)
+            printk(KERN_CRIT "Fail to enable interrupt %d\n", irq);
         return ;
     }
 
@@ -97,7 +101,7 @@ void mt_irq_set_sens(unsigned int irq, unsigned int sens)
 
     spin_lock_irqsave(&irq_lock, flags);
 
-    if (sens == MT65xx_EDGE_SENSITIVE) {
+    if (sens == MT_EDGE_SENSITIVE) {
         config = __raw_readl(GIC_DIST_BASE + GIC_DIST_CONFIG + (irq / 16) * 4);
         config |= (0x2 << (irq % 16) * 2);
         __raw_writel(config, GIC_DIST_BASE + GIC_DIST_CONFIG + (irq / 16) * 4);
@@ -158,11 +162,11 @@ static int mt_irq_set_type(struct irq_data *data, unsigned int flow_type)
     const unsigned int irq = data->irq;
 
     if (flow_type & (IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING)) {
-        mt_irq_set_sens(irq, MT65xx_EDGE_SENSITIVE);
+        mt_irq_set_sens(irq, MT_EDGE_SENSITIVE);
         mt_irq_set_polarity(irq, (flow_type & IRQF_TRIGGER_FALLING) ? 0 : 1);
         __irq_set_handler_locked(irq, handle_edge_irq);
     } else if (flow_type & (IRQF_TRIGGER_HIGH | IRQF_TRIGGER_LOW)) {
-        mt_irq_set_sens(irq, MT65xx_LEVEL_SENSITIVE);
+        mt_irq_set_sens(irq, MT_LEVEL_SENSITIVE);
         mt_irq_set_polarity(irq, (flow_type & IRQF_TRIGGER_LOW) ? 0 : 1);
         __irq_set_handler_locked(irq, handle_level_irq);
     }
@@ -530,7 +534,12 @@ void __check_wdt(void *regs, void *svc_sp)
 
         __ctrl = *(volatile u32 *)(0xF000A600 + 0x28);
         __load = *(volatile u32 *)(0xF000A600 + 0x20);
-
+ #if 1     
+        if((__ctrl & 0x1)==0)  //if wdt is disable, we should return
+        {
+          return ;
+        }
+ #endif 
         asm volatile("mov %0, %1\n"
                      "mov fp, %2\n"
                      : "=r" (sp)
@@ -655,6 +664,18 @@ static void fiq_isr(struct fiq_glue_handler *h, void *regs, void *svc_sp)
     dsb();
 }
 
+/*
+ * get_fiq_isr_log: get fiq_isr_log for debugging.
+ * @cpu: processor id
+ * @log: pointer to the address of fiq_isr_log
+ * @len: length of fiq_isr_log
+ * Return 0 for success or error code for failure.
+ */
+int get_fiq_isr_log(int cpu, unsigned int *log, unsigned int *len)
+{
+    return -1;
+}
+
 static void __set_security(int irq)
 {
     u32 val;
@@ -732,6 +753,15 @@ static int __init_fiq(void)
 
     return ret;
 }
+extern void aee_wdt_printf(const char *fmt, ...);
+void mt_irq_dump(void)
+{
+    aee_wdt_printf("GICD_ISENABLER0 = 0x%x, GICD_ISPENDR0 = 0x%x, GICD_ISACTIVER0 = 0x%x\n",
+                    *(volatile u32 *)(GIC_DIST_BASE + 0x100),
+                    *(volatile u32 *)(GIC_DIST_BASE + 0x200),
+                    *(volatile u32 *)(GIC_DIST_BASE + 0x300));
+}
+
 
 /*
  * request_fiq: direct an interrupt to FIQ and register its handler.
@@ -780,6 +810,8 @@ int request_fiq(int irq, fiq_isr_handler handler, unsigned long irq_flags, void 
 }
 
 #endif  /* CONFIG_FIQ_GLUE */
+
+
 
 void __init mt_init_irq(void)
 {

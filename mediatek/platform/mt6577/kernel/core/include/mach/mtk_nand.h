@@ -1,6 +1,10 @@
 #ifndef __MTK_NAND_H
 #define __MTK_NAND_H
 
+#ifndef MTK_EMMC_SUPPORT
+#include "nand_device_list.h"
+#endif
+
 /*******************************************************************************
  * NFI Register Definition 
  *******************************************************************************/
@@ -220,30 +224,35 @@
 #define ECC_ENCPAR2_REG32   ((volatile P_U32)(NFIECC_BASE+0x0018))
 #define ECC_ENCPAR3_REG32   ((volatile P_U32)(NFIECC_BASE+0x001C))
 #define ECC_ENCPAR4_REG32   ((volatile P_U32)(NFIECC_BASE+0x0020))
-#define ECC_ENCSTA_REG32    ((volatile P_U32)(NFIECC_BASE+0x0024))
-#define ECC_ENCIRQEN_REG16  ((volatile P_U16)(NFIECC_BASE+0x0028))
-#define ECC_ENCIRQSTA_REG16 ((volatile P_U16)(NFIECC_BASE+0x002C))
+#define ECC_ENCPAR5_REG32   ((volatile P_U32)(NFIECC_BASE+0x0024))
+#define ECC_ENCPAR6_REG32   ((volatile P_U32)(NFIECC_BASE+0x0028))
+#define ECC_ENCSTA_REG32    ((volatile P_U32)(NFIECC_BASE+0x002C))
+#define ECC_ENCIRQEN_REG16  ((volatile P_U16)(NFIECC_BASE+0x0030))
+#define ECC_ENCIRQSTA_REG16 ((volatile P_U16)(NFIECC_BASE+0x0034))
 
 #define ECC_DECCON_REG16    ((volatile P_U16)(NFIECC_BASE+0x0100))
 #define ECC_DECCNFG_REG32   ((volatile P_U32)(NFIECC_BASE+0x0104))
 #define ECC_DECDIADDR_REG32 ((volatile P_U32)(NFIECC_BASE+0x0108))
 #define ECC_DECIDLE_REG16   ((volatile P_U16)(NFIECC_BASE+0x010C))
 #define ECC_DECFER_REG16    ((volatile P_U16)(NFIECC_BASE+0x0110))
-#define ECC_DECENUM_REG32   ((volatile P_U32)(NFIECC_BASE+0x0114))
-#define ECC_DECDONE_REG16   ((volatile P_U16)(NFIECC_BASE+0x0118))
-#define ECC_DECEL0_REG32    ((volatile P_U32)(NFIECC_BASE+0x011C))
-#define ECC_DECEL1_REG32    ((volatile P_U32)(NFIECC_BASE+0x0120))
-#define ECC_DECEL2_REG32    ((volatile P_U32)(NFIECC_BASE+0x0124))
-#define ECC_DECEL3_REG32    ((volatile P_U32)(NFIECC_BASE+0x0128))
-#define ECC_DECEL4_REG32    ((volatile P_U32)(NFIECC_BASE+0x012C))
-#define ECC_DECEL5_REG32    ((volatile P_U32)(NFIECC_BASE+0x0130))
-#define ECC_DECIRQEN_REG16  ((volatile P_U16)(NFIECC_BASE+0x0134))
-#define ECC_DECIRQSTA_REG16 ((volatile P_U16)(NFIECC_BASE+0x0138))
-#define ECC_FDMADDR_REG32   ((volatile P_U32)(NFIECC_BASE+0x013C))
-#define ECC_DECFSM_REG32    ((volatile P_U32)(NFIECC_BASE+0x0140))
-#define ECC_SYNSTA_REG32    ((volatile P_U32)(NFIECC_BASE+0x0144))
-#define ECC_DECNFIDI_REG32  ((volatile P_U32)(NFIECC_BASE+0x0148))
-#define ECC_SYN0_REG32      ((volatile P_U32)(NFIECC_BASE+0x014C))
+#define ECC_DECENUM0_REG32   ((volatile P_U32)(NFIECC_BASE+0x0114))
+#define ECC_DECENUM1_REG32   ((volatile P_U32)(NFIECC_BASE+0x0118))
+#define ECC_DECDONE_REG16   ((volatile P_U16)(NFIECC_BASE+0x011C))
+#define ECC_DECEL0_REG32    ((volatile P_U32)(NFIECC_BASE+0x0120))
+#define ECC_DECEL1_REG32    ((volatile P_U32)(NFIECC_BASE+0x0124))
+#define ECC_DECEL2_REG32    ((volatile P_U32)(NFIECC_BASE+0x0128))
+#define ECC_DECEL3_REG32    ((volatile P_U32)(NFIECC_BASE+0x012C))
+#define ECC_DECEL4_REG32    ((volatile P_U32)(NFIECC_BASE+0x0130))
+#define ECC_DECEL5_REG32    ((volatile P_U32)(NFIECC_BASE+0x0134))
+#define ECC_DECEL6_REG32    ((volatile P_U32)(NFIECC_BASE+0x0138))
+#define ECC_DECEL7_REG32    ((volatile P_U32)(NFIECC_BASE+0x013C))
+#define ECC_DECIRQEN_REG16  ((volatile P_U16)(NFIECC_BASE+0x0140))
+#define ECC_DECIRQSTA_REG16 ((volatile P_U16)(NFIECC_BASE+0x0144))
+#define ECC_FDMADDR_REG32   ((volatile P_U32)(NFIECC_BASE+0x0148))
+#define ECC_DECFSM_REG32    ((volatile P_U32)(NFIECC_BASE+0x014C))
+#define ECC_SYNSTA_REG32    ((volatile P_U32)(NFIECC_BASE+0x0150))
+#define ECC_DECNFIDI_REG32  ((volatile P_U32)(NFIECC_BASE+0x0154))
+#define ECC_SYN0_REG32      ((volatile P_U32)(NFIECC_BASE+0x0158))
 
 /*******************************************************************************
  * ECC register definition
@@ -412,24 +421,5 @@ do {	\
 #define MSG(evt, fmt, args...) do{}while(0)
 #define MSG_FUNC_ENTRY(f)	   do{}while(0)
 #endif
-
-#define RAMDOM_READ 1<<0
-#define CACHE_READ  1<<1
-
-typedef struct
-{
-   u16 id;          //deviceid+menuid
-   u32 ext_id; 
-   u8  addr_cycle;
-   u8  iowidth;
-   u16 totalsize;   
-   u16 blocksize;
-   u16 pagesize;
-   u16 sparesize;
-   u32 timmingsetting;
-   char devciename[14];
-   u32 advancedmode;   //
-}flashdev_info,*pflashdev_info;
-
 
 #endif

@@ -21,10 +21,7 @@
 #include <disp_drv_log.h>
 #include <linux/dma-mapping.h>
 #include "dsi_drv.h"
-
-#ifdef MTK_M4U_SUPPORT
 #include <mach/m4u.h>
-#endif
 #include <linux/hrtimer.h>
 #if ENABLE_LCD_INTERRUPT
 //#include <linux/sched.h>
@@ -33,6 +30,8 @@
 //#include <asm/tcm.h>
 #include <mach/irqs.h>
 static wait_queue_head_t _lcd_wait_queue;
+static wait_queue_head_t _lcd_wait_queue_no_con;
+
 #endif
 static wait_queue_head_t _vsync_wait_queue;
 atomic_t lcd_vsync = ATOMIC_INIT(0);
@@ -65,10 +64,6 @@ unsigned int te_cnt = 0;
 		{\
 		MASKREG32(addr, mask, data);}
 
-#if defined(MTK_M4U_SUPPORT)
-	M4U_EXPORT_FUNCTION_STRUCT _m4u_lcdc_func = {0};
-	EXPORT_SYMBOL(_m4u_lcdc_func);
-#endif
 
 static size_t dbi_log_on = false;
 #define DBI_LOG(fmt, arg...) \
@@ -166,6 +161,7 @@ LCD_STATUS LCD_Set_DrivingCurrent(LCM_PARAMS *lcm_params)
 }
 
 #if ENABLE_LCD_INTERRUPT
+static int _lcdComplete=0;
 static irqreturn_t _LCD_InterruptHandler(int irq, void *dev_id)
 {   
     LCD_REG_INTERRUPT status = LCD_REG->INT_STATUS;
@@ -175,7 +171,12 @@ static irqreturn_t _LCD_InterruptHandler(int irq, void *dev_id)
 #ifdef CONFIG_MTPROF_APPLAUNCH  // eng enable, user disable   	
         LOG_PRINT(ANDROID_LOG_INFO, "AppLaunch", "LCD frame buffer update done !\n");
 #endif
-        wake_up_interruptible(&_lcd_wait_queue);
+		_lcdComplete = 1;
+
+		wake_up(&_lcd_wait_queue_no_con);
+
+        wake_up(&_lcd_wait_queue);
+
 
         if(_lcdContext.pIntCallback)
             _lcdContext.pIntCallback(DISP_LCD_TRANSFER_COMPLETE_INT);
@@ -242,11 +243,10 @@ BOOL LCD_IsBusy(void)
 	return _IsEngineBusy();
 }
 
-
 static void _WaitForEngineNotBusy(void)
 {
 #if ENABLE_LCD_INTERRUPT
-    static const long WAIT_TIMEOUT = HZ / 8;    //make timeout to 125ms for pass ESD test
+    static const long WAIT_TIMEOUT = 2 * HZ;    // 2 sec
     if (in_interrupt())
     {
         // perform busy waiting if in interrupt context
@@ -256,10 +256,85 @@ static void _WaitForEngineNotBusy(void)
     {
         while (_IsEngineBusy())
         {
-            long ret = wait_event_interruptible_timeout(_lcd_wait_queue, 
+            long ret = wait_event_timeout(_lcd_wait_queue, 
                                                         !_IsEngineBusy(),
                                                         WAIT_TIMEOUT);
             if (0 == ret) {
+				LCD_REG_DSI_DC tmp_reg;
+				if(_IsEngineBusy()){
+                	DISP_LOG_PRINT(ANDROID_LOG_WARN, "LCD", "[WARNING] Wait for LCD engine not busy timeout, LCD Hang, %s!!!\n", current->comm); 
+					LCD_DumpRegisters();
+					tmp_reg = LCD_REG->DS_DSI_CON;
+					if(LCD_REG->STATUS.WAIT_SYNC){
+                    	DISP_LOG_PRINT(ANDROID_LOG_WARN, "LCD", "reason is LCD can't wait TE signal!!!\n"); 
+						LCD_TE_Enable(FALSE);
+					// Can't receive VSYNC, RX may be dead.
+					//DSI_handle_esd_recovery(METHOD_LCM_VSYNC);
+					lcd_esd_check = true;
+					}
+					OUTREG16(&LCD_REG->START, 0);
+					OUTREG16(&LCD_REG->START, 0x1);
+					if(1 == tmp_reg.DC_DSI){
+						DSI_DumpRegisters();
+						DSI_Reset();
+					}
+//					OUTREG16(&LCD_REG->START, 0);
+//					OUTREG16(&LCD_REG->START, 0x8000);
+				}
+				else
+                	DISP_LOG_PRINT(ANDROID_LOG_WARN, "LCD", "[WARNING] Wait for LCD engine not busy timeout, LCD not Hang but no IRQ!!!, %s\n", current->comm); 
+            }
+        }
+    }
+#else
+    while(_IsEngineBusy()) {
+	    udelay(50);//sleep 1ms
+		wait_time++;
+		if(wait_time>20000){ //timeout
+			LCD_REG_DSI_DC tmp_reg;
+			printk("[WARNING] Wait for LCD engine not busy timeout!!!\n");
+			LCD_DumpRegisters();
+			tmp_reg = LCD_REG->DS_DSI_CON;
+			if(LCD_REG->STATUS.WAIT_SYNC){
+				printk("reason is LCD can't wait TE signal!!!\n");
+				LCD_TE_Enable(FALSE);
+			}
+			OUTREG16(&LCD_REG->START, 0);
+			OUTREG16(&LCD_REG->START, 0x1);
+			OUTREG16(&LCD_REG->START, 0);
+			OUTREG16(&LCD_REG->START, 0x8000);
+	
+			if(1 == tmp_reg.DC_DSI){
+				DSI_DumpRegisters();
+				DSI_Reset();
+				DSI_clk_HS_mode(1);
+				DSI_CHECK_RET(DSI_EnableClk());
+			}
+			wait_time = 0;
+		}
+    }
+    wait_time = 0;
+#endif    
+}
+
+
+static void _WaitForEngineFinish(void)
+{
+#if ENABLE_LCD_INTERRUPT
+    static const long WAIT_TIMEOUT = 2 * HZ;    // 2 sec
+    if (in_interrupt())
+    {
+        // perform busy waiting if in interrupt context
+        while(_IsEngineBusy()) {}
+    }
+    else
+    {
+        if (_IsEngineBusy())
+        {
+        	_lcdComplete = 0;
+
+            long ret = wait_event_timeout(_lcd_wait_queue_no_con, _lcdComplete  == 1, WAIT_TIMEOUT);
+              if (0 == ret) {
 				LCD_REG_DSI_DC tmp_reg;
 				if(_IsEngineBusy()){
                 	DISP_LOG_PRINT(ANDROID_LOG_WARN, "LCD", "[WARNING] Wait for LCD engine not busy timeout, LCD Hang, %s!!!\n", current->comm); 
@@ -569,6 +644,7 @@ LCD_STATUS LCD_Init(void)
 //	enable_irq(MT_LCD_IRQ_ID);
     init_waitqueue_head(&_lcd_wait_queue);
     init_waitqueue_head(&_vsync_wait_queue);
+	init_waitqueue_head(&_lcd_wait_queue_no_con);
     LCD_REG->INT_ENABLE.COMPLETED = 1;
 //	LCD_REG->INT_ENABLE.REG_COMPLETED = 1;
 	LCD_REG->INT_ENABLE.CMDQ_COMPLETED = 1;
@@ -691,6 +767,13 @@ LCD_STATUS LCD_WaitForNotBusy(void)
     _WaitForEngineNotBusy();
     return LCD_STATUS_OK;
 }
+
+LCD_STATUS LCD_WaitForFinish(void)
+{
+    _WaitForEngineFinish();
+    return LCD_STATUS_OK;
+}
+
 EXPORT_SYMBOL(LCD_WaitForNotBusy);
 
 
@@ -938,6 +1021,28 @@ LCD_STATUS LCD_CmdQueueEnable(BOOL enabled)
     return LCD_STATUS_OK;
 }
 
+/*
+LCD_STATUS LCD_CmdQueueSelect(LCD_CMDQ_ID id)
+{
+    LCD_REG_WROI_CON ctrl;
+
+    _WaitForEngineNotBusy();
+    ctrl = LCD_REG->WROI_CONTROL;
+
+    switch(id)
+    {
+    case LCD_CMDQ_0 :
+    case LCD_CMDQ_1 :
+        ctrl.COM_SEL = (UINT32)id;
+        break;
+    default : ASSERT(0);
+    }
+
+    LCD_OUTREG32(&LCD_REG->WROI_CONTROL, AS_UINT32(&ctrl));
+
+    return LCD_STATUS_OK;
+}
+*/
 
 LCD_STATUS LCD_CmdQueueSetWaitPeriod(UINT32 period)
 {
@@ -1173,6 +1278,26 @@ LCD_STATUS LCD_LayerSetFormat(LCD_LAYER_ID id, LCD_LAYER_FORMAT format)
 			ctrl.SWP = false;
 		
         ctrl.CLRDPT = (UINT32)format;
+        LCD_OUTREG32(&LCD_REG->LAYER[id].CONTROL, AS_UINT32(&ctrl));
+    }
+    
+    return LCD_STATUS_OK;
+}
+
+LCD_STATUS LCD_LayerSetByteSwap(LCD_LAYER_ID id, unsigned int swap)
+{
+    ASSERT(id < LCD_LAYER_NUM || LCD_LAYER_ALL == id);
+
+//    _WaitForEngineNotBusy();
+    
+    if (LCD_LAYER_ALL == id)
+    {
+        NOT_IMPLEMENTED();
+    }
+    else if (id < LCD_LAYER_NUM)
+    {
+        LCD_REG_LAYER_CON ctrl = LCD_REG->LAYER[id].CONTROL;
+		ctrl.RGB_SWAP = swap;
         LCD_OUTREG32(&LCD_REG->LAYER[id].CONTROL, AS_UINT32(&ctrl));
     }
     
@@ -1888,6 +2013,13 @@ LCD_STATUS LCD_EnableColorMatrix(LCD_IF_ID id, BOOL enable)
     return LCD_STATUS_OK;
 }
 
+/** Input: const S2_8 mat[9], fixed ponit signed 2.8 format
+           |                      |
+           | mat[0] mat[1] mat[2] |
+           | mat[3] mat[4] mat[5] |
+           | mat[6] mat[7] mat[8] |
+           |                      |
+*/
 LCD_STATUS LCD_SetColorMatrix(const S2_8 mat[9])
 {
 //#warning "the color matrix is different on MT6573"
@@ -1941,6 +2073,12 @@ LCD_STATUS LCD_TE_ConfigVHSyncMode(UINT32 hsDelayCnt,
                                    UINT32 vsWidthCnt,
                                    LCD_TE_VS_WIDTH_CNT_DIV vsWidthCntDiv)
 {
+/*    LCD_REG_TECON tecon = LCD_REG->TEARING_CFG;
+    tecon.HS_MCH_CNT = (hsDelayCnt ? hsDelayCnt - 1 : 0);
+    tecon.VS_WLMT = (vsWidthCnt ? vsWidthCnt - 1 : 0);
+    tecon.VS_CNT_DIV = vsWidthCntDiv;
+    LCD_OUTREG32(&LCD_REG->TEARING_CFG, AS_UINT32(&tecon));
+*/
     return LCD_STATUS_OK;
 }
 
@@ -2163,7 +2301,6 @@ LCD_STATUS LCD_DumpRegisters(void)
     return LCD_STATUS_OK;
 }
 
-#if !defined(MTK_M4U_SUPPORT)
 #ifdef BUILD_UBOOT
 static unsigned long v2p(unsigned long va)
 {
@@ -2187,7 +2324,6 @@ static unsigned long v2p(unsigned long va)
 
     return pa;
 }
-#endif
 #endif
 LCD_STATUS LCD_Get_VideoLayerSize(unsigned int id, unsigned int *width, unsigned int *height)
 {
@@ -2249,17 +2385,9 @@ LCD_STATUS LCD_Capture_Layerbuffer(unsigned int layer_id, unsigned int pvbuf, un
 	offset_y = LCD_REG->LAYER[layer_id].OFFSET.Y;
 	w = LCD_REG->LAYER[layer_id].SIZE.WIDTH;
 	h = LCD_REG->LAYER[layer_id].SIZE.HEIGHT;
-#if defined(MTK_M4U_SUPPORT)
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[LCDC init M4U] M4U not been init for LCDC\n");
-		return LCD_STATUS_ERROR;
-	}
 	
-	_m4u_lcdc_func.m4u_alloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, &ppbuf);
-#else
-    ppbuf = v2p(pvbuf);
-#endif
+	m4u_alloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, &ppbuf);
+
 	ASSERT(ppbuf != 0);
 
 	mode = LCD_GetOutputMode();
@@ -2284,18 +2412,14 @@ LCD_STATUS LCD_Capture_Layerbuffer(unsigned int layer_id, unsigned int pvbuf, un
 //	LCD_CHECK_RET(LCD_SetRoiWindow(offset_x, offset_y, h, w));
 
 	LCD_MASKREG32(0xf20a10a0, 0x1, 0); //disable DC to DSI when write to memory partially
-#if defined(MTK_M4U_SUPPORT)
-	_m4u_lcdc_func.m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (void *)pvbuf, w*h*bpp/8, DMA_BIDIRECTIONAL);
-#endif
+	m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (void *)pvbuf, w*h*bpp/8, DMA_BIDIRECTIONAL);
 
     LCD_CHECK_RET(LCD_StartTransfer(TRUE));
  
 	LCD_SetOutputMode(mode);
     // capture end
     _RestoreLCDRegisters();
-#if defined(MTK_M4U_SUPPORT)
-    _m4u_lcdc_func.m4u_dealloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, ppbuf);
-#endif
+    m4u_dealloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, ppbuf);
     return LCD_STATUS_OK;   
 }
 
@@ -2329,17 +2453,9 @@ LCD_STATUS LCD_Capture_Videobuffer(unsigned int pvbuf, unsigned int bpp, unsigne
 	offset_y = LCD_REG->LAYER[LCD_LAYER_2].OFFSET.Y;
 	w = LCD_REG->LAYER[LCD_LAYER_2].SIZE.WIDTH;
 	h = LCD_REG->LAYER[LCD_LAYER_2].SIZE.HEIGHT;
-#if defined(MTK_M4U_SUPPORT)
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[LCDC init M4U] M4U not been init for LCDC\n");
-		return LCD_STATUS_ERROR;
-	}
 	
-	_m4u_lcdc_func.m4u_alloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, &ppbuf);
-#else
-    ppbuf = v2p(pvbuf);
-#endif
+	m4u_alloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, &ppbuf);
+
 	mode = LCD_GetOutputMode();
 	
 	LCD_CHECK_RET(LCD_LayerEnable(LCD_LAYER_ALL, 0));
@@ -2381,9 +2497,7 @@ LCD_STATUS LCD_Capture_Videobuffer(unsigned int pvbuf, unsigned int bpp, unsigne
 //	LCD_CHECK_RET(LCD_SetRoiWindow(offset_x, offset_y, h, w));
 
 	LCD_MASKREG32(0xf20a10a0, 0x1, 0); //disable DC to DSI when write to memory partially
-#if defined(MTK_M4U_SUPPORT)
-	_m4u_lcdc_func.m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (void *)pvbuf, w*h*bpp/8, DMA_BIDIRECTIONAL);
-#endif
+	m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (void *)pvbuf, w*h*bpp/8, DMA_BIDIRECTIONAL);
 
 	if(dbi_log_on)
 		LCD_DumpRegisters();
@@ -2393,9 +2507,7 @@ LCD_STATUS LCD_Capture_Videobuffer(unsigned int pvbuf, unsigned int bpp, unsigne
 	LCD_SetOutputMode(mode);
     // capture end
     _RestoreLCDRegisters();
-#if defined(MTK_M4U_SUPPORT)
-    _m4u_lcdc_func.m4u_dealloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, ppbuf);
-#endif
+    m4u_dealloc_mva(M4U_CLNTMOD_LCDC, pvbuf, w*h*bpp/8, ppbuf);
     return LCD_STATUS_OK;   
 }
 
@@ -2413,34 +2525,7 @@ LCD_STATUS LCD_Capture_Framebuffer(unsigned int pvbuf, unsigned int bpp)
         return LCD_STATUS_OK;
     }
 
-#if defined(MTK_M4U_SUPPORT)
-	if (!_m4u_lcdc_func.isInit)
-	{
-        unsigned int t;
-		unsigned int i,j;
-		unsigned int w_xres = DISP_GetScreenWidth();
-	    unsigned int w = ALIGN_TO(DISP_GetScreenWidth(), 32);
-	    unsigned int h = DISP_GetScreenHeight();
-		unsigned int pixel_bpp = bpp/8;
-    	unsigned int fbsize = w*h*pixel_bpp;
-		unsigned int fbv = (unsigned int)ioremap_cached((unsigned int)LCD_REG->LAYER[FB_LAYER].ADDRESS, fbsize);
-		unsigned short* fbvt = (unsigned short*)fbv;
-
-		DBI_LOG("[LCDC init M4U] M4U not been init for LCDC, this should only happened in recovery mode\n");
-		for(i = 0;i < h; i++){
-			for(j = 0;j < w_xres; j++){
-	    		t = fbvt[j + i * w];
- 	         	*(unsigned short*)(pvbuf+i*w_xres*pixel_bpp+j*pixel_bpp) = t;
-    		}
-		}
-		iounmap((void *)fbv);
-		return LCD_STATUS_OK;
-	}
-	else
-		_m4u_lcdc_func.m4u_alloc_mva(M4U_CLNTMOD_LCDC, pvbuf, DISP_GetScreenHeight()*DISP_GetScreenWidth()*bpp/8, &ppbuf);
-#else
-    ppbuf = v2p(pvbuf);
-#endif
+	m4u_alloc_mva(M4U_CLNTMOD_LCDC, pvbuf, DISP_GetScreenHeight()*DISP_GetScreenWidth()*bpp/8, &ppbuf);
 
     LCD_WaitForNotBusy();
 
@@ -2480,9 +2565,7 @@ LCD_STATUS LCD_Capture_Framebuffer(unsigned int pvbuf, unsigned int bpp)
 
     LCD_TE_Enable(FALSE);
 	LCD_SetOutputAlpha(0xff);
-#if defined(MTK_M4U_SUPPORT)
-	_m4u_lcdc_func.m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (unsigned int*)pvbuf, DISP_GetScreenHeight()*DISP_GetScreenWidth()*bpp/8, DMA_BIDIRECTIONAL);
-#endif
+	m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (unsigned int*)pvbuf, DISP_GetScreenHeight()*DISP_GetScreenWidth()*bpp/8, DMA_BIDIRECTIONAL);
 	if(dbi_log_on)
 		LCD_DumpRegisters();
 
@@ -2490,9 +2573,7 @@ LCD_STATUS LCD_Capture_Framebuffer(unsigned int pvbuf, unsigned int bpp)
 	LCD_SetOutputMode(mode);
     // capture end
     _RestoreLCDRegisters();
-#if defined(MTK_M4U_SUPPORT)
-    _m4u_lcdc_func.m4u_dealloc_mva(M4U_CLNTMOD_LCDC, pvbuf, DISP_GetScreenHeight()*DISP_GetScreenWidth()*bpp/8, ppbuf);
-#endif
+    m4u_dealloc_mva(M4U_CLNTMOD_LCDC, pvbuf, DISP_GetScreenHeight()*DISP_GetScreenWidth()*bpp/8, ppbuf);
     return LCD_STATUS_OK;    
 }
 
@@ -2656,17 +2737,10 @@ LCD_STATUS LCD_Change_WriteCycle(LCD_IF_ID id, unsigned int write_cycle)
     return LCD_STATUS_OK;  
 }
 
-#if defined(MTK_M4U_SUPPORT)
 LCD_STATUS LCD_InitM4U()
 {
 	M4U_PORT_STRUCT M4uPort;
 	DBI_LOG("[LCDC driver]%s\n", __func__);
-
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[LCDC init M4U] M4U not been init for LCDC\n");
-		return LCD_STATUS_ERROR;
-	}
 
 	M4uPort.ePortID = M4U_PORT_LCD_R;
 	M4uPort.Virtuality = 1; 					   
@@ -2674,7 +2748,7 @@ LCD_STATUS LCD_InitM4U()
 	M4uPort.Distance = 1;
 	M4uPort.Direction = 0;
 
-	_m4u_lcdc_func.m4u_config_port(&M4uPort);
+	m4u_config_port(&M4uPort);
 
 	M4uPort.ePortID = M4U_PORT_LCD_W;
 	M4uPort.Virtuality = 1; 					   
@@ -2682,22 +2756,17 @@ LCD_STATUS LCD_InitM4U()
 	M4uPort.Distance = 1;
 	M4uPort.Direction = 0;
 
-	_m4u_lcdc_func.m4u_config_port(&M4uPort);
-//    _m4u_lcdc_func.m4u_dump_reg(M4U_CLNTMOD_LCDC);
+	m4u_config_port(&M4uPort);
+//m4u_dump_reg(M4U_CLNTMOD_LCDC);
 	
 	return LCD_STATUS_OK;
 }
 
 LCD_STATUS LCD_AllocUIMva(unsigned int va, unsigned int *mva, unsigned int size)
 {
-    if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[LCDC init M4U] M4U not been init for LCDC\n");
-		return LCD_STATUS_ERROR;
-	}
-    _m4u_lcdc_func.m4u_alloc_mva(M4U_CLNTMOD_LCDC_UI, va, size, mva);
+    m4u_alloc_mva(M4U_CLNTMOD_LCDC_UI, va, size, mva);
 #if 0
-	_m4u_lcdc_func.m4u_insert_tlb_range(M4U_CLNTMOD_LCDC_UI,
+	m4u_insert_tlb_range(M4U_CLNTMOD_LCDC_UI,
                                   		 *mva,
                       					 *mva + size - 1,
                       					 RT_RANGE_HIGH_PRIORITY,
@@ -2708,13 +2777,8 @@ LCD_STATUS LCD_AllocUIMva(unsigned int va, unsigned int *mva, unsigned int size)
 
 LCD_STATUS LCD_AllocOverlayMva(unsigned int va, unsigned int *mva, unsigned int size)
 {
-    if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[LCDC init M4U] M4U not been init for LCDC\n");
-		return LCD_STATUS_ERROR;
-	}
-	_m4u_lcdc_func.m4u_alloc_mva(M4U_CLNTMOD_LCDC, va, size, mva);
-	_m4u_lcdc_func.m4u_insert_tlb_range(M4U_CLNTMOD_LCDC,
+	m4u_alloc_mva(M4U_CLNTMOD_LCDC, va, size, mva);
+	m4u_insert_tlb_range(M4U_CLNTMOD_LCDC,
                                   		 *mva,
                       					 *mva + size - 1,
                       					 RT_RANGE_HIGH_PRIORITY,
@@ -2724,13 +2788,8 @@ LCD_STATUS LCD_AllocOverlayMva(unsigned int va, unsigned int *mva, unsigned int 
 
 LCD_STATUS LCD_DeallocMva(unsigned int va, unsigned int mva, unsigned int size)
 {
-    if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[TV]Error, M4U has not init func for TV-out\n");
-		return LCD_STATUS_ERROR;
-	}
-    _m4u_lcdc_func.m4u_invalid_tlb_range(M4U_CLNTMOD_LCDC, mva, mva + size - 1);
-    _m4u_lcdc_func.m4u_dealloc_mva(M4U_CLNTMOD_LCDC, va, size, mva);
+    m4u_invalid_tlb_range(M4U_CLNTMOD_LCDC, mva, mva + size - 1);
+    m4u_dealloc_mva(M4U_CLNTMOD_LCDC, va, size, mva);
 	return LCD_STATUS_OK;
 }
 
@@ -2746,23 +2805,13 @@ LCD_STATUS LCD_M4UPowerOff(void)
 
 int m4u_alloc_mva_stub(M4U_MODULE_ID_ENUM eModuleID, const unsigned int BufAddr, const unsigned int BufSize, unsigned int *pRetMVABuf)
 {
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("%s, Error, M4U has not init func\n", __func__);
-		return LCD_STATUS_ERROR;
-	}
-	return _m4u_lcdc_func.m4u_alloc_mva(eModuleID, BufAddr, BufSize, pRetMVABuf);
+	return m4u_alloc_mva(eModuleID, BufAddr, BufSize, pRetMVABuf);
 }
 EXPORT_SYMBOL(m4u_alloc_mva_stub);
   
 int m4u_dealloc_mva_stub(M4U_MODULE_ID_ENUM eModuleID, const unsigned int BufAddr, const unsigned int BufSize, const unsigned int MVA)
 {
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("%s, Error, M4U has not init func\n", __func__);
-		return LCD_STATUS_ERROR;
-	}
-	return _m4u_lcdc_func.m4u_dealloc_mva(eModuleID, BufAddr, BufSize, MVA);
+	return m4u_dealloc_mva(eModuleID, BufAddr, BufSize, MVA);
 }
 EXPORT_SYMBOL(m4u_dealloc_mva_stub);
                   							
@@ -2772,13 +2821,8 @@ int m4u_insert_tlb_range_stub(M4U_MODULE_ID_ENUM eModuleID,
                   M4U_RANGE_PRIORITY_ENUM ePriority,
                   unsigned int entryCount)
 {
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("%s, Error, M4U has not init func\n", __func__);
-		return LCD_STATUS_ERROR;
-	}
 
-	return _m4u_lcdc_func.m4u_insert_tlb_range(eModuleID, MVAStart, MVAEnd, ePriority, entryCount);				  
+	return m4u_insert_tlb_range(eModuleID, MVAStart, MVAEnd, ePriority, entryCount);				  
 }
 EXPORT_SYMBOL(m4u_insert_tlb_range_stub);
                         
@@ -2786,13 +2830,8 @@ int m4u_invalid_tlb_range_stub(M4U_MODULE_ID_ENUM eModuleID,
                   unsigned int MVAStart, 
                   unsigned int MVAEnd)
 {
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("%s, Error, M4U has not init func\n", __func__);
-		return LCD_STATUS_ERROR;
-	}
 
-	return _m4u_lcdc_func.m4u_invalid_tlb_range(eModuleID, MVAStart, MVAEnd);				  
+	return m4u_invalid_tlb_range(eModuleID, MVAStart, MVAEnd);				  
 }
 EXPORT_SYMBOL(m4u_invalid_tlb_range_stub);
              
@@ -2801,13 +2840,8 @@ int m4u_manual_insert_entry_stub(M4U_MODULE_ID_ENUM eModuleID, unsigned int Entr
   
 int m4u_config_port_stub(M4U_PORT_STRUCT* pM4uPort)
 {
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("%s, Error, M4U has not init func\n", __func__);
-		return LCD_STATUS_ERROR;
-	}
 
-	return _m4u_lcdc_func.m4u_config_port(pM4uPort);
+	return m4u_config_port(pM4uPort);
 }
 EXPORT_SYMBOL(m4u_config_port_stub);
 
@@ -2816,30 +2850,22 @@ LCD_STATUS LCD_M4U_On(bool enable)
 	M4U_PORT_STRUCT M4uPort;
 	DBI_LOG("[LCDC driver]%s\n", __func__);
 
-	if (!_m4u_lcdc_func.isInit)
-	{
-		DBI_LOG("[LCDC M4U ON] M4U not been init for LCDC\n");
-		return LCD_STATUS_ERROR;
-	}
-
 	M4uPort.ePortID = M4U_PORT_LCD_R;
 	M4uPort.Virtuality = enable; 					   
 	M4uPort.Security = 0;
 	M4uPort.Distance = 1;
 	M4uPort.Direction = 0;
 
-	_m4u_lcdc_func.m4u_config_port(&M4uPort);
+	m4u_config_port(&M4uPort);
 
 	return LCD_STATUS_OK;
 }
 
 LCD_STATUS LCD_DumpM4U(){
-	_m4u_lcdc_func.m4u_dump_reg(M4U_CLNTMOD_LCDC);
-	_m4u_lcdc_func.m4u_dump_info(M4U_CLNTMOD_LCDC_UI);
+	m4u_dump_reg(M4U_CLNTMOD_LCDC);
+	m4u_dump_info(M4U_CLNTMOD_LCDC_UI);
 	return LCD_STATUS_OK;
 }
-
-#endif
 
 LCD_STATUS LCD_W2M_NeedLimiteSpeed(BOOL enable)
 {

@@ -33,6 +33,12 @@ typedef void (*pm_callback_t)(pm_message_t state, void *data);
 #define MSDC_WP_PIN         (3)
 #define MSDC_RST_PIN        (4)
 
+#define MSDC_BOOT_EN (1)
+enum {
+    MSDC_EMMC = 0,
+    MSDC_SD   = 1,
+    MSDC_SDIO = 2
+};
 enum {
     MSDC_CLKSRC_26MHZ = 0,
     MSDC_CLKSRC_197MHZ = 1,
@@ -49,14 +55,17 @@ struct msdc_hw {
     unsigned long  flags;            /* hardware capability flags */
     unsigned long  data_pins;        /* data pins */
     unsigned long  data_offset;      /* data address offset */
-	unsigned char  dat0rddly;
-	unsigned char  dat1rddly;
-	unsigned char  dat2rddly;
-	unsigned char  dat3rddly;
-	unsigned char  dat4rddly;
-	unsigned char  dat5rddly;	
-	unsigned char  dat6rddly;
-	unsigned char  dat7rddly;	
+	unsigned char  dat0rddly; //read; range: 0~31
+	unsigned char  dat1rddly; //read; range: 0~31
+	unsigned char  dat2rddly; //read; range: 0~31
+	unsigned char  dat3rddly; //read; range: 0~31
+	unsigned char  dat4rddly; //read; range: 0~31
+	unsigned char  dat5rddly; //read; range: 0~31
+	unsigned char  dat6rddly; //read; range: 0~31
+	unsigned char  dat7rddly; //read; range: 0~31
+	unsigned char  datwrddly; //write; range: 0~31
+	unsigned char  cmdrrddly; //cmd; range: 0~31
+	unsigned char  cmdrddly; //cmd; range: 0~31
 
     /* config gpio pull mode */
     void (*config_gpio_pin)(int type, int pull);

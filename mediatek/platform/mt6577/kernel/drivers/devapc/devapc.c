@@ -547,5 +547,5 @@ static void __exit devapc_exit(void)
 module_init(devapc_init);
 module_exit(devapc_exit);
 MODULE_DESCRIPTION("Mediatek Device APC Driver");
-MODULE_LICENSE("Proprietary");
+MODULE_LICENSE("GPL");
 

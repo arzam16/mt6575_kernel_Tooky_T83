@@ -293,7 +293,9 @@ void get_hw_chip_diff_trim_value(void)
     //kal_int32 reg_num = 0x98;//test
 
     reg_val = upmu_get_reg_value_bank1(reg_num);
+	if (Enable_FGADC_LOG == 1){
     xlog_printk(ANDROID_LOG_INFO, "Power/Battery", "[Chip_Trim] Reg[0x%x]=0x%x\n", reg_num, reg_val);
+	}
 
     chip_diff_trim_value_en  = (reg_val & 0x01) >> 0;
     chip_diff_trim_value_4_0 = (reg_val & 0x3E) >> 1;

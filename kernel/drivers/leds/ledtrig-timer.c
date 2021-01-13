@@ -77,8 +77,12 @@ static ssize_t led_delay_off_store(struct device *dev,
 	return ret;
 }
 
-static DEVICE_ATTR(delay_on, 0644, led_delay_on_show, led_delay_on_store);
-static DEVICE_ATTR(delay_off, 0644, led_delay_off_show, led_delay_off_store);
+//<2012/10/04-ShermanWei, fix bug for LED fail to blink
+//static DEVICE_ATTR(delay_on, 0644, led_delay_on_show, led_delay_on_store);
+//static DEVICE_ATTR(delay_off, 0644, led_delay_off_show, led_delay_off_store);
+static DEVICE_ATTR(delay_on, 0666, led_delay_on_show, led_delay_on_store);
+static DEVICE_ATTR(delay_off, 0666, led_delay_off_show, led_delay_off_store);
+//>2012/10/04-ShermanWei
 
 static void timer_trig_activate(struct led_classdev *led_cdev)
 {
@@ -97,6 +101,7 @@ static void timer_trig_activate(struct led_classdev *led_cdev)
 		      &led_cdev->blink_delay_off);
 
 	led_cdev->trigger_data = (void *)1;
+	kobject_uevent(&led_cdev->dev->kobj,KOBJ_ADD);
 
 	return;
 

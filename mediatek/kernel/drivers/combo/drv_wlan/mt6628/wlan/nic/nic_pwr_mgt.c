@@ -339,7 +339,7 @@ nicpmSetDriverOwn (
                 || fgIsBusAccessFailed == TRUE
                 || (kalGetTimeTick() - u4CurrTick) > LP_OWN_BACK_TOTAL_DELAY_MS
                 ||fgIsResetting ==TRUE) {
-            ERRORLOG(("LP cannot be own back (for %ld ms)", kalGetTimeTick() - u4CurrTick));
+            //ERRORLOG(("LP cannot be own back (for %ld ms)", kalGetTimeTick() - u4CurrTick));
             fgStatus = FALSE;
             break;
         }

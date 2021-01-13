@@ -603,6 +603,56 @@ typedef struct _P2P_JOIN_INFO_T {
 }
 P2P_JOIN_INFO_T, *P_P2P_JOIN_INFO_T;
 
+#if CFG_SUPPORT_WFD
+
+#define WFD_FLAGS_DEV_INFO_VALID            BIT(0)     /* 1. WFD_DEV_INFO, 2. WFD_CTRL_PORT, 3. WFD_MAT_TP. */
+#define WFD_FLAGS_SINK_INFO_VALID           BIT(1)     /* 1. WFD_SINK_STATUS, 2. WFD_SINK_MAC. */
+#define WFD_FLAGS_ASSOC_MAC_VALID        BIT(2)     /* 1. WFD_ASSOC_MAC. */
+#define WFD_FLAGS_EXT_CAPABILITY_VALID  BIT(3)     /* 1. WFD_EXTEND_CAPABILITY. */
+
+
+
+struct _WFD_CFG_SETTINGS_T {
+    UINT_32 u4WfdCmdType;
+    UINT_8 ucWfdEnable;
+    UINT_8 ucWfdCoupleSinkStatus;
+    UINT_8  ucWfdSessionAvailable; /* 0: NA 1:Set 2:Clear */
+    UINT_8  ucWfdSigmaMode;
+    UINT_16 u2WfdDevInfo;
+    UINT_16 u2WfdControlPort;
+    UINT_16 u2WfdMaximumTp;
+    UINT_16 u2WfdExtendCap;
+    UINT_8 aucWfdCoupleSinkAddress[MAC_ADDR_LEN];
+    UINT_8 aucWfdAssociatedBssid[MAC_ADDR_LEN];
+    UINT_8 aucWfdVideolp[4];
+    UINT_8 aucWfdAudiolp[4];
+    UINT_16 u2WfdVideoPort;
+    UINT_16 u2WfdAudioPort;
+    UINT_32 u4WfdFlag;
+    UINT_32 u4WfdPolicy;
+    UINT_32 u4WfdState;
+    UINT_8 aucWfdSessionInformationIE[24*8];
+    UINT_16 u2WfdSessionInformationIELen;
+    UINT_8 aucReserved1[2];
+    UINT_8   aucWfdPrimarySinkMac[MAC_ADDR_LEN];
+    UINT_8   aucWfdSecondarySinkMac[MAC_ADDR_LEN];
+    UINT_32  u4WfdAdvancedFlag;
+    /* Group 1 64 bytes */
+    UINT_8   aucWfdLocalIp[4];
+    UINT_16  u2WfdLifetimeAc2; /* Unit is 2 TU */
+    UINT_16  u2WfdLifetimeAc3; /* Unit is 2 TU */
+    UINT_8   aucReverved2[56];
+    /* Group 2 64 bytes */
+    UINT_8   aucReverved3[64];
+    /* Group 3 64 bytes */
+    UINT_8   aucReverved4[64];
+
+};
+
+#endif
+
+
+
 struct _P2P_FSM_INFO_T {
     /* State related. */
     ENUM_P2P_STATE_T    ePreviousState;
@@ -610,7 +660,6 @@ struct _P2P_FSM_INFO_T {
 
     /* Channel related. */
     P2P_CHNL_REQ_INFO_T rChnlReqInfo;
-	P2P_CHNL_REQ_INFO_T rBackupChnlReqInfo;
 
     /* Scan related. */
     P2P_SCAN_REQ_INFO_T rScanReqInfo;
@@ -655,6 +704,11 @@ struct _P2P_FSM_INFO_T {
     /* Msg event queue. */
     LINK_T rMsgEventQueue;
 
+#if CFG_SUPPORT_WFD
+    WFD_CFG_SETTINGS_T rWfdConfigureSettings;
+#endif
+
+    BOOLEAN fgIsWPSMode;
 };
 
 
@@ -761,6 +815,13 @@ typedef struct _MSG_P2P_NETDEV_REGISTER_T {
     UINT_8          ucMode;
 } MSG_P2P_NETDEV_REGISTER_T, *P_MSG_P2P_NETDEV_REGISTER_T;
 
+#if CFG_SUPPORT_WFD
+typedef struct _MSG_WFD_CONFIG_SETTINGS_CHANGED_T {
+    MSG_HDR_T       rMsgHdr;    /* Must be the first member */
+    P_WFD_CFG_SETTINGS_T prWfdCfgSettings;
+} MSG_WFD_CONFIG_SETTINGS_CHANGED_T, *P_MSG_WFD_CONFIG_SETTINGS_CHANGED_T;
+#endif
+
 /*******************************************************************************
 *                  F U N C T I O N   D E C L A R A T I O N S
 ********************************************************************************
@@ -864,6 +925,14 @@ p2pFsmRunEventMgmtFrameRegister(
     IN P_ADAPTER_T prAdapter,
     IN P_MSG_HDR_T prMsgHdr
     );
+
+#if CFG_SUPPORT_WFD
+VOID
+p2pFsmRunEventWfdSettingUpdate(
+    IN P_ADAPTER_T prAdapter,
+    IN P_MSG_HDR_T prMsgHdr
+    );
+#endif
 
 
 #if 0
@@ -1406,7 +1475,6 @@ typedef struct _WSC_ATTRI_CONFIGURATION_METHOD_T {
 } __KAL_ATTRIB_PACKED__ WSC_ATTRI_CONFIGURATION_METHOD_T, *P_WSC_ATTRI_CONFIGURATION_METHOD_T;
 
 
-
 #if defined(WINDOWS_DDK) || defined(WINDOWS_CE)
 #pragma pack()
 #endif
@@ -1751,6 +1819,8 @@ struct _P2P_SPECIFIC_BSS_INFO_T {
     PARAM_CUSTOM_NOA_PARAM_STRUC_T rNoaParam;
     PARAM_CUSTOM_OPPPS_PARAM_STRUC_T rOppPsParam;
 
+    UINT_16                 u2WpaIeLen;
+    UINT_8                  aucWpaIeBuffer[ELEM_HDR_LEN + ELEM_MAX_LEN_WPA];
 };
 
 
@@ -1841,7 +1911,13 @@ typedef struct _MSG_P2P_SERVICE_DISCOVERY_REQUEST_T {
 #define WSC_IE(_fp)          ((P_IE_P2P_T) _fp)
 
 
-#define WFD_ATTRI_SIZE(_fp)     (P2P_ATTRI_HDR_LEN + WSC_ATTRI_LEN(_fp))
+#define WFD_ATTRI_ID(_fp)       (((P_WFD_ATTRIBUTE_T) _fp)->ucElemID)
+
+#define WFD_ATTRI_LEN(_fp)      \
+            (((UINT_16) ((PUINT_8)&((P_WFD_ATTRIBUTE_T) _fp)->u2Length)[0] << 8) | \
+             ((UINT_16) ((PUINT_8)&((P_WFD_ATTRIBUTE_T) _fp)->u2Length)[1]))
+
+#define WFD_ATTRI_SIZE(_fp)     (WFD_ATTRI_HDR_LEN + WFD_ATTRI_LEN(_fp))
 
 #define WFD_ATTRI_FOR_EACH(_pucAttriBuf, _u2AttriBufLen, _u2Offset) \
     for ((_u2Offset) = 0; ((_u2Offset) < (_u2AttriBufLen)); \

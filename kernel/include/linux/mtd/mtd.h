@@ -47,6 +47,13 @@
 #ifndef CONFIG_MTD_DEBUG_VERBOSE
 #define CONFIG_MTD_DEBUG_VERBOSE 0
 #endif
+
+/*
+ * NSS (Nand Speedup Strategy) Configurations
+ */
+
+#define CONFIG_MTK_NSS_CACHEV_MAX_CNT (4)
+
 #endif
 /*
  * If the erase fails, fail_addr might indicate exactly which block failed. If

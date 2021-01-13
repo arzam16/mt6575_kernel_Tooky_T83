@@ -75,6 +75,9 @@
 /* constants for device status */
 #define MTP_RESPONSE_OK             0x2001
 #define MTP_RESPONSE_DEVICE_BUSY    0x2019
+//ALPS00428998
+#define MTP_RESPONSE_DEVICE_CANCEL	0x201F
+//ALPS00428998
 
 static const char mtp_shortname[] = "mtp_usb";
 
@@ -169,8 +172,9 @@ struct mtp_dev {
 //Added Modification for ALPS00354386
 	int    epOut_halt;
 //Added Modification for ALPS00354386
-
-
+//ALPS00428998
+	int		dev_disconnected;
+//ALPS00428998
 };
 
 static struct usb_interface_descriptor mtp_interface_desc = {
@@ -333,7 +337,11 @@ struct {
 };
 
 #define MSFT_bMS_VENDOR_CODE	1
+#if defined(MTK_TC1_FEATURE)
+#define USB_MTP_FUNCTIONS		8
+#else
 #define USB_MTP_FUNCTIONS		6
+#endif
 
 #define USB_MTP			"mtp\n"
 #define USB_MTP_ACM		"mtp,acm\n"
@@ -341,7 +349,10 @@ struct {
 #define USB_MTP_ADB_ACM	"mtp,adb,acm\n"
 #define USB_MTP_UMS		"mtp,mass_storage\n"
 #define USB_MTP_UMS_ADB	"mtp,mass_storage,adb\n"
-
+#if defined(MTK_TC1_FEATURE)
+#define USB_TC1_MTP_ADB	"acm,gser,mtp,adb\n"
+#define USB_TC1_MTP		"acm,gser,mtp\n"
+#endif
 
 static char * USB_MTP_FUNC[USB_MTP_FUNCTIONS] =
 {
@@ -350,7 +361,11 @@ static char * USB_MTP_FUNC[USB_MTP_FUNCTIONS] =
 	USB_MTP_ADB,
 	USB_MTP_ADB_ACM,
 	USB_MTP_UMS,
-	USB_MTP_UMS_ADB
+	USB_MTP_UMS_ADB,
+#if defined(MTK_TC1_FEATURE)
+	USB_TC1_MTP_ADB,
+	USB_TC1_MTP
+#endif
 };
 
 //Added Modification for ALPS00272887, MTP MSFT OS Descriptor
@@ -463,11 +478,104 @@ struct {
 	},
 };
 
+#if defined(MTK_TC1_FEATURE)
+struct {
+	struct mtp_ext_config_desc_header	header;
+	struct mtp_ext_config_desc_function    function1;
+	struct mtp_ext_config_desc_function    function2;
+	struct mtp_ext_config_desc_function    function3;
+	struct mtp_ext_config_desc_function    function4;
+} mtp_ext_config_desc_4 = {
+	.header = {
+		.dwLength = __constant_cpu_to_le32(sizeof(mtp_ext_config_desc_4)),
+		.bcdVersion = __constant_cpu_to_le16(0x0100),
+		.wIndex = __constant_cpu_to_le16(4),
+		//.bCount = __constant_cpu_to_le16(1),
+		.bCount = 0x04,
+		.reserved = { 0 },
+	},
+	.function1 =
+	{
+	.bFirstInterfaceNumber = 0,
+	.bInterfaceCount = 2,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function2 =
+	{
+	.bFirstInterfaceNumber = 2,
+	.bInterfaceCount = 1,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function3 =
+	{
+	.bFirstInterfaceNumber = 3,
+	.bInterfaceCount = 1,
+	.compatibleID = { 'M', 'T', 'P', 0, 0, 0, 0, 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function4 =
+	{
+	.bFirstInterfaceNumber = 4,
+	.bInterfaceCount = 1,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+};
+
+struct {
+	struct mtp_ext_config_desc_header	header;
+	struct mtp_ext_config_desc_function    function1;
+	struct mtp_ext_config_desc_function    function2;
+	struct mtp_ext_config_desc_function    function3;
+} mtp_ext_config_desc_5 = {
+	.header = {
+		.dwLength = __constant_cpu_to_le32(sizeof(mtp_ext_config_desc_5)),
+		.bcdVersion = __constant_cpu_to_le16(0x0100),
+		.wIndex = __constant_cpu_to_le16(4),
+		//.bCount = __constant_cpu_to_le16(1),
+		.bCount = 0x03,
+		.reserved = { 0 },
+	},
+	.function1 =
+	{
+	.bFirstInterfaceNumber = 0,
+	.bInterfaceCount = 2,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function2 =
+	{
+	.bFirstInterfaceNumber = 2,
+	.bInterfaceCount = 1,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function3 =
+	{
+	.bFirstInterfaceNumber = 3,
+	.bInterfaceCount = 1,
+	.compatibleID = { 'M', 'T', 'P', 0, 0, 0, 0, 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+};
+#endif
 //Added Modification for ALPS00272887, MTP MSFT OS Descriptor
 struct mtp_device_status {
 	__le16	wLength;
 	__le16	wCode;
 };
+//ALPS00428998
+static void mtp_ueventToDisconnect(struct mtp_dev *dev);
+//ALPS00428998
 
 /* temporary variable used between mtp_open() and mtp_gadget_bind() */
 static struct mtp_dev *_mtp_dev;
@@ -610,15 +718,6 @@ static int mtp_create_bulk_endpoints(struct mtp_dev *dev,
 	ep->driver_data = dev;		/* claim the endpoint */
 	dev->ep_out = ep;
 
-	ep = usb_ep_autoconfig(cdev->gadget, out_desc);
-	if (!ep) {
-		DBG(cdev, "usb_ep_autoconfig for ep_out failed\n");
-		return -ENODEV;
-	}
-	DBG(cdev, "usb_ep_autoconfig for mtp ep_out got %s\n", ep->name);
-	ep->driver_data = dev;		/* claim the endpoint */
-	dev->ep_out = ep;
-
 	ep = usb_ep_autoconfig(cdev->gadget, intr_desc);
 	if (!ep) {
 		DBG(cdev, "usb_ep_autoconfig for ep_intr failed\n");
@@ -658,6 +757,56 @@ fail:
 	return -1;
 }
 
+
+//ALPS00606302
+static int mtp_send_devicereset_event(struct mtp_dev *dev)
+{
+	struct usb_request *req = NULL;
+	int ret;
+	int length = 12;
+    unsigned long flags;
+
+    char buffer[12]={0x0C, 0x0, 0x0, 0x0, 0x4, 0x0, 0xb, 0x40, 0x0, 0x0, 0x0, 0x0};   //length 12, 0x00000010, type EVENT: 0x0004, event code 0x400b 
+
+	DBG(dev->cdev, "%s, line %d: dev->dev_disconnected = %d\n", __func__, __LINE__, dev->dev_disconnected);
+
+	if (length < 0 || length > INTR_BUFFER_SIZE)
+		return -EINVAL;
+	if (dev->state == STATE_OFFLINE)
+		return -ENODEV;
+
+    spin_lock_irqsave(&dev->lock, flags);
+    DBG(dev->cdev, "%s, line %d: _mtp_dev->dev_disconnected = %d, dev->state = %d \n", __func__, __LINE__, dev->dev_disconnected, dev->state);
+    if(!dev->dev_disconnected || dev->state != STATE_OFFLINE)
+    {
+        spin_unlock_irqrestore(&dev->lock, flags);
+        ret = wait_event_interruptible_timeout(dev->intr_wq,
+			(req = mtp_req_get(dev, &dev->intr_idle)),
+			msecs_to_jiffies(1000));
+    	if (!req)
+    		return -ETIME;
+
+        memcpy(req->buf, buffer, length);
+    	req->length = length;
+
+    	ret = usb_ep_queue(dev->ep_intr, req, GFP_KERNEL);
+        DBG(dev->cdev, "%s, line %d: ret = %d\n", __func__, __LINE__, ret);
+
+        if (ret)
+    		mtp_req_put(dev, &dev->intr_idle, req);
+    }
+    else
+    {
+        spin_unlock_irqrestore(&dev->lock, flags);
+        DBG(dev->cdev, "%s, line %d: usb function has been unbind!! do nothing!!\n", __func__, __LINE__);
+        ret = 0;
+    }
+
+    DBG(dev->cdev, "%s, line %d: _mtp_dev->dev_disconnected = %d, dev->state = %d, return!! \n", __func__, __LINE__, dev->dev_disconnected, dev->state);
+    return ret;
+}
+//ALPS00606302
+
 static ssize_t mtp_read(struct file *fp, char __user *buf,
 	size_t count, loff_t *pos)
 {
@@ -672,10 +821,6 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 	if (count > MTP_BULK_BUFFER_SIZE)
 		return -EINVAL;
 
-//Added Modification for ALPS00255822, bug from WHQL test
-
-	spin_lock_irq(&dev->lock);
-
 //Added Modification for ALPS00354386
 	if(dev->epOut_halt)
 	{
@@ -684,9 +829,13 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 		usb_ep_fifo_flush(dev->ep_out);
 		dev->epOut_halt=0;
 		usb_ep_clear_halt(dev->ep_out);
+		printk("%s, line %d: ret %d!! <dev->epOut_halt = %d> finish the reset \n", __func__, __LINE__, ret, dev->epOut_halt);
 	}
 //Added Modification for ALPS00354386
 
+//Added Modification for ALPS00255822, bug from WHQL test
+
+	spin_lock_irq(&dev->lock);
 	if(dev->state == STATE_RESET)
 	{
 		//Added for MTP Develpment debug, more log for more debuging help
@@ -1060,9 +1209,13 @@ static void receive_file_work(struct work_struct *data)
 	struct file *filp;
 	loff_t offset;
 	int64_t count;
-	int64_t total_size = 0;
 	int ret, cur_buf = 0;
 	int r = 0;
+	//Modification for ALPS00434059 begin
+#if defined(MTK_SHARED_SDCARD)
+	int64_t total_size=0;
+#endif
+	//Modification for ALPS00434059 begin
 
 	/* read our parameters */
 	smp_rmb();
@@ -1070,7 +1223,7 @@ static void receive_file_work(struct work_struct *data)
 //Added Modification for ALPS00354386
 	if(dev->epOut_halt)
 	{
-		printk("%s, line %d: ret %d!! <dev->epOut_halt = %d> reset the out ep \n", __func__, __LINE__, dev->epOut_halt);
+		printk("%s, line %d: <dev->epOut_halt = %d> reset the out ep \n", __func__, __LINE__, dev->epOut_halt);
 		mdelay(2000);
 		usb_ep_fifo_flush(dev->ep_out);
 		dev->epOut_halt=0;
@@ -1092,21 +1245,60 @@ static void receive_file_work(struct work_struct *data)
 
 			read_req->length = (count > MTP_BULK_BUFFER_SIZE
 					? MTP_BULK_BUFFER_SIZE : count);
-			//Add for RX mode 1
-			total_size += read_req->actual;
+
+		//Modification for ALPS00434059 begin
+		//This might be modified TBD, 
+		//so far, there is only sharedSD with EXT4 FFS could transfer Object with size oevr 4GBs
+		#if defined(MTK_SHARED_SDCARD)
 			if(total_size >= 0xFFFFFFFF)
 				read_req->short_not_ok = 0;
-			else
-				read_req->short_not_ok = 1;
+			else{
+				if (0 == (read_req->length % dev->ep_out->maxpacket ))
+					read_req->short_not_ok = 1;
+				else
+					read_req->short_not_ok = 0;
+			}
+		#else
+		//Modification for ALPS00434059 end
 			//Add for RX mode 1
+			if (0 == (read_req->length % dev->ep_out->maxpacket  ))
+				read_req->short_not_ok = 1;
+			else
+				read_req->short_not_ok = 0;
+			DBG(cdev, "read_req->short_not_ok(%d), ep_out->maxpacket (%d)\n",
+				read_req->short_not_ok, dev->ep_out->maxpacket);
+			//Add for RX mode 1
+		//Modification for ALPS00434059 end
+		#endif
+		//Modification for ALPS00434059 end
 			dev->rx_done = 0;
 			ret = usb_ep_queue(dev->ep_out, read_req, GFP_KERNEL);
 			if (ret < 0) {
 				r = -EIO;
+				//dev->state = STATE_ERROR;		//Linux original source code
 				//Added Modification for ALPS00279812/279484
-				xlog_printk(ANDROID_LOG_ERROR, "USB", "%s, line %d: EIO, usb queue error \n", __func__, __LINE__);
-				//dev->state = STATE_ERROR;
-				dev->state = STATE_OFFLINE;
+				xlog_printk(ANDROID_LOG_ERROR, "USB", "%s, line %d: EIO, dev->dev_disconnected = %d, usb queue error \n", __func__, __LINE__, dev->dev_disconnected);
+
+				//ALPS00428998
+				if(dev->dev_disconnected)	//USB SW disconnected
+				{
+					dev->state = STATE_OFFLINE;
+				}
+				else	//ex: Might be SD card plug-out with USB connected
+				{
+					dev->state = STATE_ERROR;
+					#if 0
+					//Added Modification for ALPS00354386
+					//dev->state = STATE_OFFLINE;
+					usb_ep_set_halt(dev->ep_out);
+					dev->epOut_halt = 1;
+					usb_ep_fifo_flush(dev->ep_out);
+					//Added Modification for ALPS00354386
+					#else
+					mtp_ueventToDisconnect(dev);
+					#endif
+				}
+				//ALPS00428998
 				//Added Modification for ALPS00279812/279484
 				break;
 			}
@@ -1119,15 +1311,29 @@ static void receive_file_work(struct work_struct *data)
 			DBG(cdev, "vfs_write %d\n", ret);
 			if (ret != write_req->actual) {
 				r = -EIO;
+				//dev->state = STATE_ERROR;		//Linux original source code
 				//Added Modification for ALPS00279812/279484
-				xlog_printk(ANDROID_LOG_ERROR, "USB", "%s, line %d: EIO, file write error \n", __func__, __LINE__);
-				dev->state = STATE_ERROR;
-				//Added Modification for ALPS00354386
-				//dev->state = STATE_OFFLINE;
-				usb_ep_set_halt(dev->ep_out);
-				dev->epOut_halt = 1;
-				usb_ep_fifo_flush(dev->ep_out);
-				//Added Modification for ALPS00354386
+				xlog_printk(ANDROID_LOG_ERROR, "USB", "%s, line %d: EIO, dev->dev_disconnected = %d, file write error \n", __func__, __LINE__, dev->dev_disconnected);
+				//ALPS00428998
+				if(dev->dev_disconnected)	//USB SW disconnected
+				{
+					dev->state = STATE_OFFLINE;
+				}
+				else	//ex: Might be SD card plug-out with USB connected
+				{
+					dev->state = STATE_ERROR;
+					#if 0
+					//Added Modification for ALPS00354386
+					//dev->state = STATE_OFFLINE;
+					usb_ep_set_halt(dev->ep_out);
+					dev->epOut_halt = 1;
+					usb_ep_fifo_flush(dev->ep_out);
+					//Added Modification for ALPS00354386
+					#else
+					mtp_ueventToDisconnect(dev);
+					#endif
+				}
+				//ALPS00428998
 				//Added Modification for ALPS00279812/279484
 				break;
 			}
@@ -1162,7 +1368,7 @@ static void receive_file_work(struct work_struct *data)
 				//Added for USB Develpment debug, more log for more debuging help
 				usb_ep_dequeue(dev->ep_out, read_req);
 				break;
-				
+
 			}
 			//Added Modification for ALPS00255822, bug from WHQL test
 			/* if xfer_file_length is 0xFFFFFFFF, then we read until
@@ -1170,6 +1376,14 @@ static void receive_file_work(struct work_struct *data)
 			 */
 			if (count != 0xFFFFFFFF)
 				count -= read_req->actual;
+
+		//Modification for ALPS00434059 begin
+		#if defined(MTK_SHARED_SDCARD)
+			total_size += read_req->actual;
+			DBG(cdev, "%s, line %d: count = %lld, total_size = %lld, read_req->actual = %d, read_req->length= %d\n", __func__, __LINE__, count, total_size, read_req->actual, read_req->length);
+		#endif
+		//Modification for ALPS00434059 begin
+
 			if (read_req->actual < read_req->length) {
 				/*
 				 * short packet is used to signal EOF for
@@ -1180,10 +1394,7 @@ static void receive_file_work(struct work_struct *data)
 			}
 
 			//Add for RX mode 1
-			if(total_size >= 0xFFFFFFFF)
-				read_req->short_not_ok = 0;
-			else
-				read_req->short_not_ok = 1;
+			read_req->short_not_ok = 0;
 			//Add for RX mode 1
 			//Added for MTP Develpment debug, more log for more debuging help
 			DBG(dev->cdev,      "%s, line %d: dev->state = %d, NEXT!!\n", __func__, __LINE__, dev->state);
@@ -1221,6 +1432,9 @@ static int mtp_send_event(struct mtp_dev *dev, struct mtp_event *event)
 	struct usb_request *req = NULL;
 	int ret;
 	int length = event->length;
+    //ALPS00606302
+	int eventIndex = 6;
+    //ALPS00606302
 
 	DBG(dev->cdev, "mtp_send_event(%d)\n", event->length);
 
@@ -1240,6 +1454,10 @@ static int mtp_send_event(struct mtp_dev *dev, struct mtp_event *event)
 		return -EFAULT;
 	}
 	req->length = length;
+
+    //ALPS00606302
+    DBG(dev->cdev, "mtp_send_event: EventCode: req->buf[7] = 0x%x, req->buf[6] = 0x%x\n", ((char*)req->buf)[eventIndex+1], ((char*)req->buf)[eventIndex]);
+    //ALPS00606302
 	ret = usb_ep_queue(dev->ep_intr, req, GFP_KERNEL);
 	if (ret)
 		mtp_req_put(dev, &dev->intr_idle, req);
@@ -1406,7 +1624,23 @@ static int mtp_open(struct inode *ip, struct file *fp)
 
 static int mtp_release(struct inode *ip, struct file *fp)
 {
+    //ALPS00606302
+	unsigned long flags;
+    //ALPS00606302
 	printk(KERN_INFO "mtp_release\n");
+
+    //ALPS00606302
+    spin_lock_irqsave(&_mtp_dev->lock, flags);
+	printk(KERN_INFO "%s, line %d: _mtp_dev->dev_disconnected = %d\n", __func__, __LINE__, _mtp_dev->dev_disconnected);
+
+    if(!_mtp_dev->dev_disconnected)
+    {
+        spin_unlock_irqrestore(&_mtp_dev->lock, flags);
+        mtp_send_devicereset_event(_mtp_dev);
+    }
+    else
+        spin_unlock_irqrestore(&_mtp_dev->lock, flags);
+    //ALPS00606302
 
 	mtp_unlock(&_mtp_dev->open_excl);
 	return 0;
@@ -1434,10 +1668,32 @@ static void mtp_work(struct work_struct *data)
 	char *envp_sessionend[2] = 	{ "MTP=SESSIONEND", NULL };
 	xlog_printk(ANDROID_LOG_INFO, "USB", "%s: __begin__ \n", __func__);
 
+    //ALPS00428998
+    #if 0
+	struct mtp_dev *dev = container_of(data, struct mtp_dev, device_reset_work);
+
+	if(dev->epOut_halt)
+	{
+		//mtp_ueventToDisconnect(dev);
+	}
+    #endif
+    //ALPS00428998
 	kobject_uevent_env(&mtp_device.this_device->kobj, KOBJ_CHANGE, envp_sessionend);
 
 	//printk("%s: __end__ \n", __func__);
 }
+
+//ALPS00428998
+static void mtp_ueventToDisconnect(struct mtp_dev *dev)
+{
+	char *envp_mtpAskDisconnect[2] = { "USB_STATE=MTPASKDISCONNECT", NULL };
+	xlog_printk(ANDROID_LOG_INFO, "USB", "%s: __begin__ \n", __func__);
+
+	kobject_uevent_env(&mtp_device.this_device->kobj, KOBJ_CHANGE, envp_mtpAskDisconnect);
+
+	//printk("%s: __end__ \n", __func__);
+}
+//ALPS00428998
 
 //Added Modification for ALPS00272887, MTP MSFT OS Descriptor
 static void mtp_read_usb_functions(int functions_no, char * buff)
@@ -1447,8 +1703,8 @@ static void mtp_read_usb_functions(int functions_no, char * buff)
        	//Added for MTP Develpment debug, more log for more debuging help
 	DBG(dev->cdev, "%s: dev->curr_mtp_func_index = 0x%x\n",__func__, dev->curr_mtp_func_index);
 
-	if(dev->curr_mtp_func_index!=0xff)
-		return;
+	/*if(dev->curr_mtp_func_index!=0xff)
+		return;*/
        	//Added for MTP Develpment debug, more log for more debuging help
 
 	dev->usb_functions_no = functions_no;
@@ -1459,7 +1715,7 @@ static void mtp_read_usb_functions(int functions_no, char * buff)
 	for(i=0;i<USB_MTP_FUNCTIONS;i++)
 	{
 		if(!strcmp(dev->usb_functions, USB_MTP_FUNC[i]))
-		{	
+		{
 			DBG(dev->cdev, "%s: usb functions = %s, i = %d \n",__func__, dev->usb_functions, i);
 			dev->curr_mtp_func_index = i;
 			break;
@@ -1526,7 +1782,7 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 			memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
 		}
 		//Added Modification for ALPS00272887, MTP MSFT OS Descriptor
-                #endif
+                #else
 		if (ctrl->bRequest == 1
 				&& (ctrl->bRequestType & USB_DIR_IN)
 				&& (w_index == 5)) {
@@ -1547,7 +1803,7 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 				memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
 				break;
 			case 1:			//mtp,acm	, with acm, failed so far
-			case 2:			//mtp,adb 
+			case 2:			//mtp,adb
 			case 4:			//mtp,mass_storage
 				value = (w_length < sizeof(mtp_ext_config_desc_2) ?
 						w_length : sizeof(mtp_ext_config_desc_2));
@@ -1559,6 +1815,18 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 						w_length : sizeof(mtp_ext_config_desc_3));
 				memcpy(cdev->req->buf, &mtp_ext_config_desc_3, value);
 				break;
+		#if defined(MTK_TC1_FEATURE)
+			case 6:		//acm,gser,mtp,adb, with acm, xp failed so far
+				value = (w_length < sizeof(mtp_ext_config_desc_4) ?
+						w_length : sizeof(mtp_ext_config_desc_4));
+				memcpy(cdev->req->buf, &mtp_ext_config_desc_4, value);
+				break;
+			case 7:		//acm,gser,mtp,adb, with acm, xp failed so far
+				value = (w_length < sizeof(mtp_ext_config_desc_5) ?
+						w_length : sizeof(mtp_ext_config_desc_5));
+				memcpy(cdev->req->buf, &mtp_ext_config_desc_5, value);
+				break;
+		#endif
 			default:			//unknown, 0xff
 				value = (w_length < sizeof(mtp_ext_config_desc) ?
 						w_length : sizeof(mtp_ext_config_desc));
@@ -1569,6 +1837,7 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 			xlog_printk(ANDROID_LOG_INFO, "USB", "vendor request: Compat ID OS Feature, dev->curr_mtp_func_index = %d, dev->usb_functions = %s \n", dev->curr_mtp_func_index, dev->usb_functions);
 			xlog_printk(ANDROID_LOG_INFO, "USB", "vendor request: Extended OS Feature, w_length = %d, value = %d, dev->curr_mtp_func_index = %d\n", w_length, value, dev->curr_mtp_func_index);
 		}
+		#endif
 		//Added Modification for ALPS00272887, MTP MSFT OS Descriptor
 	} else if ((ctrl->bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS) {
 		DBG(cdev, "class request: %d index: %d value: %d length: %d\n",
@@ -1619,14 +1888,14 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 			 */
 			if (dev->state == STATE_CANCELED)
 			//Added Modification for ALPS00255822, bug from WHQL test
-			{	
+			{
 			//Added Modification for ALPS00255822, bug from WHQL test
 				status->wCode =
 					__cpu_to_le16(MTP_RESPONSE_DEVICE_BUSY);
 			//Added Modification for ALPS00255822, bug from WHQL test
 				dev->fileTransferSend ++;
 				DBG(cdev, "%s: dev->fileTransferSend = %d \n", __func__, dev->fileTransferSend);
-				
+
 				if(dev->fileTransferSend > 5)
 				{
 					dev->fileTransferSend = 0;
@@ -1647,8 +1916,26 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 
 			}
 			//Added Modification for ALPS00255822, bug from WHQL test
+			//ALPS00428998
+			else if(dev->state == STATE_ERROR)
+			{
+				DBG(dev->cdev, "%s: dev->state = RESET under MTP_REQ_GET_DEVICE_STATUS\n", __func__);
+				dev->fileTransferSend = 0;
+				if(dev->epOut_halt)
+				{
+					status->wCode =
+						__cpu_to_le16(MTP_RESPONSE_DEVICE_CANCEL);
+				}
+				else
+				status->wCode =
+					__cpu_to_le16(MTP_RESPONSE_OK);
+				//dev->state = STATE_BUSY;
+
+			}
+			//ALPS00428998
+			//Added Modification for ALPS00255822, bug from WHQL test
 			else
-			{	
+			{
 				dev->fileTransferSend = 0;
 				status->wCode =
 					__cpu_to_le16(MTP_RESPONSE_OK);
@@ -1715,6 +2002,9 @@ mtp_function_bind(struct usb_configuration *c, struct usb_function *f)
 
 	dev->cdev = cdev;
 	DBG(cdev, "mtp_function_bind dev: %p\n", dev);
+    //ALPS00428998
+	printk("mtp_function_bind dev: %p\n", dev);
+    //ALPS00428998
 
 	/* allocate interface ID(s) */
 	id = usb_interface_id(c, f);
@@ -1744,6 +2034,10 @@ mtp_function_bind(struct usb_configuration *c, struct usb_function *f)
 		mtp_highspeed_out_desc.bEndpointAddress =
 			mtp_fullspeed_out_desc.bEndpointAddress;
 	}
+	//ALPS00428998
+	dev->dev_disconnected = 0;
+	//ALPS00428998
+
 
 	DBG(cdev, "%s speed %s: IN/%s, OUT/%s\n",
 			gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full",
@@ -1757,6 +2051,9 @@ mtp_function_unbind(struct usb_configuration *c, struct usb_function *f)
 	struct mtp_dev	*dev = func_to_mtp(f);
 	struct usb_request *req;
 	int i;
+	//ALPS00428998
+	printk("%s, line %d: \n", __func__, __LINE__);
+	//ALPS00428998
 
 	while ((req = mtp_req_get(dev, &dev->tx_idle)))
 		mtp_request_free(req, dev->ep_in);
@@ -1765,6 +2062,9 @@ mtp_function_unbind(struct usb_configuration *c, struct usb_function *f)
 	while ((req = mtp_req_get(dev, &dev->intr_idle)))
 		mtp_request_free(req, dev->ep_intr);
 	dev->state = STATE_OFFLINE;
+	//ALPS00428998
+	dev->dev_disconnected = 1;
+	//ALPS00428998
 }
 
 static int mtp_function_set_alt(struct usb_function *f,
@@ -1775,6 +2075,9 @@ static int mtp_function_set_alt(struct usb_function *f,
 	int ret;
 
 	DBG(cdev, "mtp_function_set_alt intf: %d alt: %d\n", intf, alt);
+    //ALPS00428998
+	printk("mtp_function_set_alt intf: %d alt: %d\n", intf, alt);
+    //ALPS00428998
 
 	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_in);
 	if (ret)
@@ -1805,6 +2108,9 @@ static int mtp_function_set_alt(struct usb_function *f,
 		return ret;
 	}
 	dev->state = STATE_READY;
+	//ALPS00428998
+	dev->dev_disconnected = 0;
+	//ALPS00428998
 
 	/* readers may be blocked waiting for us to go online */
 	wake_up(&dev->read_wq);
@@ -1817,11 +2123,17 @@ static void mtp_function_disable(struct usb_function *f)
 	struct usb_composite_dev	*cdev = dev->cdev;
 
 	DBG(cdev, "mtp_function_disable\n");
+    //ALPS00428998
+	printk("mtp_function_disable\n");
+    //ALPS00428998
 	dev->state = STATE_OFFLINE;
 	usb_ep_disable(dev->ep_in);
 	usb_ep_disable(dev->ep_out);
 	usb_ep_disable(dev->ep_intr);
 
+	//ALPS00428998
+	dev->dev_disconnected = 1;
+	//ALPS00428998
 	/* readers may be blocked waiting for us to go online */
 	wake_up(&dev->read_wq);
 
@@ -1895,6 +2207,9 @@ static int mtp_setup(void)
 //Added Modification for ALPS00354386
 	dev->epOut_halt = 0;
 //Added Modification for ALPS00354386
+//ALPS00428998
+	dev->dev_disconnected = 0;
+//ALPS00428998
 
 	_mtp_dev = dev;
 

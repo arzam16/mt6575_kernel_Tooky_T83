@@ -16,13 +16,20 @@
 #include <linux/mutex.h>
 #include <linux/gfp.h>
 #include <linux/suspend.h>
-#ifdef MTK_CPU_HOTPLUG_DEBUG
+#ifdef MTK_CPU_HOTPLUG_DEBUG_0
 #include <linux/kallsyms.h>
-#endif //MTK_CPU_HOTPLUG_DEBUG
+#endif //MTK_CPU_HOTPLUG_DEBUG_0
 #ifdef CONFIG_MT_LOAD_BALANCE_PROFILER
 #include <mtlbprof/mtlbprof.h>
 #endif
 
+/*******************************************************************************
+* 20121113 marc.huang                                                          *
+* CPU Hotplug and idle integration                                             *
+*******************************************************************************/
+atomic_t is_in_hotplug = ATOMIC_INIT(0);
+/******************************************************************************/
+ 
 #ifdef CONFIG_SMP
 /* Serializes the updates to cpu_online_mask, cpu_present_mask */
 static DEFINE_MUTEX(cpu_add_remove_lock);
@@ -41,11 +48,11 @@ void cpu_maps_update_done(void)
 	mutex_unlock(&cpu_add_remove_lock);
 }
 
-#ifdef MTK_CPU_HOTPLUG_DEBUG
+#if defined(MTK_CPU_HOTPLUG_DEBUG_1) || defined(MTK_CPU_HOTPLUG_DEBUG_2)
 RAW_NOTIFIER_HEAD(cpu_chain);
-#else //MTK_CPU_HOTPLUG_DEBUG
+#else
 static RAW_NOTIFIER_HEAD(cpu_chain);
-#endif //MTK_CPU_HOTPLUG_DEBUG
+#endif
 
 /* If set, cpu_up and cpu_down will return -EBUSY and do nothing.
  * Should always be manipulated under cpu_add_remove_lock
@@ -73,10 +80,10 @@ void get_online_cpus(void)
 	might_sleep();
 	if (cpu_hotplug.active_writer == current)
 		return;
+
 	mutex_lock(&cpu_hotplug.lock);
 	cpu_hotplug.refcount++;
 	mutex_unlock(&cpu_hotplug.lock);
-
 }
 EXPORT_SYMBOL_GPL(get_online_cpus);
 
@@ -84,11 +91,11 @@ void put_online_cpus(void)
 {
 	if (cpu_hotplug.active_writer == current)
 		return;
+
 	mutex_lock(&cpu_hotplug.lock);
 	if (!--cpu_hotplug.refcount && unlikely(cpu_hotplug.active_writer))
 		wake_up_process(cpu_hotplug.active_writer);
 	mutex_unlock(&cpu_hotplug.lock);
-
 }
 EXPORT_SYMBOL_GPL(put_online_cpus);
 
@@ -126,12 +133,51 @@ static void cpu_hotplug_begin(void)
 		mutex_unlock(&cpu_hotplug.lock);
 		schedule();
 	}
+	
+/*******************************************************************************
+* 20121113 marc.huang                                                          *
+* CPU Hotplug and idle integration                                             *
+*******************************************************************************/
+    atomic_inc(&is_in_hotplug);
+#ifdef SPM_MCDI_FUNC
+    //smp_call_function(empty_function, NULL, 1);
+    //spm_mcdi_wakeup_all_cores();    
+#endif
+/******************************************************************************/
 }
 
 static void cpu_hotplug_done(void)
 {
+/*******************************************************************************
+* 20121113 marc.huang                                                          *
+* CPU Hotplug and MCDI integration                                             *
+*******************************************************************************/
+    atomic_dec(&is_in_hotplug);
+/******************************************************************************/
+
 	cpu_hotplug.active_writer = NULL;
 	mutex_unlock(&cpu_hotplug.lock);
+}
+
+/*
+ * Wait for currently running CPU hotplug operations to complete (if any) and
+ * disable future CPU hotplug (from sysfs). The 'cpu_add_remove_lock' protects
+ * the 'cpu_hotplug_disabled' flag. The same lock is also acquired by the
+ * hotplug path before performing hotplug operations. So acquiring that lock
+ * guarantees mutual exclusion from any currently running hotplug operations.
+ */
+void cpu_hotplug_disable(void)
+{
+	cpu_maps_update_begin();
+	cpu_hotplug_disabled = 1;
+	cpu_maps_update_done();
+}
+
+void cpu_hotplug_enable(void)
+{
+	cpu_maps_update_begin();
+	cpu_hotplug_disabled = 0;
+	cpu_maps_update_done();
 }
 
 #else /* #if CONFIG_HOTPLUG_CPU */
@@ -144,7 +190,7 @@ int __ref register_cpu_notifier(struct notifier_block *nb)
 {
 	int ret;
 
-#ifdef MTK_CPU_HOTPLUG_DEBUG
+#ifdef MTK_CPU_HOTPLUG_DEBUG_0
 	static int index = 0;
  #ifdef CONFIG_KALLSYMS
 	char namebuf[128] = {0};
@@ -158,7 +204,7 @@ int __ref register_cpu_notifier(struct notifier_block *nb)
  #else //#ifdef CONFIG_KALLSYMS
 	printk("[cpu_ntf] <%02d>%08lx\n", index++, (unsigned long)nb->notifier_call);
  #endif //#ifdef CONFIG_KALLSYMS
-#endif //#ifdef MTK_CPU_HOTPLUG_DEBUG
+#endif //#ifdef MTK_CPU_HOTPLUG_DEBUG_0
 
 	cpu_maps_update_begin();
 	ret = raw_notifier_chain_register(&cpu_chain, nb);
@@ -281,12 +327,12 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 	while (!idle_cpu(cpu))
 		cpu_relax();
 
-	/* This actually kills the CPU. */
-	__cpu_die(cpu);
-
 #ifdef CONFIG_MT_LOAD_BALANCE_PROFILER
 	mt_lbprof_update_state(cpu, MT_LBPROF_HOTPLUG_STATE);
 #endif
+
+	/* This actually kills the CPU. */
+	__cpu_die(cpu);
 
 	/* CPU is completely dead: tell everyone.  Too late to complain. */
 	cpu_notify_nofail(CPU_DEAD | mod, hcpu);
@@ -347,9 +393,6 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 
 	/* Now call notifier in preparation. */
 	cpu_notify(CPU_ONLINE | mod, hcpu);
-#ifdef CONFIG_MT_LOAD_BALANCE_PROFILER
-	mt_lbprof_update_state(cpu, MT_LBPROF_NO_TASK_STATE);
-#endif
 
 out_notify:
 	if (ret != 0)
@@ -465,6 +508,7 @@ int disable_nonboot_cpus(void)
 	cpu_maps_update_done();
 	return error;
 }
+EXPORT_SYMBOL_GPL(disable_nonboot_cpus);
 
 void __weak arch_enable_nonboot_cpus_begin(void)
 {
@@ -503,6 +547,7 @@ void __ref enable_nonboot_cpus(void)
 out:
 	cpu_maps_update_done();
 }
+EXPORT_SYMBOL_GPL(enable_nonboot_cpus);
 
 static int __init alloc_frozen_cpus(void)
 {
@@ -511,36 +556,6 @@ static int __init alloc_frozen_cpus(void)
 	return 0;
 }
 core_initcall(alloc_frozen_cpus);
-
-/*
- * Prevent regular CPU hotplug from racing with the freezer, by disabling CPU
- * hotplug when tasks are about to be frozen. Also, don't allow the freezer
- * to continue until any currently running CPU hotplug operation gets
- * completed.
- * To modify the 'cpu_hotplug_disabled' flag, we need to acquire the
- * 'cpu_add_remove_lock'. And this same lock is also taken by the regular
- * CPU hotplug path and released only after it is complete. Thus, we
- * (and hence the freezer) will block here until any currently running CPU
- * hotplug operation gets completed.
- */
-void cpu_hotplug_disable_before_freeze(void)
-{
-	cpu_maps_update_begin();
-	cpu_hotplug_disabled = 1;
-	cpu_maps_update_done();
-}
-
-
-/*
- * When tasks have been thawed, re-enable regular CPU hotplug (which had been
- * disabled while beginning to freeze tasks).
- */
-void cpu_hotplug_enable_after_thaw(void)
-{
-	cpu_maps_update_begin();
-	cpu_hotplug_disabled = 0;
-	cpu_maps_update_done();
-}
 
 /*
  * When callbacks for CPU hotplug notifications are being executed, we must
@@ -561,12 +576,12 @@ cpu_hotplug_pm_callback(struct notifier_block *nb,
 
 	case PM_SUSPEND_PREPARE:
 	case PM_HIBERNATION_PREPARE:
-		cpu_hotplug_disable_before_freeze();
+		cpu_hotplug_disable();
 		break;
 
 	case PM_POST_SUSPEND:
 	case PM_POST_HIBERNATION:
-		cpu_hotplug_enable_after_thaw();
+		cpu_hotplug_enable();
 		break;
 
 	default:

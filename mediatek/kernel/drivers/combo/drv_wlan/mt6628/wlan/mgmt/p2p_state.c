@@ -277,6 +277,8 @@ p2pStateAbort_AP_CHANNEL_DETECT (
                         // What to do?
                         ASSERT(FALSE);
                         // TODO: Pick up a valid channel from channel list.
+						ucPreferedChnl = 1;
+                        eBand = BAND_2G4;
                     }
                 }
             }

@@ -35,7 +35,7 @@ void __init mt_init(void)
 #ifndef CONFIG_EARLY_LINUX_PORTING
     pm_power_off = mt_power_off;
 #endif 
-
+    panic_on_oops = 1;
 #if defined(CONFIG_CACHE_L2X0)
 #ifdef CONFIG_ARCH_MT6577
     writel(L2X0_DYNAMIC_CLK_GATING_EN, PL310_BASE + L2X0_POWER_CTRL);
@@ -174,3 +174,5 @@ MACHINE_START(MT6575, "MT6575")
     .restart        = arm_machine_restart
 MACHINE_END
 
+//FIXME Workaround for build pass
+int dump_idle_info(char *buffer, int size)  { return 0; }

@@ -1,3 +1,25 @@
+/* 
+ *
+ * (C) Copyright 2010
+ * MediaTek <www.mediatek.com>
+ * Infinity Chen <infinity.chen@mediatek.com>
+ *
+ * mt6575 I2C Bus Controller
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -75,6 +97,9 @@ enum mt_trans_op {
     __raw_readl((base) + (offset))
 
 
+/******************************************************
+	 	offset for I2C_REGS ADDRESS
+******************************************************/
 
 //the offset is based on 32-bit width
 enum I2C_REGS_OFFSET {
@@ -539,6 +564,36 @@ typedef struct {
     u32 rd_addr:4;
     u32 reserved1:16;
 } i2c_ch2_fifo_stat_reg;
+/*
+typedef struct {
+    i2c_data_reg            *data;
+    i2c_slave_addr_reg      *slave_addr;
+    i2c_intr_mask_reg       *intr_mask;
+    i2c_intr_stat_reg       *intr_stat;
+    i2c_control_reg         *control;
+    i2c_trans_len_reg       *trans_len;
+    i2c_transac_len_reg     *transac_len;
+    i2c_delay_len_reg       *delay_len;
+    i2c_timing_reg          *timing;
+    i2c_start_reg           *start;
+    i2c_fifo_stat_reg       *fifo_stat;
+    i2c_fifo_thresh_reg     *fifo_thresh;
+    i2c_io_config_reg       *io_config;
+    i2c_debug_reg           *debug;
+    i2c_hs_reg              *hs;
+    i2c_dbg_stat_reg        *dbg_stat;
+    i2c_dbg_ctrl_reg        *dbg_ctrl; 
+    i2c_ch2_data_reg        *ch2_data;
+    i2c_ch2_slave_addr_reg  *ch2_slave_addr;
+    i2c_ch2_control_reg     *ch2_control;
+    i2c_ch2_trans_len_reg   *ch2_trans_len;
+    i2c_ch2_transac_len_reg *ch2_transac_len;
+    i2c_ch2_delay_len_reg   *ch2_delay_len;
+    i2c_ch2_timing_reg      *ch2_timing;
+    i2c_ch2_start_reg       *ch2_start;
+    i2c_ch2_fifo_stat_reg   *ch2_fifo_stat; 
+} i2c_regs;
+*/
 extern unsigned int mt6577_get_bus_freq(void);
 
 static int mt_i2c_set_speed(struct mt_i2c *i2c, int mode, unsigned long khz);
@@ -602,6 +657,40 @@ EXPORT_SYMBOL(i2c_hrtimer_debug_log);
 
 #endif
 
+/*
+static i2c_regs mt_i2c_regs[3];
+static void mt_i2c_init_regs(struct mt_i2c *i2c)
+{
+    u32 base            = i2c->base;
+    i2c_regs *p         = &mt_i2c_regs[i2c->id];
+    p->data             = (i2c_data_reg*)mt_I2C_DATA_PORT;
+    p->slave_addr       = (i2c_slave_addr_reg*)mt_I2C_SLAVE_ADDR;
+    p->intr_mask        = (i2c_intr_mask_reg*)mt_I2C_INTR_MASK;
+    p->intr_stat        = (i2c_intr_stat_reg*)mt_I2C_INTR_STAT;
+    p->control          = (i2c_control_reg*)mt_I2C_CONTROL;
+    p->trans_len        = (i2c_trans_len_reg*)mt_I2C_TRANSFER_LEN;
+    p->transac_len      = (i2c_transac_len_reg*)mt_I2C_TRANSAC_LEN;
+    p->delay_len        = (i2c_delay_len_reg*)mt_I2C_DELAY_LEN;
+    p->timing           = (i2c_timing_reg*)mt_I2C_TIMING;
+    p->start            = (i2c_start_reg*)mt_I2C_START;
+    p->fifo_stat        = (i2c_fifo_stat_reg*)mt_I2C_FIFO_STAT;
+    p->fifo_thresh      = (i2c_fifo_thresh_reg*)mt_I2C_FIFO_THRESH;
+    p->io_config        = (i2c_io_config_reg*)mt_I2C_IO_CONFIG;
+    p->debug            = (i2c_debug_reg*)mt_I2C_DEBUG;
+    p->hs               = (i2c_hs_reg*)mt_I2C_HS;
+    p->dbg_stat         = (i2c_dbg_stat_reg*)mt_I2C_DEBUGSTAT;
+    p->dbg_ctrl         = (i2c_dbg_ctrl_reg*)mt_I2C_DEBUGCTRL;		
+    p->ch2_data         = (i2c_ch2_data_reg*)mt_I2C_CH2_DATA_PORT;
+    p->ch2_slave_addr   = (i2c_ch2_slave_addr_reg*)mt_I2C_CH2_SLAVE_ADDR;
+    p->ch2_control      = (i2c_ch2_control_reg*)mt_I2C_CH2_CONTROL;
+    p->ch2_trans_len    = (i2c_ch2_trans_len_reg*)mt_I2C_CH2_TRANSFER_LEN;
+    p->ch2_transac_len  = (i2c_ch2_transac_len_reg*)mt_I2C_CH2_TRANSAC_LEN;
+    p->ch2_delay_len    = (i2c_ch2_delay_len_reg*)mt_I2C_CH2_DELAY_LEN;
+    p->ch2_timing       = (i2c_ch2_timing_reg*)mt_I2C_CH2_TIMING;
+    p->ch2_start        = (i2c_ch2_start_reg*)mt_I2C_CH2_START;
+    p->ch2_fifo_stat    = (i2c_ch2_fifo_stat_reg*)mt_I2C_CH2_FIFO_STAT; 
+}
+*/
 static u32 mt_i2c_functionality(struct i2c_adapter *adap)
 {
     return I2C_FUNC_I2C | I2C_FUNC_10BIT_ADDR | I2C_FUNC_SMBUS_EMUL;
@@ -824,6 +913,9 @@ static int mt_i2c_start_xfer(struct mt_i2c *i2c, struct i2c_msg *msg)
         i2c->use_ch2 = false;
         I2C_IRQSET_CH1;
       }
+/*********************************************************************
+************************set clock(speed)*******************************
+**********************************************************************/       
     if(0 == (msg->timing & 0xffff)){
         speedret = mt_i2c_set_speed(i2c, ST_MODE, MAX_ST_MODE_SPEED);
 		    	
@@ -842,11 +934,17 @@ static int mt_i2c_start_xfer(struct mt_i2c *i2c, struct i2c_msg *msg)
 		goto error;
     }
 
+/*********************************************************************
+************************set stop or repeat start*******************************
+**********************************************************************/    
     if(msg->addr & I2C_RS_FLAG) 
         i2c->st_rs = I2C_TRANS_REPEATED_START;
     else
         i2c->st_rs = I2C_TRANS_STOP;
 
+/*********************************************************************
+*******************set delay time between two transfer****************
+**********************************************************************/       
     i2c->delay_len = (msg->timing & 0x00ff0000) >> 16;
     if(I2C_TRANS_STOP == i2c->st_rs) {
     	if (unlikely(true == i2c->use_ch2)) {
@@ -860,6 +958,9 @@ static int mt_i2c_start_xfer(struct mt_i2c *i2c, struct i2c_msg *msg)
     }
     if(0 == i2c->delay_len)
         i2c->delay_len = 2;
+/*********************************************************************
+************************set transfer mode ****************************
+**********************************************************************/    
     if (msg->addr & I2C_WR_FLAG)
         i2c->op = I2C_MASTER_WRRD;
     else {
@@ -875,6 +976,9 @@ static int mt_i2c_start_xfer(struct mt_i2c *i2c, struct i2c_msg *msg)
 		goto error;
 	}
     
+/*********************************************************************
+*******************set transfer length(parsing msg length)************
+**********************************************************************/
 
         if(I2C_MASTER_WRRD != i2c->op) {
             if (unlikely(true == i2c->use_ch2)) {
@@ -972,6 +1076,10 @@ static int mt_i2c_start_xfer(struct mt_i2c *i2c, struct i2c_msg *msg)
         I2C_WRITE_REG(base, OFFSET_TRANSAC_LEN, I2C_TRANSAC_LEN(trans_num));
     }  
 	
+/****************************************************************************	
+*********I2C oparation mode switch. write-read, write, read 
+
+***************************************************************************/	
   
 	//master read
     if (I2C_MASTER_RD == i2c->op) {
@@ -1313,7 +1421,11 @@ static int mt_i2c_transfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int 
 			
 		/*PMIC 3 times retry fail, reboot system*/
 		if((retry >= 3) && (ret == -EAGAIN)){
-			arch_reset(0,NULL);
+			//mt_i2c_trigger_flag = 1;
+			mt_show_current_irq_counts();	
+			dev_err(i2c->dev, "PMIC error, reboot system,%d\n",irqs_disabled());
+			dump_stack();
+			BUG();	
 		}
 	}else{
 		ret = mt_i2c_do_transfer(i2c, msgs, num);
@@ -1695,6 +1807,15 @@ module_exit(mt_i2c_exit);
 
 
 
+/*-----------------------------------------------------------------------
+ * Read/Write interface: Read bytes
+ *   addr:    I2C chip address, range 0..127 (slave address?)
+ *   buffer:  Where to read/write the data
+ *   len:     How many bytes to read/write
+ *
+ *   Returns : 0 on success, not 0 on failure
+ *   Example : i2c_read(i2c_addr, reg, 1, &buf, 1);
+ */
 
 int mt_i2c_polling_read(int port, unsigned char addr, unsigned char *buffer, int len)
 {
@@ -1804,6 +1925,14 @@ int mt_i2c_polling_read(int port, unsigned char addr, unsigned char *buffer, int
 	return ret;
 }
 
+/*-----------------------------------------------------------------------
+ * Read/Write interface: Write bytes
+ *   addr:    I2C chip address, range 0..127
+ *   buffer:  Where to read/write the data
+ *   len:     How many bytes to read/write
+ *
+ *   Returns: 0 on success, not 0 on failure
+ */
 
 int mt_i2c_polling_write(int port, unsigned char addr, unsigned char *buffer, int len)
 {

@@ -49,7 +49,7 @@ static char cmd_buf[256];
 
 /* for debug zone */
 unsigned int sd_debug_zone[HOST_MAX_NUM]={
-	0,
+	0, //0x3FFF,
 	0,
 	0,
 	0
@@ -88,34 +88,12 @@ u32 msdc_host_mode[HOST_MAX_NUM]={
 #define TICKS_ONE_MS  (13000)
 u32 gpt_enable = 0;
 u32 sdio_pro_enable = 0;   /* make sure gpt is enabled */
-
-static unsigned long long sdio_pro_time = 30;     /* no more than 30s */
-static unsigned long long sdio_profiling_start=0;
+u32 sdio_pro_time = 0;     /* no more than 30s */
 struct sdio_profile sdio_perfomance = {0};  
 
 extern int board_sdio_ctrl (unsigned int sdio_port_num, unsigned int on);
-
-u32 sdio_enable_tune = 0;
-u32 sdio_iocon_dspl = 0;
-u32 sdio_iocon_w_dspl = 0;
-u32 sdio_iocon_rspl = 0;
-u32 sdio_pad_tune_rrdly = 0;
-u32 sdio_pad_tune_rdly = 0;
-u32 sdio_pad_tune_wrdly = 0;
-u32 sdio_dat_rd_dly0_0 = 0;
-u32 sdio_dat_rd_dly0_1 = 0;
-u32 sdio_dat_rd_dly0_2 = 0;
-u32 sdio_dat_rd_dly0_3 = 0;
-u32 sdio_dat_rd_dly1_0 = 0;
-u32 sdio_dat_rd_dly1_1 = 0;
-u32 sdio_dat_rd_dly1_2 = 0;
-u32 sdio_dat_rd_dly1_3 = 0;
-u32 sdio_clk_drv = 0;
-u32 sdio_cmd_drv= 0;
-u32 sdio_data_drv =0;
-u32 sdio_tune_flag =0;
 int sdio_cd_result = 1;
-void msdc_dump_reg(unsigned int base)
+static void msdc_dump_reg(unsigned int base)
 {
 	printk("[SD_Debug]Reg[00] MSDC_CFG       = 0x%.8x\n", sdr_read32(base + 0x00));
     printk("[SD_Debug]Reg[04] MSDC_IOCON     = 0x%.8x\n", sdr_read32(base + 0x04));
@@ -162,7 +140,7 @@ void msdc_dump_reg(unsigned int base)
     printk("[SD_Debug]Rg[100] MAIN_VER       = 0x%.8x\n", sdr_read32(base + 0x100));     
     printk("[SD_Debug]Rg[104] ECO_VER        = 0x%.8x\n", sdr_read32(base + 0x104));
 }
-void msdc_set_field(unsigned int address,unsigned int start_bit,unsigned int len,unsigned int value)
+static void msdc_set_field(unsigned int address,unsigned int start_bit,unsigned int len,unsigned int value)
 {
 	unsigned long field;
 	if(start_bit > 31 || start_bit < 0|| len > 32 || len <= 0)
@@ -175,7 +153,7 @@ void msdc_set_field(unsigned int address,unsigned int start_bit,unsigned int len
 		printk("[****SD_Debug****]Modified:0x%x (0x%x)\n",address,sdr_read32(address));
 	}
 }
-void msdc_get_field(unsigned int address,unsigned int start_bit,unsigned int len,unsigned int value)
+static void msdc_get_field(unsigned int address,unsigned int start_bit,unsigned int len,unsigned int value)
 {
 	unsigned long field;
 	if(start_bit > 31 || start_bit < 0|| len > 32 || len <= 0)
@@ -186,7 +164,7 @@ void msdc_get_field(unsigned int address,unsigned int start_bit,unsigned int len
 		printk("[****SD_Debug****]Reg:0x%x start_bit(%d)len(%d)(0x%x)\n",address,start_bit,len,value);
 		}
 }
-void msdc_init_gpt(void)
+static void msdc_init_gpt(void)
 {
     GPT_CONFIG config;	
     
@@ -867,7 +845,7 @@ static int msdc_debug_proc_read(char *page, char **start, off_t off, int count, 
 
     p += sprintf(p, "Index<3> + SDIO_PROFILE + TIME\n"); 
     p += sprintf(p, "-> echo 3 1 0x1E >msdc_bebug -> enable sdio_profile, 30s\n"); 
-    p += sprintf(p, "-> SDIO_PROFILE<%d> TIME<%llu s>\n", sdio_pro_enable, sdio_pro_time); 
+    p += sprintf(p, "-> SDIO_PROFILE<%d> TIME<%ds>\n", sdio_pro_enable, sdio_pro_time); 
     p += sprintf(p, "-> Clokc SRC selection Host[0]<%d>\n", msdc_clock_src[0]); 
 	p += sprintf(p, "-> Clokc SRC selection Host[1]<%d>\n", msdc_clock_src[1]); 
 	p += sprintf(p, "-> Clokc SRC selection Host[2]<%d>\n", msdc_clock_src[2]); 
@@ -1293,6 +1271,8 @@ static int msdc_debug_proc_read_FT(char *page, char **start, off_t off, int coun
 	unsigned char  clk_setting;
 	u32 cur_rxdly0;
 	u8 u8_dat0, u8_dat1, u8_dat2, u8_dat3;
+	u8 u8_wdat, u8_cmddat;
+	u8 u8_DDLSEL;
 
 #if defined(CONFIG_MTK_WCN_CMB_SDIO_SLOT)
 	if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 0)
@@ -1338,6 +1318,7 @@ return 0;
 	
 	sdr_get_field(MSDC_PATCH_BIT0, MSDC_PATCH_BIT_CKGEN_CK, clk_setting);
 
+	sdr_get_field(MSDC_IOCON, MSDC_IOCON_DDLSEL, u8_DDLSEL);
 	cur_rxdly0 = sdr_read32(MSDC_DAT_RDDLY0);
 	if (sdr_read32(MSDC_ECO_VER) >= 4) 
 	{
@@ -1353,20 +1334,22 @@ return 0;
       	u8_dat2 = (cur_rxdly0 >> 16) & 0x1F;
       	u8_dat3 = (cur_rxdly0 >> 24) & 0x1F;
     }
+	
+	sdr_get_field((base + 0xec), MSDC_PAD_TUNE_DATWRDLY, u8_wdat);		
+    sdr_get_field((base + 0xec), MSDC_PAD_TUNE_CMDRRDLY, u8_cmddat);
 
     p += sprintf(p, "\n=========================================\n");
 
-    p += sprintf(p, "WCN SDIO SLOT is at msdc<%d>\n",CONFIG_MTK_WCN_CMB_SDIO_SLOT); 
-	
+    p += sprintf(p, "(1) WCN SDIO SLOT is at msdc<%d>\n",CONFIG_MTK_WCN_CMB_SDIO_SLOT); 
 	p += sprintf(p, "-----------------------------------------\n"); 
-	p += sprintf(p, "clk settings \n"); 
+	p += sprintf(p, "(2) clk settings \n"); 
 if (clk_setting)
 	p += sprintf(p, "using internal clock\n"); 
 else
 	p += sprintf(p, "using feedback clock\n"); 	
 
 	p += sprintf(p, "-----------------------------------------\n"); 
-	p += sprintf(p, "settings of driving current \n"); 
+	p += sprintf(p, "(3) settings of driving current \n"); 
 if ((clk_drv1==clk_drv2) && (cmd_drv1==cmd_drv2) && (dat_drv1==dat_drv2) && (clk_drv2==cmd_drv1) && (cmd_drv2==dat_drv1))
 	p += sprintf(p, "driving current is <%d>\n", clk_drv1); 
 else
@@ -1375,7 +1358,7 @@ else
 }
 
 	p += sprintf(p, "-----------------------------------------\n"); 
-	p += sprintf(p, "edge settings \n"); 
+	p += sprintf(p, "(4) edge settings \n"); 
 if (cmd_edge)
 	p += sprintf(p, "cmd_edge is falling \n");	
 else
@@ -1386,12 +1369,14 @@ else
 	p += sprintf(p, "data_edge is rising \n");	
 
 	p += sprintf(p, "-----------------------------------------\n"); 
-	p += sprintf(p, "data delay info\n"); 
-	p += sprintf(p, "MSDC_DAT_RDDLY0 is <0x%x>\n", cur_rxdly0); 
+	p += sprintf(p, "(5) data delay info\n"); 
+	p += sprintf(p, "Read (MSDC_DAT_RDDLY0) is <0x%x> and (MSDC_IOCON_DDLSEL) is <0x%x>\n", cur_rxdly0, u8_DDLSEL); 
 	p += sprintf(p, "data0<0x%x>  data1<0x%x>  data2<0x%x>  data3<0x%x>\n", u8_dat0, u8_dat1, u8_dat2, u8_dat3); 
-
+	p += sprintf(p, "Write is <0x%x>\n", u8_wdat); 
+	p += sprintf(p, "Cmd is <0x%x>\n", u8_cmddat); 
     p += sprintf(p, "=========================================\n\n");
-    
+	
+
     *start = page + off;
 
     len = p - page;
@@ -1406,8 +1391,10 @@ else
 static int msdc_debug_proc_write_FT(struct file *file, const char *buf, unsigned long count, void *data)
 {
 	int ret;
-	
-	int i_clk, i_driving, i_edge;   
+
+	int i_case=0, i_par1=-1, i_par2=-1, i_clk=0, i_driving=0, i_edge=0, i_data=0, i_delay=0;   
+	u32 cur_rxdly0;
+	u8 u8_dat0, u8_dat1, u8_dat2, u8_dat3;
 	unsigned int base;
 	if (count == 0)return -1;
 	if(count > 255)count = 255;
@@ -1418,44 +1405,129 @@ static int msdc_debug_proc_write_FT(struct file *file, const char *buf, unsigned
 	cmd_buf[count] = '\0';
 	printk("[****SD_Debug****]msdc Write %s\n", cmd_buf);
 
-	sscanf(cmd_buf, "%d %d %d ", &i_clk, &i_driving, &i_edge);
+	sscanf(cmd_buf, "%d %d %d ", &i_case, &i_par1, &i_par2);
 
-	if (!((i_clk==0) || (i_clk==1)))
+	if (i_par2 == -1)
 		return -1;
-	if (!((i_edge==0) || (i_edge==1)))
-		return -1;
-	if (!((i_driving==0) || (i_driving==4)))
-		return -1;
-	
-	printk("i_clk=%d i_driving=%d i_edge=%d \n", i_clk, i_driving, i_edge);
 
-	
-#if defined(CONFIG_MTK_WCN_CMB_SDIO_SLOT)
-	if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 0)
-		base = MSDC_0_BASE;
-	if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 1)
-		base = MSDC_1_BASE;
-	if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 2)
-		base = MSDC_2_BASE;
-	if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 3)
-		base = MSDC_3_BASE; 	
-#else
-	return -1;
-#endif
+	printk("i_case=%d i_par1=%d i_par2=%d\n", i_case, i_par1, i_par2);
 		
-	sdr_set_field((base+0x04), MSDC_IOCON_RSPL, i_edge);
-	sdr_set_field((base+0x04), MSDC_IOCON_DSPL, i_edge);
-	
-	sdr_set_field((base + 0xe0), MSDC_PAD_CTL0_CLKDRVN, i_driving);
-	sdr_set_field((base + 0xe0), MSDC_PAD_CTL0_CLKDRVP, i_driving);
-	
-	sdr_set_field((base + 0xe4), MSDC_PAD_CTL1_CMDDRVN, i_driving);
-	sdr_set_field((base + 0xe4), MSDC_PAD_CTL1_CMDDRVP, i_driving);
+#if defined(CONFIG_MTK_WCN_CMB_SDIO_SLOT)
+		if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 0)
+			base = MSDC_0_BASE;
+		if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 1)
+			base = MSDC_1_BASE;
+		if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 2)
+			base = MSDC_2_BASE;
+		if(CONFIG_MTK_WCN_CMB_SDIO_SLOT == 3)
+			base = MSDC_3_BASE; 	
+#else
+		return -1;
+#endif
 
-	sdr_set_field((base + 0xe8), MSDC_PAD_CTL2_DATDRVN, i_driving);
-	sdr_set_field((base + 0xe8), MSDC_PAD_CTL2_DATDRVP, i_driving);
+	if (i_case==1)  //set clk
+	{
+		if (!((i_par1==0) || (i_par1==1)))
+			return -1;
+		i_clk = i_par1;
 
-	sdr_set_field(MSDC_PATCH_BIT0, MSDC_PATCH_BIT_CKGEN_CK, i_clk);
+		sdr_set_field(MSDC_PATCH_BIT0, MSDC_PATCH_BIT_CKGEN_CK, i_clk);
+		
+		printk("i_clk=%d \n", i_clk);
+	}
+	else if (i_case==2)//set driving current
+	{
+		if (!((i_par1>=0) && (i_par1<=7)))
+			return -1;
+		i_driving = i_par1;
+
+		sdr_set_field((base + 0xe0), MSDC_PAD_CTL0_CLKDRVN, i_driving);
+		sdr_set_field((base + 0xe0), MSDC_PAD_CTL0_CLKDRVP, i_driving);
+	
+		sdr_set_field((base + 0xe4), MSDC_PAD_CTL1_CMDDRVN, i_driving);
+		sdr_set_field((base + 0xe4), MSDC_PAD_CTL1_CMDDRVP, i_driving);
+
+		sdr_set_field((base + 0xe8), MSDC_PAD_CTL2_DATDRVN, i_driving);
+		sdr_set_field((base + 0xe8), MSDC_PAD_CTL2_DATDRVP, i_driving);
+		
+		printk("i_driving=%d \n", i_driving);
+	}
+	else if (i_case==3)//set data delay
+	{	
+		if (!((i_par1>=0) && (i_par1<=3)))
+			return -1;
+		if (!((i_par2>=0) && (i_par2<=31)))
+			return -1;
+		i_data = i_par1;
+		i_delay = i_par2;
+
+		cur_rxdly0 = sdr_read32(MSDC_DAT_RDDLY0);
+		if (sdr_read32(MSDC_ECO_VER) >= 4) 
+		{
+			u8_dat0 = (cur_rxdly0 >> 24) & 0x1F;
+			u8_dat1 = (cur_rxdly0 >> 16) & 0x1F;
+			u8_dat2 = (cur_rxdly0 >>  8) & 0x1F;
+			u8_dat3 = (cur_rxdly0 >>  0) & 0x1F;
+		}
+		else 
+		{
+			u8_dat0 = (cur_rxdly0 >>  0) & 0x1F;
+			u8_dat1 = (cur_rxdly0 >>  8) & 0x1F;
+			u8_dat2 = (cur_rxdly0 >> 16) & 0x1F;
+			u8_dat3 = (cur_rxdly0 >> 24) & 0x1F;
+		}
+
+		if (i_data==0)
+			u8_dat0 = i_delay;
+		else if (i_data==1)
+			u8_dat1 = i_delay;
+		else if (i_data==2)
+			u8_dat2 = i_delay;
+		else if (i_data==3)
+			u8_dat3 = i_delay;
+		else if (i_data==4)  //write data
+			{
+				sdr_set_field((base + 0xec), MSDC_PAD_TUNE_DATWRDLY, i_delay);
+			}
+		
+		else if (i_data==5)  //cmd data
+			{
+				sdr_set_field((base + 0xec), MSDC_PAD_TUNE_CMDRRDLY, i_delay);
+			}
+		else
+			return -1;
+		
+		if (sdr_read32(MSDC_ECO_VER) >= 4) 
+		{
+    		cur_rxdly0 = ((u8_dat0 & 0x1F) << 24) | ((u8_dat1 & 0x1F) << 16) |
+        	   	         ((u8_dat2 & 0x1F) << 8)  | ((u8_dat3 & 0x1F) << 0);
+	    }
+    	else
+		{
+    	    cur_rxdly0 = ((u8_dat3 & 0x1F) << 24) | ((u8_dat2 & 0x1F) << 16) |
+        	  	         ((u8_dat1 & 0x1F) << 8)  | ((u8_dat0 & 0x1F) << 0);
+	    }
+		sdr_set_field(MSDC_IOCON, MSDC_IOCON_DDLSEL, 1);
+    	sdr_write32(MSDC_DAT_RDDLY0, cur_rxdly0);
+		
+		printk("i_data=%d i_delay=%d \n", i_data, i_delay);
+	}
+	else if (i_case==4)//set edge
+	{
+		if (!((i_par1==0) || (i_par1==1)))
+			return -1;
+		i_edge = i_par1;
+
+		sdr_set_field((base+0x04), MSDC_IOCON_RSPL, i_edge);
+		sdr_set_field((base+0x04), MSDC_IOCON_DSPL, i_edge);
+	
+		printk("i_edge=%d \n", i_edge);
+	}
+	else
+	{
+		return -1;
+	}
+
 	//sdr_set_bits(MSDC_PATCH_BIT0, MSDC_PATCH_BIT_CKGEN_CK); 
 	
 	return 1;
@@ -1511,128 +1583,10 @@ static int mtk_sdio_proc_write(struct file *file, const char *buf, unsigned long
 	return count;
 }
 #endif
-static int msdc_tune_flag_proc_read(char *page, char **start, off_t off, int count, int *eof, void *data)
-{
-    char *p = page;
-    int len = 0;
-
-    p += sprintf(p, "0x%X\n", sdio_tune_flag);
-    *start = page + off;
-
-    len = p - page;
-    if (len > off)
-        len -= off;
-    else
-        len = 0;
-
-    return len < count ? len : count;
-} 
-static int msdc_tune_proc_read(char *page, char **start, off_t off, int count, int *eof, void *data)
-{
-    char *p = page;
-    int len = 0;
-
-    p += sprintf(p, "\n=========================================\n");
-    p += sprintf(p, "sdio_enable_tune: 0x%.8x\n", sdio_enable_tune);
-    p += sprintf(p, "sdio_iocon_dspl: 0x%.8x\n", sdio_iocon_dspl);
-    p += sprintf(p, "sdio_iocon_w_dspl: 0x%.8x\n", sdio_iocon_w_dspl);
-    p += sprintf(p, "sdio_iocon_rspl: 0x%.8x\n", sdio_iocon_rspl);
-    p += sprintf(p, "sdio_pad_tune_rrdly: 0x%.8x\n", sdio_pad_tune_rrdly);
-    p += sprintf(p, "sdio_pad_tune_rdly: 0x%.8x\n", sdio_pad_tune_rdly);
-    p += sprintf(p, "sdio_pad_tune_wrdly: 0x%.8x\n", sdio_pad_tune_wrdly);
-    p += sprintf(p, "sdio_dat_rd_dly0_0: 0x%.8x\n", sdio_dat_rd_dly0_0);
-    p += sprintf(p, "sdio_dat_rd_dly0_1: 0x%.8x\n", sdio_dat_rd_dly0_1);
-    p += sprintf(p, "sdio_dat_rd_dly0_2: 0x%.8x\n", sdio_dat_rd_dly0_2);
-    p += sprintf(p, "sdio_dat_rd_dly0_3: 0x%.8x\n", sdio_dat_rd_dly0_3);
-    p += sprintf(p, "sdio_dat_rd_dly1_0: 0x%.8x\n", sdio_dat_rd_dly1_0);
-    p += sprintf(p, "sdio_dat_rd_dly1_1: 0x%.8x\n", sdio_dat_rd_dly1_1);
-    p += sprintf(p, "sdio_dat_rd_dly1_2: 0x%.8x\n", sdio_dat_rd_dly1_2);
-    p += sprintf(p, "sdio_dat_rd_dly1_3: 0x%.8x\n", sdio_dat_rd_dly1_3);             
-    p += sprintf(p, "sdio_clk_drv: 0x%.8x\n", sdio_clk_drv);             
-    p += sprintf(p, "sdio_cmd_drv: 0x%.8x\n", sdio_cmd_drv);						 
-    p += sprintf(p, "sdio_data_drv: 0x%.8x\n", sdio_data_drv);
-    p += sprintf(p, "sdio_tune_flag: 0x%.8x\n", sdio_tune_flag);			 
-    p += sprintf(p, "=========================================\n\n");
-    
-    *start = page + off;
-
-    len = p - page;
-    if (len > off)
-        len -= off;
-    else
-        len = 0;
-
-    return len < count ? len : count;
-} 
-
-static int msdc_tune_proc_write(struct file *file, const char *buf, unsigned long count, void *data)
-{
-	int ret;
-	int cmd, p1, p2;
-  
-	if (count == 0)return -1;
-	if(count > 255)count = 255;
-
-	ret = copy_from_user(cmd_buf, buf, count);
-	if (ret < 0)return -1;
-	
-	cmd_buf[count] = '\0';
-	printk("msdc Write %s\n", cmd_buf);
-
-	if(3  == sscanf(cmd_buf, "%x %x %x", &cmd, &p1, &p2))
-	{	
-		switch(cmd)
-		{
-		case 0:
-			if(p1 && p2)
-				sdio_enable_tune = 1;		
-			else	
-				sdio_enable_tune = 0;		
-		break;
-		case 1://Cmd and Data latch edge
-				sdio_iocon_rspl = p1&0x1;
-				sdio_iocon_dspl = p2&0x1;
-		break;
-		case 2://Cmd Pad/Async
-				sdio_pad_tune_rrdly= (p1&0x1F);
-				sdio_pad_tune_rdly= (p2&0x1F);
-		break;
-		case 3:
-				sdio_dat_rd_dly0_0= (p1&0x1F);
-				sdio_dat_rd_dly0_1= (p2&0x1F);
-		break;
-		case 4:
-				sdio_dat_rd_dly0_2= (p1&0x1F);
-				sdio_dat_rd_dly0_3= (p2&0x1F);
-		break;
-		case 5://Write data edge/delay
-				sdio_iocon_w_dspl= p1&0x1;
-				sdio_pad_tune_wrdly= (p2&0x1F);
-		break;
-		case 6:
-				sdio_dat_rd_dly1_2= (p1&0x1F);
-				sdio_dat_rd_dly1_3= (p2&0x1F);
-		break;
-		case 7:
-				sdio_clk_drv= (p1&0x7);
-		break;
-		case 8:
-				sdio_cmd_drv= (p1&0x7);
-				sdio_data_drv= (p2&0x7);
-		break;
-
-
-		}
-	}
-
-	return count;
-}
-
 int msdc_debug_proc_init(void) 
 {   	
     struct proc_dir_entry *prEntry;
-    struct proc_dir_entry *tune;
-    struct proc_dir_entry *tune_flag;
+
 #ifdef USER_BUILD_KERNEL
     prEntry = create_proc_entry("msdc_debug", 0660, 0);
 #else
@@ -1685,14 +1639,6 @@ int msdc_debug_proc_init(void)
       printk("[%s]: failed to create /proc/mtk_sdio_debug\n", __func__);
     } 
 #endif
-    tune = create_proc_entry("msdc_tune", 0660, 0);
-    tune->read_proc  = msdc_tune_proc_read;
-    tune->write_proc = msdc_tune_proc_write;
-    tune->gid=1001;
-
-    tune_flag = create_proc_entry("msdc_tune_flag", 0660, 0);
-    tune_flag->read_proc  = msdc_tune_flag_proc_read;
-    tune_flag->gid=1001;
     return 0 ;
 }
 EXPORT_SYMBOL_GPL(msdc_debug_proc_init);

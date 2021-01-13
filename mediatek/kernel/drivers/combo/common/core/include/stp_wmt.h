@@ -41,6 +41,8 @@
 typedef enum {
     BTM_RST_OP = 0,
     BTM_DMP_OP = 1,
+    BTM_GET_AEE_SUPPORT_FLAG= 2,
+    BTM_TRIGGER_STP_ASSERT_OP= 3,
     BTM_MAX_OP,
 }MTKSTP_BTM_WMT_OP_T;
 
@@ -75,6 +77,7 @@ extern MTK_WCN_BOOL wmt_lib_btm_cb (
 extern INT32 wmt_lib_ps_stp_cb (
     MTKSTP_PSM_ACTION_T action
     );
+extern MTK_WCN_BOOL wmt_lib_is_quick_ps_support (VOID);
 
 /*******************************************************************************
 *                              F U N C T I O N S

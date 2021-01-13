@@ -29,7 +29,7 @@ static int pre_status = 0;
 static int pre_state_swctrl = 0;
 static int accdet_status = PLUG_OUT;
 static int cable_type = 0;
-static s64 long_press_time_ns = 0 ;
+static s64 long_press_time_ns = 0;
 
 static int g_accdet_first = 1;
 static bool IRQ_CLR_FLAG = FALSE;
@@ -66,7 +66,13 @@ static void acc_timer_function()
       input_report_key(kpd_accdet_dev, KEY_PLAYPAUSE, 1);
       input_report_key(kpd_accdet_dev, KEY_PLAYPAUSE, 0);
       input_sync(kpd_accdet_dev);
-      ACCDET_DEBUG("[Accdet] short press remote button to pause/play music!\n");    
+      ACCDET_DEBUG("[Accdet] short press remote button to pause/play music!\n"); 
+      if (call_status == 0) {
+      input_report_key(kpd_accdet_dev, KEY_CALL, 1);
+      input_report_key(kpd_accdet_dev, KEY_CALL, 0);
+      input_sync(kpd_accdet_dev);
+      ACCDET_DEBUG("[Accdet] short press remote button to CALL!\n"); 
+      }
     }  
 }
 
@@ -498,12 +504,14 @@ static void ACCDET_DumpRegisters(void)
 }
 #endif
 
+
 //detect if remote button is short pressed or long pressed
 static bool is_long_press(void)
 {
 	int current_status = 0;
 	int index = 0;
 	int count = long_press_time / 100;
+
 	while(index++ < count)
 	{ 
 		current_status = INREG32(ACCDET_MEMORIZED_IN) & 0x3;
@@ -805,7 +813,7 @@ static inline void check_cable_type(void)
 	   	    {
                                                 ACCDET_DEBUG("[Accdet]send short press remote button event %d\n",ACC_ANSWER_CALL);
 			    //input_report_key(kpd_accdet_dev, KEY_CALL, 1);
-			   // input_report_key(kpd_accdet_dev, KEY_CALL, 0);
+			    //input_report_key(kpd_accdet_dev, KEY_CALL, 0);
                                                 notify_sendKeyEvent(ACC_ANSWER_CALL);
                                         }
 			#else
@@ -826,6 +834,7 @@ static inline void check_cable_type(void)
 			
 			#endif
 		}
+		ACCDET_DEBUG("[Accdet2] call_status:%d\n", call_status);
             }
             else if(current_status == 1)
             {
@@ -1235,54 +1244,15 @@ static inline void accdet_init(void)
 
 static long accdet_unlocked_ioctl(struct file *file, unsigned int cmd,unsigned long arg)
 {
-//	bool ret = true;
 		
     switch(cmd)
     {
         case ACCDET_INIT :
-
-/* the old ACCDE driver legacy */
-#if 0
- 		    ACCDET_DEBUG("[Accdet]accdet_ioctl : ACCDET_INIT\n");  
-			if (g_accdet_first == 1) 
-			{	
-				long_press_time_ns = (s64)long_press_time * NSEC_PER_MSEC;
-				
-				//Accdet Hardware Init
-				accdet_init();
-                
-				//mt6577_irq_set_sens(MT6577_ACCDET_IRQ_ID, MT65xx_EDGE_SENSITIVE);
-				mt6577_irq_set_sens(MT6577_ACCDET_IRQ_ID, MT65xx_LEVEL_SENSITIVE);
-				mt6577_irq_set_polarity(MT6577_ACCDET_IRQ_ID, MT65xx_POLARITY_LOW);
-				//register accdet interrupt
-				ret =  request_irq(MT6577_ACCDET_IRQ_ID, accdet_irq_handler, 0, "ACCDET", NULL);
-				if(ret)
-				{
-					ACCDET_DEBUG("[Accdet]accdet register interrupt error\n");
-				}
-                
-				queue_work(accdet_workqueue, &accdet_work); //schedule a work for the first detection					
-				g_accdet_first = 0;
-			}
-#endif
      		break;
             
 		case SET_CALL_STATE :
 			call_status = (int)arg;
-			ACCDET_DEBUG("[Accdet]accdet_ioctl : CALL_STATE=%d \n", call_status);
-			/*
-            if(call_status != 0)
-            {
-                wake_lock(&accdet_suspend_lock); 
-                ACCDET_DEBUG("[Accdet]accdet_ioctl : CALL_STATE=%d,require wake lock\n", call_status);
-            }
-            else
-            {
-                wake_unlock(&accdet_suspend_lock);
-                ACCDET_DEBUG("[Accdet]accdet_ioctl : CALL_STATE=%d,release wake lock\n", call_status);
-            }
-			*/
-			
+			ACCDET_DEBUG("[Accdet]accdet_ioctl : CALL_STATE=%d \n", call_status);			
 			break;
 
 		case GET_BUTTON_STATUS :
@@ -1676,8 +1646,8 @@ static int accdet_probe(struct platform_device *dev)
 		accdet_init();
 
 		//mt6577_irq_set_sens(MT6577_ACCDET_IRQ_ID, MT65xx_EDGE_SENSITIVE);
-		mt_irq_set_sens(MT_ACCDET_IRQ_ID, MT65xx_LEVEL_SENSITIVE);
-		mt_irq_set_polarity(MT_ACCDET_IRQ_ID, MT65xx_POLARITY_LOW);
+		mt_irq_set_sens(MT_ACCDET_IRQ_ID, MT_LEVEL_SENSITIVE);
+		mt_irq_set_polarity(MT_ACCDET_IRQ_ID, MT_POLARITY_LOW);
 		//register accdet interrupt
 		ret =  request_irq(MT_ACCDET_IRQ_ID, accdet_irq_handler, 0, "ACCDET", NULL);
 		if(ret)

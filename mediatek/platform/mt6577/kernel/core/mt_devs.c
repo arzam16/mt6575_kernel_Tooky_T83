@@ -16,6 +16,7 @@
 #include <linux/amba/bus.h>
 #include <linux/amba/clcd.h>
 #include <linux/version.h>
+#include <linux/musb/musb.h>
 #include <linux/musbfsh.h>
 
 #include "mach/memory.h"
@@ -23,10 +24,10 @@
 #include "mach/mt_reg_base.h"
 #include "mach/mt_devs.h"
 #include "mach/mt_boot.h"
+#include <mach/mtk_memcfg.h>
 
 /*NOTICE: the compile option should be defined if EFUSE is programed*/
-/*for acer cts*/
-//#define CONFIG_MTK_USB_UNIQUE_SERIAL 
+/* #define CONFIG_MTK_USB_UNIQUE_SERIAL */
 #define SERIALNO_LEN 32
 static char serial_number[SERIALNO_LEN];
 
@@ -43,15 +44,31 @@ static int use_bl_fb = 0;
 /* MT6577 USB GADGET                                                     */
 /*=======================================================================*/
 static u64 usb_dmamask = DMA_BIT_MASK(32);
+static struct musb_hdrc_config musb_config_mt65xx = {
+	.multipoint     = true,
+	.dyn_fifo       = true,
+	.soft_con       = true,
+	.dma            = true,
+	.num_eps        = 16,
+	.dma_channels   = 8,
+};
 
+static struct musb_hdrc_platform_data usb_data = {
+#ifdef CONFIG_USB_MTK_OTG
+	.mode           = MUSB_OTG,
+#else
+	.mode           = MUSB_PERIPHERAL,
+#endif
+	.config         = &musb_config_mt65xx,
+};
 struct platform_device mt_device_usb = {
 	.name		  = "mt_usb",
-	.id		  = -1,
+	.id		  = -1,   //only one such device
 	.dev = {
-		//.platform_data          = &usb_data_mt65xx,
+		.platform_data          = &usb_data,
 		.dma_mask               = &usb_dmamask,
 		.coherent_dma_mask      = DMA_BIT_MASK(32),
-		//.release=musbfsh_hcd_release,
+        /*.release=musbfsh_hcd_release,*/
 		},
 };
 
@@ -169,13 +186,15 @@ extern void   mtkfb_set_lcm_inited(bool isLcmInited);
  * - MT6577 SQC should be 0x0
  */
 unsigned int RESERVED_MEM_SIZE_FOR_PMEM = 0;
+unsigned long pmem_start = 0x12345678;  // pmem_start is inited in mt_fixup
+unsigned long kernel_mem_sz = 0x0;       // kernel_mem_sz is inited in mt_fixup
 
 #define TOTAL_RESERVED_MEM_SIZE (RESERVED_MEM_SIZE_FOR_PMEM + \
                                  RESERVED_MEM_SIZE_FOR_FB)
 
 #define MAX_PFN        ((max_pfn << PAGE_SHIFT) + PHYS_OFFSET)
 
-#define PMEM_MM_START  (MAX_PFN)
+#define PMEM_MM_START  (pmem_start)
 #define PMEM_MM_SIZE   (RESERVED_MEM_SIZE_FOR_PMEM)
 
 #define FB_START       (PMEM_MM_START + PMEM_MM_SIZE)
@@ -489,14 +508,6 @@ static struct platform_device mt_spi_device = {
 	.resource=mt_spi_resources
 };
 
-//static struct spi_board_info spi_board_devs[] __initdata = {
-//	[0] = {
-//        	.modalias="spidev",
-//		.bus_num = 0,
-//		.chip_select=0,
-//		.mode = SPI_MODE_3,
-//	},
-//};
 #endif
 
 #if defined(CONFIG_MTK_ACCDET)
@@ -545,7 +556,7 @@ static struct platform_device mt_device_sd[] =
 {
 #if defined(CFG_DEV_MSDC0)
     {
-        .name           = "mtk-sd",
+        .name           = "mtk-msdc",
         .id             = 0,
         .num_resources  = ARRAY_SIZE(mt_resource_sd0),
         .resource       = mt_resource_sd0,
@@ -556,7 +567,7 @@ static struct platform_device mt_device_sd[] =
 #endif
 #if defined(CFG_DEV_MSDC1)
     {
-        .name           = "mtk-sd",
+        .name           = "mtk-msdc",
         .id             = 1,
         .num_resources  = ARRAY_SIZE(mt_resource_sd1),
         .resource       = mt_resource_sd1,
@@ -567,7 +578,7 @@ static struct platform_device mt_device_sd[] =
 #endif
 #if defined(CFG_DEV_MSDC2)
     {
-        .name           = "mtk-sd",
+        .name           = "mtk-msdc",
         .id             = 2,
         .num_resources  = ARRAY_SIZE(mt_resource_sd2),
         .resource       = mt_resource_sd2,
@@ -578,7 +589,7 @@ static struct platform_device mt_device_sd[] =
 #endif
 #if defined(CFG_DEV_MSDC3)
     {
-        .name           = "mtk-sd",
+        .name           = "mtk-msdc",
         .id             = 3,
         .num_resources  = ARRAY_SIZE(mt_resource_sd3),
         .resource       = mt_resource_sd3,
@@ -665,6 +676,15 @@ static struct platform_device dummychar_device =
 {
        .name           = "dummy_char",
         .id             = 0,
+};
+
+/*=======================================================================*/
+/* MASP                                                                  */
+/*=======================================================================*/
+static struct platform_device masp_device =
+{
+       .name           = "masp",
+       .id             = -1,
 };
 
 /*=======================================================================*/
@@ -800,7 +820,15 @@ static struct platform_device mtk_mau_dev = {
 	}
 };
 
-
+static u64 mtk_m4u_dmamask = ~(u32)0;
+static struct platform_device mtk_m4u_dev = {
+	.name		  = "M4U_device",
+	.id		  = 0,
+	.dev              = {
+		.dma_mask = &mtk_m4u_dmamask,
+		.coherent_dma_mask = 0xffffffffUL
+	}
+};
 
 /*=======================================================================*/
 /* MT6577 MDP                                                            */
@@ -1064,10 +1092,10 @@ void mt_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
     struct tag *reserved_mem_bank_tag = NULL;
     struct tag *none_tag = NULL;
 
-    int32_t max_limit_size = CONFIG_MAX_DRAM_SIZE_SUPPORT -
+    unsigned long max_limit_size = CONFIG_MAX_DRAM_SIZE_SUPPORT -
                              RESERVED_MEM_MODEM;
-    int32_t avail_dram = 0;
-    int32_t bl_mem_sz = 0;
+    unsigned long avail_dram = 0;
+    unsigned long bl_mem_sz = 0;
 
 	// xuecheng, set cmdline to temp_command_line, for display driver calculate reserved memory size
 	struct tag *temp_tags = tags;
@@ -1117,6 +1145,7 @@ void mt_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
           g_meta_com_id = tags->u.meta_com.meta_com_id;
         }
     }
+    kernel_mem_sz = avail_dram; // keep the DRAM size (limited by CONFIG_MAX_DRAM_SIZE_SUPPORT)
     /*
     * If the maximum memory size configured in kernel
     * is smaller than the actual size (passed from BL)
@@ -1140,11 +1169,24 @@ void mt_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
 
 
     /* Reserve memory in the last bank */
-    if (reserved_mem_bank_tag)
+    if (reserved_mem_bank_tag) {
         reserved_mem_bank_tag->u.mem.size -= ((__u32)TOTAL_RESERVED_MEM_SIZE);
-    else // we should always have reserved memory
+        pmem_start = reserved_mem_bank_tag->u.mem.start + reserved_mem_bank_tag->u.mem.size;
+    } else // we should always have reserved memory
     	BUG();
 
+    MTK_MEMCFG_LOG_AND_PRINTK(KERN_ALERT
+            "[PHY layout]avaiable DRAM size (lk) = 0x%08lx\n"
+            "[PHY layout]avaiable DRAM size = 0x%08lx\n"
+            "[PHY layout]FB       :   0x%08lx - 0x%08lx  (0x%08x)\n",
+            bl_mem_sz,
+            kernel_mem_sz,
+            FB_START, (FB_START + FB_SIZE - 1), FB_SIZE);
+    if (PMEM_MM_SIZE) {
+        MTK_MEMCFG_LOG_AND_PRINTK(KERN_ALERT
+                "[PHY layout]PMEM     :   0x%08lx - 0x%08lx  (0x%08x)\n",
+                PMEM_MM_START, (PMEM_MM_START + PMEM_MM_SIZE - 1), PMEM_MM_SIZE);
+    }
     if(tags->hdr.tag == ATAG_NONE)
 	none_tag = tags;
 
@@ -1332,6 +1374,7 @@ static struct platform_device sim_mt65xx_dev[] = {
 	},
 #endif
 };
+
 /*=======================================================================*/
 /* MT6577 Board Device Initialization                                    */
 /*=======================================================================*/
@@ -1406,7 +1449,7 @@ __init int mt_board_init(void)
 #endif
 
 #if defined(CONFIG_MTK_I2C)
-	//i2c_register_board_info(0, i2c_devs0, ARRAY_SIZE(i2c_devs0));
+//	i2c_register_board_info(0, i2c_devs0, ARRAY_SIZE(i2c_devs0));
 	i2c_register_board_info(1, i2c_devs1, ARRAY_SIZE(i2c_devs1));
 //	i2c_register_board_info(2, i2c_devs2, ARRAY_SIZE(i2c_devs2));
 		for (i = 0; i < ARRAY_SIZE(mt_device_i2c); i++){
@@ -1435,6 +1478,17 @@ __init int mt_board_init(void)
     }
 #endif
 
+    retval = platform_device_register(&mtk_mau_dev);
+    printk("register MTK_MAU device\n");
+    if (retval != 0) {
+        return retval;
+    }
+    printk("register M4U device: %d\n", retval);
+    retval = platform_device_register(&mtk_m4u_dev);
+    if (retval != 0) {
+        return retval;
+    }
+
 #if defined(CONFIG_MTK_FB)
     /*
      * Bypass matching the frame buffer info. between boot loader and kernel
@@ -1443,13 +1497,13 @@ __init int mt_board_init(void)
      */
     if (((bl_fb.base == FB_START) && (bl_fb.size == FB_SIZE)) ||
          (use_bl_fb == 2)) {
-        printk("FB is initialized by BL(%d)\n", use_bl_fb);
+        printk(KERN_ALERT"FB is initialized by BL(%d)\n", use_bl_fb);
         mtkfb_set_lcm_inited(1);
     } else if ((bl_fb.base == 0) && (bl_fb.size == 0)) {
-        printk("FB is not initialized(%d)\n", use_bl_fb);
+        printk(KERN_ALERT"FB is not initialized(%d)\n", use_bl_fb);
         mtkfb_set_lcm_inited(0);
     } else {
-        printk(
+        printk(KERN_ALERT
 "******************************************************************************\n"
 "   WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING\n"
 "******************************************************************************\n"
@@ -1480,10 +1534,10 @@ __init int mt_board_init(void)
 #endif
     }
 
-    resource_fb[0].start = FB_START;
-    resource_fb[0].end   = FB_START + FB_SIZE - 1;
+	resource_fb[0].start = FB_START;
+	resource_fb[0].end   = FB_START + FB_SIZE - 1;
 
-    printk("FB start: 0x%x end: 0x%x\n", resource_fb[0].start,
+    printk(KERN_ALERT"FB start: 0x%x end: 0x%x\n", resource_fb[0].start,
                                          resource_fb[0].end);
 
     retval = platform_device_register(&mt_device_fb);
@@ -1498,6 +1552,7 @@ __init int mt_board_init(void)
 		return retval;
 	printk("bei:device LEDS register\n");
 #endif
+
 #ifdef MTK_HDMI_SUPPORT
 	retval = platform_device_register(&mtk_hdmi_dev);
 	if (retval != 0){
@@ -1507,16 +1562,9 @@ __init int mt_board_init(void)
 #endif
 
 #if defined(CONFIG_MTK_SPI)
-//    spi_register_board_info(spi_board_devs, ARRAY_SIZE(spi_board_devs));
     platform_device_register(&mt_spi_device);
 #endif
 
-
-    retval = platform_device_register(&mtk_mau_dev);
-    printk("register MTK_MAU device\n");
-    if (retval != 0) {
-        return retval;
-    }
 
 #if defined(MTK_TVOUT_SUPPORT)
     retval = platform_device_register(&mt_TVOUT_dev);
@@ -1568,10 +1616,7 @@ __init int mt_board_init(void)
         return retval;
     }
 #endif
-
-
-
-
+                                                            
 #if defined(MTK_SENSOR_SUPPORT)
 
 	retval = platform_device_register(&hwmon_sensor);
@@ -1657,6 +1702,14 @@ __init int mt_board_init(void)
         return retval;
     }
 #endif
+
+#if defined(CONFIG_MTK_EXTBACKLIGHT)
+    retval = platform_device_register(&mtk_backlight_dev);
+    if (retval != 0) {
+        return retval;
+    }
+#endif
+
 #if defined(CUSTOM_KERNEL_OFN)
     retval = platform_device_register(&ofn_driver);
     if (retval != 0){
@@ -1770,6 +1823,11 @@ retval = platform_device_register(&dummychar_device);
 		return retval;
 	}
 
+    retval = platform_device_register(&masp_device);
+    if (retval != 0){
+        return retval;
+    }
+
 //=======================================================================
 // SIM Card
 //=======================================================================
@@ -1810,20 +1868,10 @@ int is_pmem_range(unsigned long *base, unsigned long size)
 }
 EXPORT_SYMBOL(is_pmem_range);
 
-
-unsigned int get_memory_size (void)
-{
-    return (MAX_PFN) - (RESERVED_MEM_MODEM);
-}
-EXPORT_SYMBOL(get_memory_size) ;
-
-
-unsigned int get_max_DRAM_size(void)
+unsigned int mtk_get_max_DRAM_size(void)
 {
 	return  MAX_PFN + TOTAL_RESERVED_MEM_SIZE;
 }
-EXPORT_SYMBOL(get_max_DRAM_size);
-
 
 unsigned int get_phys_offset(void)
 {

@@ -261,6 +261,12 @@ rsnParseCheckForWFAInfoElem(
     OUT PUINT_16          pu2SubTypeVersion
     );
 
+BOOLEAN
+rsnIsSuitableBSS (
+    IN P_ADAPTER_T          prAdapter,
+    IN P_RSN_INFO_T         prBssRsnInfo
+    );
+
 #if CFG_SUPPORT_AAA
 void
 rsnParserCheckForRSNCCMPPSK (

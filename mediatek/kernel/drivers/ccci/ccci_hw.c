@@ -17,13 +17,10 @@ static void ccif_reset(struct physical_channel *pc_ch);
 static int ccif_manual_triger(struct physical_channel *pc_ch,CCCI_BUFF_T *);
 static void ccif_debug_dump(struct physical_channel *pc_ch,DEBUG_INFO_T *);
 
-
 extern volatile int md_boot_stage;
 extern atomic_t md_reset_on_going;
-extern volatile int md_slp_lock_ack;
-extern volatile int md_slp_unlock_ack;
-extern int *md_ex_log;
-extern unsigned int IS_AP_Eng_Build;
+extern volatile unsigned int md_slp_lock_ack;
+extern volatile unsigned int md_slp_unlock_ack;
 
 static int irq_cnt = 0;
 
@@ -45,9 +42,6 @@ static xmit_log_unit_t *xmit_log;
 static int curr_xmit_log_index= -1;
 static int curr_xmit_log_num = -1;
 static void xmit_history_dump(void);
-static unsigned int tx_fail_cnt = 0;
-static bool dump_flag = true;
-
 
 char *lg_ch_str[CCCI_MAX_CHANNEL]={
 	"Control_RX", "Control_TX",
@@ -137,16 +131,16 @@ static irqreturn_t ccif_irq_handler(int irq,void *data)
 							irq_cnt, buf.data[0], buf.data[1], buf.channel, buf.reserved, num);
 				}
 				
-				check_data_connected(buf.channel);
+				//check_data_connected(buf.channel);
 
 				if(buf.channel == CCCI_SYSTEM_RX){
 					if(buf.data[1] == MD_SLP_REQUEST) {
 						if (buf.reserved == LOCK_MD_SLP) {
-							md_slp_lock_ack++;
+							md_slp_lock_ack = 1;
 							//CCCI_MSG_INF("cci", "ack md lock sleep OK! \n");
 						}
 						else if (buf.reserved == UNLOCK_MD_SLP) {
-							md_slp_unlock_ack++;
+							md_slp_unlock_ack = 1;
 							//CCCI_MSG_INF("cci", "ack md unlock sleep OK! \n");
 						}
 						else if (buf.reserved == 0xFFFF) {
@@ -211,10 +205,10 @@ static void memory_dump(void *start_addr, int length)
 		return;
 	}
 
-	CCCI_MSG_INF("cci", "Base: %08X\n", (unsigned int)start_addr);
+	CCCI_MSG_INF("cci", "Base: %08x\n", (unsigned int)start_addr);
 	// Fix section
 	for(i=0; i<_16_fix_num; i++){
-		CCCI_MSG_INF("cci", "%03X: %08X %08X %08X %08X\n", 
+		CCCI_MSG_INF("cci", "%03x: %08x %08x %08x %08x\n", 
 				i*16, *curr_p, *(curr_p+1), *(curr_p+2), *(curr_p+3) );
 		curr_p+=4;
 	}
@@ -229,7 +223,7 @@ static void memory_dump(void *start_addr, int length)
 		for(; j<16; j++)
 			buf[j] = 0;
 		curr_p = (unsigned int*)buf;
-		CCCI_MSG_INF("cci", "%03X: %08X %08X %08X %08X\n", 
+		CCCI_MSG_INF("cci", "%03x: %08x %08x %08x %08x\n", 
 				i*16, *curr_p, *(curr_p+1), *(curr_p+2), *(curr_p+3) );
 
 	}
@@ -248,7 +242,7 @@ void my_mem_dump(int *mem, int size,void (*end)(void),char *fmt,...)
 	vprintk(fmt,v_arg);
 	va_end(v_arg);
 
-	//CCCI_MSG_INF("cci", "\n");
+	CCCI_MSG_INF("cci", "\n");
 
 	#if 0
 	if ( mem && size>0)
@@ -419,34 +413,6 @@ static void ccif_tx_fifo_dump(void)
 	CCCI_MSG_INF("cci", "*********************END*******************\n");
 }
 #endif
-
-
-void dump_md_mem_info(void)
-{
-	int *addr;
-	unsigned int wdt_sta, size;
-	
-	//size = MD_IMG_DUMP_SIZE;
-	//my_mem_dump(md_img_vir, size, my_default_end,
-	//	"\n\n[CCCI_MD_IMG][%p][%dBytes]:", md_img_vir, size);
-
-	CCCI_MSG_INF("cci", "\nCON(%p)=%08x, BUSY(%p)=%08x, START(%p)=%08x\n", 
-		CCIF_CON(ccif_ch.pc_base_addr), *CCIF_CON(ccif_ch.pc_base_addr),
-		 CCIF_BUSY(ccif_ch.pc_base_addr), *CCIF_BUSY(ccif_ch.pc_base_addr),
-		 CCIF_START(ccif_ch.pc_base_addr), *CCIF_START(ccif_ch.pc_base_addr));
-
-	addr = (int*)CCIF_TXCHDATA(ccif_ch.pc_base_addr);
-	my_mem_dump(addr, 0x100, my_default_end,"\n[CCCI_TX_REG][%p][%dBytes]:", addr,0x100);
-	my_mem_dump((addr+0x100), 0x100, my_default_end,"\n[CCCI_RX_REG][%p][%dBytes]:", (addr+0x100),0x100);
-	
-	size = MD_EX_LOG_SIZE;
-	my_mem_dump(md_ex_log, size, my_default_end,
-		"\n[CCCI_MD_EXP_LOG][%p][%dBytes]:", md_ex_log, size);
-
-	CCCI_MSG_INF("cci", "MD_WDT_STA_REG++\n");
-	wdt_sta = WDT_MD_STA(md_rgu_base);
-	CCCI_MSG_INF("cci", "\nMD_WDT_STA_REG(%p)=0x%x\n", (md_rgu_base+0xC), wdt_sta);
-}
 
 extern int s_to_date(unsigned long seconds, unsigned long usec, unsigned int *ms,
 					unsigned int *sec, unsigned int *min, unsigned int *hour,
@@ -707,8 +673,6 @@ static int ccif_ch_xmit(struct physical_channel *pc_ch,CCCI_BUFF_T *data,int for
 	//struct timeval no_ch_tv;
 	//unsigned int us, sec, min, hour, day, month, year;
 	int lock_flag=0;
-	CCCI_BUFF_T sys_msg;
-	unsigned int debug_ver = 0;
 	
 //	if (atomic==0 && irq_off==0) can_sched=1;
 	if (irq_off)  start_time +=0;
@@ -725,7 +689,7 @@ retry:
 	
 		if(atomic_read(&md_reset_on_going)) {
 			CCCI_MSG_INF("cci", "forbid to send(lg_ch=%02d)at md reset\n", data->channel);
-			ret = CCCI_MD_IN_RESET;
+			ret = CCCI_MD_NOT_READY;
 		}
 		else {
 			CCCI_MSG_INF("cci", "Not ready to send(lg_ch=%02d) at md_boot_%d\n",
@@ -773,7 +737,6 @@ retry:
 		
 		CCCI_MSG_INF("cci", "No physical channel(%s):%08X, %08X, %02d, %08X\n",
 			current->comm, data->data[0], data->data[1],data->channel, data->reserved);
-		tx_fail_cnt++;
 		//do_gettimeofday( &no_ch_tv );
 		//s_to_date(no_ch_tv.tv_sec, no_ch_tv.tv_usec, &us, &sec, &min, 
 		//			&hour, &day, &month, &year);
@@ -816,10 +779,8 @@ retry:
 	*CCIF_TCHNUM(pc_ch->pc_base_addr)=tx_idx;
 	pc_ch->tx_idx++;
 	ret=sizeof(*data);
-	tx_fail_cnt = 0;
 
 	// Log xmit history
-	#if 0
 	if( (curr_xmit_log_index>=0)&&(0==drop) ){
 		xmit_log[curr_xmit_log_index].data[0] = data->data[0];
 		xmit_log[curr_xmit_log_index].data[1] = data->data[1];
@@ -833,7 +794,6 @@ retry:
 		if(curr_xmit_log_num < 16)
 			curr_xmit_log_num++;
 	}
-	#endif
 	// Log xmit history done
 
 out_unlock:
@@ -846,20 +806,6 @@ out:
 	if(lg_ch_tx_debug_enable & (1<< data->channel)) 
 		CCCI_MSG_INF("cci", "[TX]: %08X, %08X, %02d, %08X (%02d)\n",
 			 data->data[0], data->data[1], data->channel, data->reserved, tx_idx);
-
-	if (tx_fail_cnt > 20) {
-		tx_fail_cnt = 0;
-		debug_ver = is_modem_debug_ver();
-		
-		if ((IS_AP_Eng_Build == 0) && (debug_ver == MD_IS_RELEASE_VERSION)) {
-			reset_md();
-		} else if (dump_flag) {
-			dump_flag = false;			
-			CCCI_INIT_MAILBOX(&sys_msg, CCCI_MD_MSG_DUMP_MD_MEM);
-			ccci_system_message(&sys_msg);
-			dump_md_mem_info();
-		}
-	}
 
 	return ret;
 }
@@ -875,10 +821,8 @@ static void lg_default_dtor(struct logical_channel *lg_ch)
 int pc_register(struct physical_channel *pc_ch,int ch_num, char *name,int buf_num,
 		CCCI_CALLBACK call_back,void *private_data)
 {
-	struct logical_channel *lg_ch=NULL;
 	int ret=0;
-	
-	ret=(*pc_ch->lg_layer.add_client)(&pc_ch->lg_layer,ch_num,buf_num,&lg_ch);
+	ret=(*pc_ch->lg_layer.add_client)(&pc_ch->lg_layer,ch_num,buf_num,name,private_data,call_back,lg_default_dtor);
 	if (ret)
 	{
 		if(ret != -EEXIST){
@@ -886,23 +830,6 @@ int pc_register(struct physical_channel *pc_ch,int ch_num, char *name,int buf_nu
 		}
 		return ret;
 	}
-	WARN_ON(lg_ch==NULL);
-	spin_lock_init(&lg_ch->lock);
-	lg_ch->name=name;
-	lg_ch->have_fifo=0;
-	snprintf(lg_ch->owner,sizeof(lg_ch->owner),current->comm);
-#if 0
-	ret=kfifo_alloc(&lg_ch->fifo,buf_num*sizeof(CCCI_BUFF_T),GFP_KERNEL);
-	if (ret)
-	{
-		CCCI_DEBUG("kfifo alloc failed(ret=%d).\n",ret);
-		goto err_out;
-	}
-#endif	
-	lg_ch->callback=call_back;
-	lg_ch->private_data=private_data;
-	lg_ch->dtor=lg_default_dtor;
-	CCCI_CCIF_MSG("CH:%d Name:%s Process:%s \n",ch_num,name,current->comm);
 	return ret;
 }
 

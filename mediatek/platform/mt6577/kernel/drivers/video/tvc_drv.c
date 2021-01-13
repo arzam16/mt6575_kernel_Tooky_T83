@@ -1,4 +1,3 @@
-
 #include <linux/interrupt.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
@@ -40,9 +39,6 @@
 //  TVC Constants
 // ---------------------------------------------------------------------------
 
-#if defined(MTK_M4U_SUPPORT)
-extern M4U_EXPORT_FUNCTION_STRUCT  _m4u_tvout_func;
-#endif
 
 typedef struct {UINT32 width, height;} _SIZE;
 
@@ -861,19 +857,11 @@ void TVC_ConfigSize(unsigned int src_width, unsigned int src_height, unsigned in
 
 TVC_STATUS TVC_AllocMva(unsigned int va, unsigned int size, unsigned int* mva)
 {
-#if defined(MTK_M4U_SUPPORT)
-
     int ret;
     unsigned int mva_tvc;
 
-    if (!_m4u_tvout_func.isInit)
-	{
-		TV_ERROR("M4U has not init func for TV-out");
-		return TVC_STATUS_ERROR;
-	}
-
     //Config TVC&M4U
-	ret = _m4u_tvout_func.m4u_alloc_mva(M4U_CLNTMOD_TVC, va, size, &mva_tvc);
+	ret = m4u_alloc_mva(M4U_CLNTMOD_TVC, va, size, &mva_tvc);
 	if (ret != 0)
     {
         TV_ERROR("m4u_alloc_mva");
@@ -881,38 +869,28 @@ TVC_STATUS TVC_AllocMva(unsigned int va, unsigned int size, unsigned int* mva)
     }
 
 
-    _m4u_tvout_func.m4u_insert_tlb_range(M4U_CLNTMOD_TVC,
+    m4u_insert_tlb_range(M4U_CLNTMOD_TVC,
                                          (unsigned int)mva_tvc,
                                          (unsigned int)(mva_tvc + size - 1),
                                          SEQ_RANGE_LOW_PRIORITY,
                                          1);
 
     *mva = mva_tvc;
-#endif
     return TVC_STATUS_OK;
 }
 
 TVC_STATUS TVC_DeallocMva(unsigned int va, unsigned int size, unsigned int mva)
 {
 
-#if defined(MTK_M4U_SUPPORT)
-	if (!_m4u_tvout_func.isInit)
-	{
-		TV_ERROR("M4U has not init func for TV-out");
-		return TVC_STATUS_ERROR;
-	}
-
-
-    _m4u_tvout_func.m4u_invalid_tlb_range(M4U_CLNTMOD_TVC,
+    m4u_invalid_tlb_range(M4U_CLNTMOD_TVC,
                                   		 (unsigned int)mva,
                       					 (unsigned int)(mva + size - 1));
 
-    if (0 != _m4u_tvout_func.m4u_dealloc_mva(M4U_CLNTMOD_TVC, va, size, mva))
+    if (0 != m4u_dealloc_mva(M4U_CLNTMOD_TVC, va, size, mva))
     {
         TV_ERROR("Dealocate MVA FAIL");
         return TVC_STATUS_ERROR;
     }
-#endif
     return TVC_STATUS_OK;
 }
 

@@ -93,6 +93,7 @@ struct fiq_debugger_state {
 	char work_cmd[DEBUG_MAX];
 
 #ifdef CONFIG_FIQ_DEBUGGER_CONSOLE
+	spinlock_t console_lock;
 	struct console console;
 	struct tty_struct *tty;
 	int tty_open_count;
@@ -381,15 +382,16 @@ static void dump_irqs(struct fiq_debugger_state *state)
 {
 	int n;
 
-	debug_printf(state, "irqnr       total  since-last   status  name\n");
+	debug_printf(state, "irqnr       total  since-last   status   state  name\n");
 	for (n = 0; n < NR_IRQS; n++) {
 		struct irqaction *act = irq_desc[n].action;
 		if (!act && !kstat_irqs(n))
 			continue;
-		debug_printf(state, "%5d: %10u %11u %8x  %s\n", n,
+		debug_printf(state, "%5d: %10u %11u %8x%8x  %s\n", n,
 			kstat_irqs(n),
 			kstat_irqs(n) - state->last_irqs[n],
 			irq_desc[n].status_use_accessors,
+			irq_desc[n].irq_data.state_use_accessors,
 			(act && act->name) ? act->name : "???");
 		state->last_irqs[n] = kstat_irqs(n);
 	}
@@ -640,7 +642,7 @@ static void debug_help(struct fiq_debugger_state *state)
 				" allregs       Extended Register dump\n"
 				" bt            Stack trace\n"
 				" reboot [<c>]  Reboot with command <c>\n"
-#if 0
+#if 0 /* cannot support the reset command due to the empty context */
 				" reset [<c>]   Hard reset with command <c>\n"
 #endif
 				" irqs          Interupt status\n"
@@ -719,8 +721,9 @@ static bool debug_fiq_exec(struct fiq_debugger_state *state,
 		state->no_sleep = true;
 		debug_printf(state, "disabling sleep\n");
 	} else if (!strcmp(cmd, "console")) {
-		state->console_enable = true;
 		debug_printf(state, "console mode\n");
+		debug_uart_flush(state);
+		state->console_enable = true;
 	} else if (!strcmp(cmd, "cpu")) {
 		debug_printf(state, "cpu %d\n", state->current_cpu);
 	} else if (!strncmp(cmd, "cpu ", 4)) {
@@ -908,7 +911,8 @@ bool debug_handle_uart_interrupt(struct fiq_debugger_state *state,
 		}
 		last_c = c;
 	}
-	debug_uart_flush(state);
+	if (!state->console_enable)
+		debug_uart_flush(state);
 	if (state->pdata->fiq_ack)
 		state->pdata->fiq_ack(state->pdev, state->fiq);
 
@@ -1003,6 +1007,7 @@ static void debug_console_write(struct console *co,
 				const char *s, unsigned int count)
 {
 	struct fiq_debugger_state *state;
+	unsigned long flags;
 
 	state = container_of(co, struct fiq_debugger_state, console);
 
@@ -1010,12 +1015,14 @@ static void debug_console_write(struct console *co,
 		return;
 
 	debug_uart_enable(state);
+	spin_lock_irqsave(&state->console_lock, flags);
 	while (count--) {
 		if (*s == '\n')
 			debug_putc(state, '\r');
 		debug_putc(state, *s++);
 	}
 	debug_uart_flush(state);
+	spin_unlock_irqrestore(&state->console_lock, flags);
 	debug_uart_disable(state);
 }
 
@@ -1056,8 +1063,10 @@ int  fiq_tty_write(struct tty_struct *tty, const unsigned char *buf, int count)
 		return count;
 
 	debug_uart_enable(state);
+	spin_lock_irq(&state->console_lock);
 	for (i = 0; i < count; i++)
 		debug_putc(state, *buf++);
+	spin_unlock_irq(&state->console_lock);
 	debug_uart_disable(state);
 
 	return count;
@@ -1065,7 +1074,7 @@ int  fiq_tty_write(struct tty_struct *tty, const unsigned char *buf, int count)
 
 int  fiq_tty_write_room(struct tty_struct *tty)
 {
-	return 1024;
+	return 16;
 }
 
 #ifdef CONFIG_CONSOLE_POLL
@@ -1331,7 +1340,7 @@ static int fiq_debugger_probe(struct platform_device *pdev)
 
 	if (state->signal_irq >= 0) {
 		ret = request_irq(state->signal_irq, mt_debug_signal_irq,
-			  IRQF_TRIGGER_RISING, "debug-signal", state);
+			  IRQF_TRIGGER_NONE, "debug-signal", state);
 		if (ret)
 			pr_err("serial_debugger: could not install signal_irq");
 	}
@@ -1357,6 +1366,7 @@ static int fiq_debugger_probe(struct platform_device *pdev)
 		handle_wakeup(state);
 
 #if defined(CONFIG_FIQ_DEBUGGER_CONSOLE)
+	spin_lock_init(&state->console_lock);
 	state->console = fiq_debugger_console;
 	state->console.index = pdev->id;
 #if 0

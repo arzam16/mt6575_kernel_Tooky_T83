@@ -44,10 +44,18 @@ static void led_set_software_blink(struct led_classdev *led_cdev,
 	if (!led_cdev->blink_brightness)
 		led_cdev->blink_brightness = led_cdev->max_brightness;
 
+//<2012/10/04-Sherman Wei,Removed for bug that missed call->plug USB->unplug USB, LED will not flash/light
+//printk("[LED]+led_set_software_blink:cur_bri=%d, de_on=%d, de_off=%d;dev_on=%d, dev_off=%d \n",current_brightness,delay_on,delay_off,led_cdev->blink_delay_on, led_cdev->blink_delay_off);
+#if defined(HAWK35_EP0) || defined(ARIMA_PROJECT_HAWK35) || defined(HAWK35_DTV_EP1)
+/// Don't return while (delay_on == led_cdev->blink_delay_on) && (delay_off == led_cdev->blink_delay_off)
+#else
 	if (led_get_trigger_data(led_cdev) &&
 	    delay_on == led_cdev->blink_delay_on &&
 	    delay_off == led_cdev->blink_delay_off)
 		return;
+#endif
+//printk("[LED]-led_set_software_blink\n");
+//>2012/10/04-Sherman Wei
 
 	led_stop_software_blink(led_cdev);
 

@@ -6,6 +6,7 @@
 #include <mach/mt_gpio.h>
 
 #include <mach/pmic_mt6329_sw.h>
+#include <mach/upmu_common.h>
 #include <mach/irqs.h>
 
 #define USBPHY_READ8(offset)          __raw_readb(USB_SIF_BASE+0x800+offset)
@@ -108,6 +109,8 @@ typedef enum {
 extern CHARGER_TYPE mt_charger_type_detection(void);
 extern bool upmu_is_chr_det(void);
 extern void BATTERY_SetUSBState(int usb_state);
+extern bool is_usb_connected(void);
+
 
 #ifdef MTK_FAN5405_SUPPORT
 extern void fan5405_set_opa_mode(kal_uint32 val);
@@ -115,7 +118,7 @@ extern void fan5405_set_otg_pl(kal_uint32 val);
 extern void fan5405_set_otg_en(kal_uint32 val);
 extern kal_uint32 fan5405_config_interface_liao (kal_uint8 RegNum, kal_uint8 val);
 #elif defined(MTK_NCP1851_SUPPORT)
-extern void tbl_charger_otg_vbus(int mode);
+extern void tbl_charger_otg_vbus(kal_uint32 mode);
 #endif
 
 #endif

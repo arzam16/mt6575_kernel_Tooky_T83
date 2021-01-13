@@ -11,6 +11,7 @@
 #include <mach/irqs.h>
 #include <mach/sync_write.h>
 #include <mach/hotplug.h>
+#include <mach/wd_api.h>
 
 
 #define SLAVE_MAGIC_REG 0xF011A008
@@ -21,15 +22,6 @@
 extern void mt_secondary_startup(void);
 extern void irq_raise_softirq(const struct cpumask *mask, unsigned int irq);
 extern void mt_gic_secondary_init(void);
-
-#ifdef CONFIG_LOCAL_WDT
-enum wk_wdt_type {
-	WK_WDT_LOC_TYPE,
-	WK_WDT_EXT_TYPE
-};
-extern void mtk_wdt_restart(enum wk_wdt_type type);
-extern void wk_start_kick_cpu_hotplug(int cpu);
-#endif
 
 #ifdef CONFIG_MT65XX_TRACER
 extern void pmu_regs_restore(void);
@@ -46,21 +38,19 @@ static DEFINE_SPINLOCK(boot_lock);
 
 void __cpuinit platform_secondary_init(unsigned int cpu)
 {
+    struct wd_api *wd_api = NULL;
+    
     printk(KERN_CRIT "Slave cpu init\n");
-
+    HOTPLUG_INFO("platform_secondary_init, cpu: %d\n", cpu);
+    
     mt_gic_secondary_init();
     
-    HOTPLUG_INFO("platform_secondary_init, cpu: %d\n", cpu);
     pen_release = -1;
     smp_wmb();
 
-#ifdef CONFIG_LOCAL_WDT
-    printk("[WDK]cpu %d plug on platform_secondary_init++++++\n", cpu);
-    wk_start_kick_cpu_hotplug(cpu);
-    mtk_wdt_restart(WK_WDT_LOC_TYPE);
-    mtk_wdt_restart(WK_WDT_EXT_TYPE);
-    printk("[WDK]cpu %d plug on platform_secondary_init------\n", cpu);
-#endif	    
+    get_wd_api(&wd_api);
+    if (wd_api)
+        wd_api->wd_cpu_hot_plug_on_notify(cpu);    
 
 #ifdef CONFIG_MT65XX_TRACER
     pmu_regs_restore();
@@ -79,15 +69,15 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
     unsigned long timeout;
     static int is_first_boot = 1;
-    
+
     printk(KERN_CRIT "Boot slave CPU\n");
-    
+
     /*
      * Set synchronisation state between this boot processor
      * and the secondary one
      */
     spin_lock(&boot_lock);
-    
+
     HOTPLUG_INFO("boot_secondary, cpu: %d\n", cpu);
     /*
     * The secondary processor is waiting to be released from
@@ -100,7 +90,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
     pen_release = cpu;
     __cpuc_flush_dcache_area((void *)&pen_release, sizeof(pen_release));
     outer_clean_range(__pa(&pen_release), __pa(&pen_release + 1));
-    
+
     if (is_first_boot)
     {
         mt65xx_reg_sync_writel(SLAVE_MAGIC_NUM, SLAVE_MAGIC_REG);
@@ -111,9 +101,15 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
         mt65xx_reg_sync_writel(virt_to_phys(mt_secondary_startup), BOOTROM_BOOT_ADDR);
     }
     power_on_cpu1();
-    
+
     irq_raise_softirq(cpumask_of(cpu), IPI_CPU_START);
-    
+
+    /*
+     * Now the secondary core is starting up let it run its
+     * calibrations, then wait for it to finish
+     */
+    spin_unlock(&boot_lock);
+
     timeout = jiffies + (1 * HZ);
     while (time_before(jiffies, timeout)) {
         smp_rmb();
@@ -122,12 +118,6 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
         
         udelay(10);
     }
-
-    /*
-     * Now the secondary core is starting up let it run its
-     * calibrations, then wait for it to finish
-     */
-    spin_unlock(&boot_lock);
 
     return pen_release != -1 ? -ENOSYS : 0;
 }

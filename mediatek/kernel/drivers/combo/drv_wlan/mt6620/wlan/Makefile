@@ -30,6 +30,9 @@ MODULE_NAME := wlan_mt6620
 
 ccflags-y += -D_HIF_SDIO=1
 
+ccflags-y += -DMTK_WLAN_ARP_OFFLOAD
+ccflags-y += -DMTK_PACKET_FILTERING_SUPPORT
+
 ccflags-y += -DDBG=0
 ccflags-y += -I$(src)/os -I$(src)/os/linux/include -I$(src)/os/linux/hif/sdio/include
 ccflags-y += -I$(src)/include -I$(src)/include/nic -I$(src)/include/mgmt

@@ -56,7 +56,7 @@ extern struct acc_hw* mma8452q_get_cust_acc_hw(void);
 //#define MMA8452Q_REG_TIME_FF			0x29
 //#define MMA8452Q_REG_TAP_AXES		0x2A
 //#define MMA8452Q_REG_ACT_TAP_STATUS	0x2B
-//#define	MMA8452Q_REG_BW_RATE			0x2C
+//#define MMA8452Q_REG_BW_RATE			0x2C
 //#define MMA8452Q_REG_POWER_CTL		0x2D
 //#define MMA8452Q_REG_INT_ENABLE		0x2E
 //#define MMA8452Q_REG_INT_MAP			0x2F

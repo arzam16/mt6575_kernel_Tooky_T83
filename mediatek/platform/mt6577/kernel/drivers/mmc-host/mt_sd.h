@@ -5,6 +5,7 @@
 #include <linux/mmc/host.h>
 
 #include <mach/mt_reg_base.h>
+#include <linux/semaphore.h>
 #define MAX_GPD_NUM         (1 + 1)  /* one null gpd */
 #define MAX_BD_NUM          (1024)
 #define MAX_BD_PER_GPD      (MAX_BD_NUM)
@@ -954,6 +955,7 @@ struct msdc_host
 	u32							sw_timeout;
 	u32							power_cycle; /* power cycle done in tuning flow*/
 	bool						power_cycle_enable;/*Enable power cycle*/
+	bool						tune;
 };
 
 typedef enum {
@@ -1027,4 +1029,3 @@ static inline unsigned int uffs(unsigned int x)
     } while(0)
 
 #endif
-

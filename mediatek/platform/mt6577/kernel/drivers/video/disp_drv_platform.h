@@ -1,4 +1,3 @@
-
 #ifndef __DISP_DRV_PLATFORM_H__
 #define __DISP_DRV_PLATFORM_H__
 
@@ -42,9 +41,7 @@
 #else
 #include <mach/mt_typedefs.h>
 #include <mach/mt_gpio.h>
-#ifdef MTK_M4U_SUPPORT
 #include <mach/m4u.h>
-#endif
 #include <mach/mt_pwm.h>
 #include <mach/mt_reg_base.h>
 #include <mach/mt_boot.h>
@@ -54,5 +51,4 @@
 ///LCD HW feature options for MT6575
 #define MTK_LCD_HW_SIF_VERSION      2       ///for MT6575, we naming it is V2 because MT6516/73 is V1...
 #define MTK_LCD_HW_3D_SUPPORT
-
 #endif //__DISP_DRV_PLATFORM_H__

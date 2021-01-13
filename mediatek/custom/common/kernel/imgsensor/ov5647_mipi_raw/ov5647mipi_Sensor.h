@@ -1,19 +1,29 @@
-
-
-
-
-
+/*****************************************************************************
+ *
+ * Filename:
+ * ---------
+ *   sensor.h
+ *
+ * Project:
+ * --------
+ *   DUMA
+ *
+ * Description:
+ * ------------
+ *   CMOS sensor header file
+ *
+ ****************************************************************************/
 #ifndef _OV5647MIPI_SENSOR_H
 #define _OV5647MIPI_SENSOR_H
 
 #define OV5647MIPI_DEBUG
 #define OV5647MIPI_DRIVER_TRACE
 //#define OV5647MIPI_TEST_PATTEM
-#ifdef OV5647MIPI_DEBUG
-#define SENSORDB printk
-#else
-#define SENSORDB(x,...)
-#endif
+//#ifdef OV5647MIPI_DEBUG
+//#define SENSORDB printk
+//#else
+//#define SENSORDB(x,...)
+//#endif
 
 #define OV5647MIPI_FACTORY_START_ADDR 0
 #define OV5647MIPI_ENGINEER_START_ADDR 10
@@ -54,9 +64,11 @@ typedef struct _sensor_data_struct
 /* SENSOR PREVIEW/CAPTURE VT CLOCK */
 #define OV5647MIPI_PREVIEW_CLK                     56000000
 #define OV5647MIPI_CAPTURE_CLK                     80000000
+#define OV5647MIPI_VIDEO_CLK                       80000000
 
-#if 0
-#define OV5647MIPI_COLOR_FORMAT                    SENSOR_OUTPUT_FORMAT_RAW_Gb //SENSOR_OUTPUT_FORMAT_RAW_R
+
+#if 1
+#define OV5647MIPI_COLOR_FORMAT                    SENSOR_OUTPUT_FORMAT_RAW_B //SENSOR_OUTPUT_FORMAT_RAW_R
 #else
 #define OV5647MIPI_COLOR_FORMAT                    SENSOR_OUTPUT_FORMAT_RAW_Gr
 #endif
@@ -70,29 +82,13 @@ typedef struct _sensor_data_struct
 
 /* SENSOR PIXEL/LINE NUMBERS IN ONE PERIOD */
 //#define OV5647MIPI_FULL_PERIOD_PIXEL_NUMS          2700 /* 9 fps */
-#if 0
-#define OV5647MIPI_FULL_PERIOD_PIXEL_NUMS          3055 /* 8 fps */
-#define OV5647MIPI_FULL_PERIOD_LINE_NUMS           1968
-#define OV5647MIPI_PV_PERIOD_PIXEL_NUMS            1630 /* 30 fps */
-#define OV5647MIPI_PV_PERIOD_LINE_NUMS             984
-#else
-#define OV5647MIPI_FULL_PERIOD_PIXEL_NUMS          2700 /* 15 fps */
+#define OV5647MIPI_FULL_PERIOD_PIXEL_NUMS          (2752+100) /* 15 fps */
 #define OV5647MIPI_FULL_PERIOD_LINE_NUMS           1974
 #define OV5647MIPI_PV_PERIOD_PIXEL_NUMS            1896 /* 30 fps */
 #define OV5647MIPI_PV_PERIOD_LINE_NUMS             984
-#endif
+#define OV5647MIPI_VIDEO_PERIOD_PIXEL_NUMS         2416 /* 30 fps */
+#define OV5647MIPI_VIDEO_PERIOD_LINE_NUMS          1104
 
-#if 0
-/* SENSOR START/END POSITION */
-#define OV5647MIPI_FULL_X_START                    3
-#define OV5647MIPI_FULL_Y_START                    11
-#define OV5647MIPI_IMAGE_SENSOR_FULL_WIDTH         (2592 - 52) /* 2560 */
-#define OV5647MIPI_IMAGE_SENSOR_FULL_HEIGHT        (1944 - 40) /* 1920 */
-#define OV5647MIPI_PV_X_START                      1
-#define OV5647MIPI_PV_Y_START                      1
-#define OV5647MIPI_IMAGE_SENSOR_PV_WIDTH           (1280 - 16) /* 1264 */
-#define OV5647MIPI_IMAGE_SENSOR_PV_HEIGHT          (960 - 12) /* 948 */
-#else
 
 
 #define OV5647MIPI_FULL_X_START                    4   //(1+16+6)
@@ -103,7 +99,33 @@ typedef struct _sensor_data_struct
 #define OV5647MIPI_PV_Y_START                      2
 #define OV5647MIPI_IMAGE_SENSOR_PV_WIDTH           (1280 - 16) /* 1264 */
 #define OV5647MIPI_IMAGE_SENSOR_PV_HEIGHT          (960 - 12) /* 948 */
-#endif
+#define OV5647MIPI_VIDEO_X_START                      2
+#define OV5647MIPI_VIDEO_Y_START                      2
+#define OV5647MIPI_IMAGE_SENSOR_VIDEO_WIDTH           (1920 - 16) /* 1264 */
+#define OV5647MIPI_IMAGE_SENSOR_VIDEO_HEIGHT          (1080 - 12) /* 948 */
+
+
+#define OV5647MIPI_3D_FULL_PERIOD_PIXEL_NUMS          2700 /* 15 fps */
+#define OV5647MIPI_3D_FULL_PERIOD_LINE_NUMS           1974
+#define OV5647MIPI_3D_PV_PERIOD_PIXEL_NUMS            1896 /* 30 fps */
+#define OV5647MIPI_3D_PV_PERIOD_LINE_NUMS             984
+#define OV5647MIPI_3D_VIDEO_PERIOD_PIXEL_NUMS         2416 /* 30 fps */
+#define OV5647MIPI_3D_VIDEO_PERIOD_LINE_NUMS          1104
+
+
+
+#define OV5647MIPI_3D_FULL_X_START                    4   //(1+16+6)
+#define OV5647MIPI_3D_FULL_Y_START                    4  //(1+12+4)
+#define OV5647MIPI_IMAGE_SENSOR_3D_FULL_WIDTH         (2560 - 32) //(2592 - 16) /* 2560 */
+#define OV5647MIPI_IMAGE_SENSOR_3D_FULL_HEIGHT        (1920 - 24) //(1944 - 12) /* 1920 */
+#define OV5647MIPI_3D_PV_X_START                      2
+#define OV5647MIPI_3D_PV_Y_START                      2
+#define OV5647MIPI_IMAGE_SENSOR_3D_PV_WIDTH           (1280 - 16) /* 1264 */
+#define OV5647MIPI_IMAGE_SENSOR_3D_PV_HEIGHT          (960 - 12) /* 948 */
+#define OV5647MIPI_3D_VIDEO_X_START                      2
+#define OV5647MIPI_3D_VIDEO_Y_START                      2
+#define OV5647MIPI_IMAGE_SENSOR_3D_VIDEO_WIDTH           (1920 - 16) /* 1264 */
+#define OV5647MIPI_IMAGE_SENSOR_3D_VIDEO_HEIGHT          (1080 - 12) /* 948 */
 
 
 
@@ -135,6 +157,31 @@ typedef struct OV5647MIPI_sensor_STRUCT
   kal_uint16 line_length;  
 } OV5647MIPI_sensor_struct;
 
+//#define OV5647MIPI_USE_OTP
+
+#if defined(OV5647MIPI_USE_OTP)
+
+struct OV5647MIPI_otp_struct
+{
+    kal_uint16 customer_id;
+	kal_uint16 module_integrator_id;
+	kal_uint16 lens_id;
+	kal_uint16 rg_ratio;
+	kal_uint16 bg_ratio;
+	kal_uint16 user_data[5];
+//	kal_uint16 lenc_g[36];      //OV5647t no lens calibration data
+//	kal_uint16 lenc_b[25];
+//	kal_uint16 lenc_r[25];
+};
+
+#define OV5647MIPI_USE_AWB_OTP
+//#define OV5647_USE_LENC_OTP   //ov5647t no lens calibration data  //copy form OV5650 LENC OTP
+
+#define RG_TYPICAL 0x5B  //golden sample R/G ratio
+#define BG_TYPICAL 0x5F  //golden sample B/G ratio
+
+
+#endif
 //export functions
 UINT32 OV5647MIPIOpen(void);
 UINT32 OV5647MIPIControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *pImageWindow, MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData);

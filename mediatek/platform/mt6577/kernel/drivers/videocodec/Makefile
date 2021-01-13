@@ -9,7 +9,7 @@ obj-$(CONFIG_MTK_VIDEOCODEC_DRIVER) += vcodec_kernel_driver.o
 
 
 ccflags-y +=                                    -I$(MTK_PATH_PLATFORM)/drivers/videocodec/inc \
-                                                -I$(MTK_ROOT)/kernel/include/linux \
+                                                -I$(MTK_ROOT)/kernel/include/linux/vcodec \
                                                 -I$(MTK_PATH_PLATFORM)/drivers/videocodec/codec/common/val/linux/kernel \
                                                 -I$(MTK_PATH_PLATFORM)/drivers/videocodec/codec/common/hal/inc \
                                                 -I$(MTK_PATH_PLATFORM)/drivers/videocodec/codec/common/api/inc \

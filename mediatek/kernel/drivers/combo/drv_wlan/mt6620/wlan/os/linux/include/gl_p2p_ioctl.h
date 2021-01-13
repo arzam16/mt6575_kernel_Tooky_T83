@@ -757,6 +757,16 @@ mtk_p2p_cfg80211_testmode_p2p_sigma_cmd(
     IN void *data,
     IN int len
     );
+
+#if CFG_SUPPORT_WFD
+int
+mtk_p2p_cfg80211_testmode_wfd_update_cmd(
+    IN struct wiphy *wiphy,
+    IN void *data,
+    IN int len
+    );
+#endif
+
 int
 mtk_p2p_cfg80211_testmode_hotspot_block_list_cmd(
     IN struct wiphy *wiphy,

@@ -9,6 +9,11 @@
 #define ENABLE_DSI_INTERRUPT 1 
 
 #include <linux/delay.h>
+#include <linux/vmalloc.h>
+#include <linux/mm.h>
+#include <linux/mm_types.h>
+#include <linux/dma-mapping.h>
+
 #include <disp_drv_log.h>
 #include <linux/time.h>
 #include <linux/string.h>
@@ -20,6 +25,7 @@
 #include <mach/mt_gpio.h>
 #include "mach/mt_clock_manager.h"
 #include <mach/mt_boot.h>
+#include <mach/m4u.h>
 
 #include "lcd_reg.h"
 #include "lcd_drv.h"
@@ -41,6 +47,11 @@ static wait_queue_head_t _dsi_wait_queue;
 static wait_queue_head_t _dsi_dcs_read_wait_queue;
 #endif
 
+/*
+#define PLL_BASE			(0xF0060000)
+#define DSI_PHY_BASE		(0xF0060B00)
+#define DSI_BASE            	(0xF0140000)
+*/
 
 //#define PWR_OFF                 (APCONFIG_BASE + 0x0304)
 //#define GRAPH1_PDN              (1 << 3)
@@ -59,6 +70,11 @@ static wait_queue_head_t _dsi_dcs_read_wait_queue;
 #define DSI_MIPI_API
 #endif
 
+#define FBCommandSize 128	
+
+static unsigned char * FBMemVa = 0;
+static unsigned int FBMemPhy;
+	
 static PDSI_REGS const DSI_REG = (PDSI_REGS)(DSI_BASE);
 static PDSI_PHY_REGS const DSI_PHY_REG = (PDSI_PHY_REGS)(MIPI_CONFG_BASE+0x800);
 static PDSI_CMDQ_REGS const DSI_CMDQ_REG = (PDSI_CMDQ_REGS)(DSI_BASE+0x180);
@@ -150,7 +166,7 @@ static irqreturn_t _DSI_InterruptHandler(int irq, void *dev_id)
         DSI_REG->DSI_INTSTA.CMD_DONE = 1;
     	// Go back to LP mode.
     	DSI_clk_HS_mode(0);
-        wake_up_interruptible(&_dsi_wait_queue);
+        wake_up(&_dsi_wait_queue);
         if(_dsiContext.pIntCallback)
             _dsiContext.pIntCallback(DISP_DSI_CMD_DONE_INT);            
     }
@@ -189,7 +205,7 @@ static BOOL _IsCMDQBusy(void)
 	return FALSE;
 }
 #endif
-
+unsigned int loop_cnt = 0;
 static void _WaitForEngineNotBusy(void)
 {
     int timeOut;
@@ -225,7 +241,8 @@ static void _WaitForEngineNotBusy(void)
     {
         while (_IsEngineBusy())
         {
-            long ret = wait_event_interruptible_timeout(_dsi_wait_queue, 
+			loop_cnt++;
+            long ret = wait_event_timeout(_dsi_wait_queue, 
                                                         !_IsEngineBusy(),
                                                         WAIT_TIMEOUT);
             if (0 == ret) {
@@ -233,6 +250,10 @@ static void _WaitForEngineNotBusy(void)
 				DSI_DumpRegisters();
 				DSI_Reset();
             }
+			if(loop_cnt > 60){
+				printk("[DEBUG-->Zaikuo]DSI_WaitIdle counter is 60, %d\n",ret);
+				loop_cnt = 0;
+			}
         }
     }
 #else
@@ -384,6 +405,13 @@ DSI_STATUS DSI_Deinit(void)
 
     ASSERT(ret == DSI_STATUS_OK);
 
+    if (FBMemVa)
+    { 
+        m4u_dealloc_mva(M4U_CLNTMOD_LCDC, FBMemVa, FBCommandSize, FBMemPhy);
+        vfree((void *)FBMemVa);  
+        FBMemVa = 0;
+    }
+	  
     return DSI_STATUS_OK;
 }
 
@@ -500,13 +528,33 @@ DSI_STATUS DSI_DisableClk(void)
 
 DSI_STATUS DSI_Reset(void)
 {
-	DSI_REG->DSI_COM_CTRL.DSI_RESET = 1;
-	lcm_mdelay(5);
-	DSI_REG->DSI_COM_CTRL.DSI_RESET = 0;
+    // step 1: make waveform to return LP11
+    DSI_PHY_REG->MIPITX_CONB.BIST_PATTERN0_15 = 0x0005;
+    DSI_PHY_REG->MIPITX_CONC.BIST_PATTERN0_15 = 0x0707;
+    DSI_PHY_REG->MIPITX_CONA.MIPI_SW_CTL = 0x1;          //SW control mode enable
+    udelay(1000);
+    DSI_PHY_REG->MIPITX_CONC.BIST_PATTERN0_15 = 0x3838; //D0/D1 return to LP11
+    udelay(500);
+    DSI_PHY_REG->MIPITX_CONB.BIST_PATTERN0_15 = 0x0007;  //clock trail
+    udelay(500);
+    DSI_PHY_REG->MIPITX_CONB.BIST_PATTERN0_15 = 0x0038;  //clock return to LP11
+    udelay(500);
+
+    // step 2: dsi reset flow
+    DSI_REG->DSI_COM_CTRL.DSI_RESET = 0x1;               //reset dsi
+    DSI_REG->DSI_PHY_CON.rsv8 = 0x00;                    //phy interface change
+    udelay(500);
+    DSI_REG->DSI_COM_CTRL.DSI_RESET = 0x0;               //reset dsi release
+    DSI_REG->DSI_PHY_CON.rsv8 = 0x04;                    //phy interface recover
+    DSI_PHY_REG->MIPITX_CONA.MIPI_SW_CTL = 0x0;          //SW control mode release
 
     return DSI_STATUS_OK;
 }
 
+unsigned int DSI_GetMode(void)
+{
+	return DSI_REG->DSI_MODE_CTRL.MODE;
+}
 
 DSI_STATUS DSI_SetMode(unsigned int mode)
 {
@@ -948,6 +996,27 @@ void DSI_lane0_ULP_mode(bool enter)
 
 #ifndef BUILD_UBOOT
 
+
+void DSI_wait_frame_end(void)
+{
+  long int dsi_current_time;
+  
+  dsi_current_time = get_current_time_us();
+  
+  while(1)
+  {
+  
+   if(get_current_time_us() - dsi_current_time > 50000)
+   {
+     break;
+   }
+   if(DSI_REG->DSI_STATE_DBG3.TCON_STATE == DSI_VDO_VFP_STATE)
+   {
+   	break;
+   }
+  }
+}
+
 // called by DPI ISR
 void DSI_handle_esd_recovery(void)
 {
@@ -1303,6 +1372,11 @@ void DSI_set_cmdq_V3(LCM_setting_table_V3 *para_tbl, unsigned int size, unsigned
 			LCD_REG_DSI_DC	dsi_info;
 			bool			lcd_w2m, lcm_te_enable;
 
+			unsigned int backup_gamcon;
+
+			backup_gamcon = AS_UINT32(&LCD_REG->GAMCON);
+			OUTREG32(&LCD_REG->GAMCON, backup_gamcon |0xFFFFFFFF);	
+			
 			// backup layer state.
 			layer_state = AS_UINT32(&LCD_REG->WROI_CONTROL) & 0xFC000000;
 
@@ -1350,15 +1424,24 @@ void DSI_set_cmdq_V3(LCM_setting_table_V3 *para_tbl, unsigned int size, unsigned
 #ifdef BUILD_UBOOT
 			LCD_REG->LAYER[FB_LAYER].ADDRESS = para_list;
 #else      
-			// operates on FB layer
+			if (FBMemVa == 0)
 			{
-				extern void disp_get_fb_address(UINT32 *fbVirAddr, UINT32 *fbPhysAddr);
-				disp_get_fb_address(&fbVirAddr ,&fbPhysAddr);
+			    FBMemVa = (unsigned char *)vmalloc(FBCommandSize);
+			    if(FBMemVa == NULL) {
+			        DISP_LOG_PRINT(ANDROID_LOG_INFO, "DSI", "Can not vmalloc");
+			    }
 
-				// copy parameters to FB layer buffer.
-				memcpy((void *)fbVirAddr, (void *)para_list, count);
-				//LCD_REG->LAYER[FB_LAYER].ADDRESS = fbPhysAddr;
+			    m4u_alloc_mva(M4U_CLNTMOD_LCDC, FBMemVa, FBCommandSize, &FBMemPhy);
+					DISP_LOG_PRINT(ANDROID_LOG_INFO, "DSI", "DSI allocate FB memory");
 			}
+	
+			memset((void*)FBMemVa, 0x0, FBCommandSize);
+			memcpy((void*)FBMemVa, (void*)para_list, count);
+	
+			m4u_dma_cache_maint(M4U_CLNTMOD_LCDC, (void *)FBMemVa, FBCommandSize, DMA_BIDIRECTIONAL);      
+			LCD_REG->LAYER[FB_LAYER].ADDRESS = FBMemPhy;      
+			DISP_LOG_PRINT(ANDROID_LOG_INFO, "DSI", "Allocate Source Pmem, va:0x%x, pa:0x%x size:%d", FBMemVa, FBMemPhy, FBCommandSize);
+
 #endif
 			LCD_CHECK_RET(LCD_LayerSetFormat(FB_LAYER, LCD_LAYER_FORMAT_RGB888));
 			LCD_CHECK_RET(LCD_LayerSetPitch(FB_LAYER, pixel*3));
@@ -1405,7 +1488,7 @@ void DSI_set_cmdq_V3(LCM_setting_table_V3 *para_tbl, unsigned int size, unsigned
 
 				while (_IsEngineBusy())
 				{
-					long ret = wait_event_interruptible_timeout(_dsi_wait_queue, 
+					long ret = wait_event_timeout(_dsi_wait_queue, 
 																!_IsEngineBusy(),
 																1 * HZ);
 					if (0 == ret) {
@@ -1445,6 +1528,7 @@ void DSI_set_cmdq_V3(LCM_setting_table_V3 *para_tbl, unsigned int size, unsigned
 			// restore TE
 			if(lcm_te_enable)
 				LCD_TE_Enable(1);
+			OUTREG32(&LCD_REG->GAMCON, backup_gamcon);	
 
 		}
 		else
@@ -1630,7 +1714,7 @@ void DSI_set_cmdq_V2(unsigned cmd, unsigned char count, unsigned char *para_list
 
 			while (_IsEngineBusy())
 	        {
-	            long ret = wait_event_interruptible_timeout(_dsi_wait_queue, 
+	            long ret = wait_event_timeout(_dsi_wait_queue, 
 	                                                        !_IsEngineBusy(),
 	                                                        1 * HZ);
 	            if (0 == ret) {
@@ -1722,12 +1806,7 @@ void DSI_set_cmdq_V2(unsigned cmd, unsigned char count, unsigned char *para_list
 		if (count > 1)
 		{
 			t2.CONFG = 2;
-		//hongmei temp change for camry&megan	
-		#if defined(JRD_CAMRY_BORAD)
-			t2.Data_ID = DSI_DCS_LONG_PACKET_ID;
-		#else
 			t2.Data_ID = DSI_GERNERIC_LONG_PACKET_ID;
-		#endif
 			t2.WC16 = count+1;
 
 			OUTREG32(&DSI_CMDQ_REG->data0[0], AS_UINT32(&t2));
@@ -1754,24 +1833,12 @@ void DSI_set_cmdq_V2(unsigned cmd, unsigned char count, unsigned char *para_list
 			t0.Data0 = cmd;
 			if (count)
 			{
-		//hongmei temp change for camry&megan			
-		#if defined(JRD_CAMRY_BORAD)
-			t0.Data_ID = DSI_DCS_SHORT_PACKET_ID_1;
-		#else
-			t0.Data_ID = DSI_GERNERIC_SHORT_PACKET_ID_2;
-		#endif
-				
+				t0.Data_ID = DSI_GERNERIC_SHORT_PACKET_ID_2;
 				t0.Data1 = para_list[0];
 			}
 			else
 			{
-			//hongmei temp change for camry&megan		
-		#if defined(JRD_CAMRY_BORAD)
-			t0.Data_ID = DSI_DCS_SHORT_PACKET_ID_0;
-		#else
-			t0.Data_ID = DSI_GERNERIC_SHORT_PACKET_ID_1;
-		#endif
-				
+				t0.Data_ID = DSI_GERNERIC_SHORT_PACKET_ID_1;
 				t0.Data1 = 0;
 			}
 			OUTREG32(&DSI_CMDQ_REG->data0[0], AS_UINT32(&t0));
@@ -2171,25 +2238,14 @@ UINT32 DSI_dcs_read_lcm_reg_v2(UINT8 cmd, UINT8 *buffer, UINT8 buffer_size)
     do
     {
        if(max_try_count == 0)
-	  		return 0;
+	  return 0;
        max_try_count--;
        recv_data_cnt = 0;
        read_timeout_ms = 20;
         
        _WaitForEngineNotBusy();
 
-       /*t0.CONFG = 0x04;        ///BTA
-       t0.Data0 = cmd;
-       if (buffer_size < 0x3)
-           t0.Data_ID = DSI_DCS_READ_PACKET_ID;
-       else
-           t0.Data_ID = DSI_GERNERIC_READ_LONG_PACKET_ID;
-       t0.Data1 = 0;
-
-       OUTREG32(&DSI_CMDQ_REG->data0[0], AS_UINT32(&t0));
-       OUTREG32(&DSI_REG->DSI_CMDQ_SIZE, 1);*/
-
-       t0.CONFG = 0x00;        
+       t0.CONFG = 0x04;        ///BTA
        t0.Data0 = cmd;
        if (buffer_size < 0x3)
            t0.Data_ID = DSI_DCS_READ_PACKET_ID;
@@ -2199,18 +2255,6 @@ UINT32 DSI_dcs_read_lcm_reg_v2(UINT8 cmd, UINT8 *buffer, UINT8 buffer_size)
 
        OUTREG32(&DSI_CMDQ_REG->data0[0], AS_UINT32(&t0));
        OUTREG32(&DSI_REG->DSI_CMDQ_SIZE, 1);
-
-	   OUTREG32(&DSI_REG->DSI_START, 0);
-       OUTREG32(&DSI_REG->DSI_START, 1);
-
-	   udelay(22);
-       t0.CONFG = 0x20;        ///no TE 
-       t0.Data0 = 0;
-       t0.Data_ID = 0; // nop
-       t0.Data1 = 0;
-
-	   OUTREG32(&DSI_CMDQ_REG->data0[0], AS_UINT32(&t0));
-       OUTREG32(&DSI_REG->DSI_CMDQ_SIZE, 1);	   
 
        ///clear read ACK 
        DSI_REG->DSI_RACK.DSI_RACK = 1;
@@ -2349,7 +2393,6 @@ UINT32 DSI_dcs_read_lcm_reg_v2(UINT8 cmd, UINT8 *buffer, UINT8 buffer_size)
    
    return recv_data_cnt;
 }
-
 
 UINT32 DSI_read_lcm_reg()
 {

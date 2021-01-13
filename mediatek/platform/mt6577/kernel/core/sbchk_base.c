@@ -217,25 +217,24 @@ unsigned int sbchk_verify(char* file_path, char* hash_val)
 #if SBCHK_BASE_HASH_CHECK
     {
         unsigned int i = 0;
-        char hash_rsn[HASH_OUTPUT_LEN*2] = {0};
-        char *hash_rsnp =  hash_rsn;
+        char hash_rsn[HASH_OUTPUT_LEN*2+1] = {0}; 
+        char *hash_prsn = hash_rsn;
+
 
         /* convert hash value to 'hex' string */
         for(i=0;i<HASH_OUTPUT_LEN;i++)
         {
-            sprintf(hash_rsnp, "%02x", (char)(*hash_rs++)); 
-            hash_rsnp+=2; 
+            sprintf(hash_prsn, "%02x", hash_rs[i]); 
+            hash_prsn += 2;
         }                 
+
 
         /* compare hash value */
         if(memcmp(hash_rsn,hash_val,HASH_OUTPUT_LEN) != 0)
         {            
             printk("[%s] Hash check fail. The value should be \n",MOD);
             sbchk_hex_string(hash_val,HASH_OUTPUT_LEN*2); 
-            printk("[%s] Instead of \n",MOD);            
-            sbchk_hex_string(hash_rsn,HASH_OUTPUT_LEN*2);             
             ret = SBCHK_BASE_HASH_CHECK_FAIL;
-            msleep(2000);
             goto _end;
         }
         else

@@ -21,24 +21,32 @@
 #include <linux/vmalloc.h>
 #include <linux/disp_assert_layer.h>
 #include <mach/system.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/semaphore.h>
+#include <linux/workqueue.h>
+#include <linux/kthread.h>
+#include <linux/aee.h>
+#include <linux/seq_file.h>
 #include "aed.h"
 #include "../ipanic/ipanic.h"
+#include <mach/mt_boot.h>
+
+static LIST_HEAD(ke_request_list);
+static struct work_struct work;
+
+static DEFINE_SEMAPHORE(aed_ke_sem);
+
+
+
 /*
  *  may be accessed from irq
 */
 static spinlock_t aed_device_lock;
+static int aee_mode = AEE_MODE_CUSTOMER_USER;	
+static int force_red_screen = AEE_FORCE_NOT_SET;	
 
 static struct proc_dir_entry *aed_proc_dir;
-static struct proc_dir_entry *aed_proc_current_ke_console_file;
-static struct proc_dir_entry *aed_proc_current_ee_coredump_file;
-
-static struct proc_dir_entry *aed_proc_current_ke_android_main_file;
-static struct proc_dir_entry *aed_proc_current_ke_android_radio_file;
-static struct proc_dir_entry *aed_proc_current_ke_android_system_file;
-static struct proc_dir_entry *aed_proc_current_ke_userspaceInfo_file;
-
 /******************************************************************************
  * DEBUG UTILITIES
  *****************************************************************************/
@@ -114,23 +122,25 @@ void msg_show(const char *prefix, AE_Msg *msg)
 #define CURRENT_KE_ANDROID_SYSTEM "current-ke-android_system"
 #define CURRENT_KE_USERSPACE_INFO "current-ke-userspace_info"
 
+#define CURRENT_KE_MMPROFILE "current-ke-mmprofile"
+
 #define MAX_EE_COREDUMP 0x800000
 
 /******************************************************************************
  * STRUCTURE DEFINITIONS
  *****************************************************************************/
 
-struct aed_mdrec { // modem exception record
+struct aed_eerec { // external exception record
 	char assert_type[32];
 	char exp_filename[512];
 	unsigned int exp_linenum;
 	unsigned int fatal1;
 	unsigned int fatal2;
 
-	int *md_log;
-	int  md_log_size;
-	int *md_phy;
-	int  md_phy_size;
+	int *ee_log;
+	int  ee_log_size;
+	int *ee_phy;
+	int  ee_phy_size;
 	char *msg;
 };
 
@@ -140,8 +150,8 @@ struct aed_kerec { // TODO: kernel exception record
 };
 
 struct aed_dev {
-	struct aed_mdrec  mdrec;
-	wait_queue_head_t mdwait;
+	struct aed_eerec  eerec;
+	wait_queue_head_t eewait;
 
 	struct aed_kerec  kerec;
 	wait_queue_head_t kewait;
@@ -178,9 +188,11 @@ inline AE_Msg *msg_create(char **ppmsg, int extra_size)
 	msg_destroy(ppmsg);
 	size = sizeof(AE_Msg) + extra_size;
 
-	*ppmsg = kzalloc(size, GFP_KERNEL | GFP_ATOMIC);
-	if (*ppmsg == NULL)
+	*ppmsg = kzalloc(size, GFP_ATOMIC);
+	if (*ppmsg == NULL) {
+		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "%s : kzalloc() fail\n", __func__);
 		return NULL;
+	}
 
 	((AE_Msg*)(*ppmsg))->len = extra_size;
 
@@ -368,18 +380,19 @@ static void ke_gen_ind_msg(struct aee_oops *oops)
         return;
     }	
     
-    spin_lock_irqsave(&aed_device_lock, flags); 
+    spin_lock_irqsave(&aed_device_lock, flags);
     if (aed_dev.kerec.lastlog == NULL) {
         aed_dev.kerec.lastlog = oops;
     }
     else {
         /*
-         *  waaa..   Two ke api at the same time 
+         *  waaa..   Two ke api at the same time
          *  or ke api during aed process is still busy at ke
          *  discard the new oops!
+	 *  Code should NEVER come here now!!!
          */
 
-        xlog_printk(ANDROID_LOG_WARN, AEK_LOG_TAG, "%s: More than on kernel message queued\n", __func__);
+        xlog_printk(ANDROID_LOG_WARN, AEK_LOG_TAG, "%s: BUG!!! More than one kernel message queued, AEE does not support concurrent KE dump\n", __func__);
         aee_oops_free(oops);
         spin_unlock_irqrestore(&aed_device_lock, flags);
 
@@ -417,7 +430,12 @@ static void ke_gen_ind_msg(struct aee_oops *oops)
         rep_msg->len = 0;
         rep_msg->dbOption = oops->dump_option;
 
+	sema_init(&aed_ke_sem, 0);	
         wake_up(&aed_dev.kewait);
+	/* wait until current ke work is done, then aed_dev is available, add a 60s timeout in case of debuggerd quit abnormally */
+	if(down_timeout(&aed_ke_sem, msecs_to_jiffies(5 * 60 * 1000))) {
+	  xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "%s: TIMEOUT, not receive close event, skip\n", __func__);
+	}
     }
 
 }
@@ -450,15 +468,37 @@ static int ke_log_avail(void)
     return 0;
 }
 
+
+static void ke_queue_request(struct aee_oops *oops) {
+  int ret;
+  list_add_tail(&oops->list, &ke_request_list);
+  ret = queue_work(system_nrt_wq, &work);
+  xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "%s: add new ke work, status %d\n", __func__, ret);
+}
+
+static void ke_worker(struct work_struct *work) {
+  struct aee_oops *oops, *n;
+  list_for_each_entry_safe(oops, n, &ke_request_list, list) {
+    if (oops == NULL) {
+      xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "%s:Invalid aee_oops struct\n", __func__);
+      return;
+    }
+
+    ke_gen_ind_msg(oops);
+  
+    list_del(&oops->list);
+    ke_destroy_log();
+  }
+}
 /******************************************************************************
- * Modem message handlers
+ * EE message handlers
  *****************************************************************************/
-static void md_gen_notavail_msg(void)
+static void ee_gen_notavail_msg(void)
 {
 	AE_Msg *rep_msg;
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	rep_msg = msg_create(&aed_dev.mdrec.msg, 0);
+	rep_msg = msg_create(&aed_dev.eerec.msg, 0);
     if(rep_msg == NULL)
         return;	
 
@@ -467,47 +507,45 @@ static void md_gen_notavail_msg(void)
 	rep_msg->len = 0;
 }
 
-static void md_gen_class_msg(void)
+static void ee_gen_class_msg(void)
 {
-#define EX_CLASS_MD_STR "External (EE)"
-#define EX_CLASS_MD_SIZE 14
+#define EX_CLASS_EE_STR "External (EE)"
+#define EX_CLASS_EE_SIZE 14
 	AE_Msg *rep_msg;
 	char *data;
 
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	rep_msg = msg_create(&aed_dev.mdrec.msg, EX_CLASS_MD_SIZE);
+	rep_msg = msg_create(&aed_dev.eerec.msg, EX_CLASS_EE_SIZE);
     if(rep_msg == NULL)
         return;	
 
 	data = (char*)rep_msg + sizeof(AE_Msg);
 	rep_msg->cmdType = AE_RSP;
 	rep_msg->cmdId = AE_REQ_CLASS;
-	rep_msg->len = EX_CLASS_MD_SIZE;
-	strncpy(data, EX_CLASS_MD_STR, EX_CLASS_MD_SIZE);
+	rep_msg->len = EX_CLASS_EE_SIZE;
+	strncpy(data, EX_CLASS_EE_STR, EX_CLASS_EE_SIZE);
 }
 
-static void md_gen_type_msg(void)
+static void ee_gen_type_msg(void)
 {
-#define EX_TYPE_MD_STR "Modem"
-#define EX_TYPE_MD_SIZE 6
 	AE_Msg *rep_msg;
 	char *data;
 
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	rep_msg = msg_create(&aed_dev.mdrec.msg, EX_TYPE_MD_SIZE);
+	rep_msg = msg_create(&aed_dev.eerec.msg, strlen((char const *)&aed_dev.eerec.assert_type)+1);
     if(rep_msg == NULL)
         return;	
 
 	data = (char*)rep_msg + sizeof(AE_Msg);
 	rep_msg->cmdType = AE_RSP;
 	rep_msg->cmdId = AE_REQ_TYPE;
-	rep_msg->len = EX_TYPE_MD_SIZE;
-	strncpy(data, EX_TYPE_MD_STR, EX_TYPE_MD_SIZE);
+	rep_msg->len = strlen((char const *)&aed_dev.eerec.assert_type) + 1;
+	strncpy(data, (char const *)&aed_dev.eerec.assert_type, strlen((char const *)&aed_dev.eerec.assert_type));
 }
 
-static void md_gen_process_msg(void)
+static void ee_gen_process_msg(void)
 {
 #define PROCESS_STRLEN 512
 	
@@ -517,26 +555,24 @@ static void md_gen_process_msg(void)
 
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	rep_msg = msg_create(&aed_dev.mdrec.msg, PROCESS_STRLEN);
+	rep_msg = msg_create(&aed_dev.eerec.msg, PROCESS_STRLEN);
     if(rep_msg == NULL)
         return;	
 
 	data = (char*)rep_msg + sizeof(AE_Msg);
 
-    if (aed_dev.mdrec.assert_type[0]!=0)
-	{
-    	n = sprintf(data, "%s", aed_dev.mdrec.assert_type);
-    	if (aed_dev.mdrec.exp_filename[0] != 0) {
-    		n += sprintf(data + n, ", filename=%s,line=%d", aed_dev.mdrec.exp_filename, aed_dev.mdrec.exp_linenum);
+    if (aed_dev.eerec.exp_linenum != 0) {
+    	// for old aed_md_exception1()
+    	n = sprintf(data, "%s", aed_dev.eerec.assert_type);
+    	if (aed_dev.eerec.exp_filename[0] != 0) {
+    		n += sprintf(data + n, ", filename=%s,line=%d", aed_dev.eerec.exp_filename, aed_dev.eerec.exp_linenum);
     	}
-    	else if (aed_dev.mdrec.fatal1 != 0 && aed_dev.mdrec.fatal2 != 0) {
-    		n += sprintf(data + n, ", err1=%d,err2=%d", aed_dev.mdrec.fatal1, aed_dev.mdrec.fatal2);
+    	else if (aed_dev.eerec.fatal1 != 0 && aed_dev.eerec.fatal2 != 0) {
+    		n += sprintf(data + n, ", err1=%d,err2=%d", aed_dev.eerec.fatal1, aed_dev.eerec.fatal2);
     	}
-	}
-	else        // add interface for md exception.
-	{
-		xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "md_gen_process_msg else\n") ;
-		n = sprintf (data, "%s", aed_dev.mdrec.exp_filename) ;
+	} else {
+		xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "ee_gen_process_msg else\n") ;
+		n = sprintf (data, "%s", aed_dev.eerec.exp_filename) ;
 	}
 
 	rep_msg->cmdType = AE_RSP;
@@ -544,7 +580,7 @@ static void md_gen_process_msg(void)
 	rep_msg->len = n + 1;
 }
 
-static void md_gen_detail_msg(void)
+static void ee_gen_detail_msg(void)
 {
 #define DETAIL_STRLEN 16384 // TODO: check if enough?
 	int i, n = 0;
@@ -554,21 +590,19 @@ static void md_gen_detail_msg(void)
 
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-    rep_msg = msg_create(&aed_dev.mdrec.msg, DETAIL_STRLEN);
-    if(rep_msg == NULL)
-        return;	
+    rep_msg = msg_create(&aed_dev.eerec.msg, DETAIL_STRLEN);
+	if (rep_msg == NULL)
+		return;	
 
 	data = (char*)rep_msg + sizeof(AE_Msg);
 
-	mem = (int*)aed_dev.mdrec.md_log;
-	n += sprintf(data + n, "== MODEM EXCEPTION LOG ==\n");
-	for (i = 0; i < aed_dev.mdrec.md_log_size / 4; i += 4) {
-		n+=sprintf(data+n, "0x%08X 0x%08X 0x%08X 0x%08X\n", 
+	mem = (int*)aed_dev.eerec.ee_log;
+	n += sprintf(data + n, "== EXTERNAL EXCEPTION LOG ==\n");
+	for (i = 0; i < aed_dev.eerec.ee_log_size / 4; i += 4) {
+		n += sprintf(data + n, "0x%08X 0x%08X 0x%08X 0x%08X\n", 
 				mem[i], mem[i+1], mem[i+2], mem[i+3]);
 	}
-
-	mem = (int*)aed_dev.mdrec.md_phy;
-	n += sprintf(data + n, "== MEM DUMP(%d) ==\n", aed_dev.mdrec.md_phy_size);
+	n += sprintf(data + n, "== MEM DUMP(%d) ==\n", aed_dev.eerec.ee_phy_size);
 
 	rep_msg->cmdType = AE_RSP;
 	rep_msg->cmdId = AE_REQ_DETAIL;
@@ -576,14 +610,14 @@ static void md_gen_detail_msg(void)
 	rep_msg->len = n+1;
 }
 
-static void md_gen_coredump_msg(void)
+static void ee_gen_coredump_msg(void)
 {
 	AE_Msg *rep_msg;
 	char *data;
 
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	rep_msg = msg_create(&aed_dev.mdrec.msg, 256);
+	rep_msg = msg_create(&aed_dev.eerec.msg, 256);
     if(rep_msg == NULL)
         return;	
 
@@ -595,13 +629,13 @@ static void md_gen_coredump_msg(void)
 	rep_msg->len = strlen(data) + 1;
 }
 
-static void md_gen_ind_msg(void)
+static void ee_gen_ind_msg(void)
 {
 	AE_Msg *rep_msg;
 
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	rep_msg = msg_create(&aed_dev.mdrec.msg, 0);
+	rep_msg = msg_create(&aed_dev.eerec.msg, 0);
     if(rep_msg == NULL)
         return;	
 
@@ -611,30 +645,30 @@ static void md_gen_ind_msg(void)
 	rep_msg->len = 0;
 }
 
-static void md_destroy_log(void)
+static void ee_destroy_log(void)
 {
-	struct aed_mdrec *pmdrec = &aed_dev.mdrec;
+	struct aed_eerec *pmdrec = &aed_dev.eerec;
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	msg_destroy(&aed_dev.mdrec.msg);
+	msg_destroy(&aed_dev.eerec.msg);
 
-	if (pmdrec->md_phy != NULL) {
-		vfree(pmdrec->md_phy);
-		pmdrec->md_phy = NULL;
+	if (pmdrec->ee_phy != NULL) {
+		vfree(pmdrec->ee_phy);
+		pmdrec->ee_phy = NULL;
 	}
-	pmdrec->md_log_size = 0;
-	pmdrec->md_phy_size = 0;
+	pmdrec->ee_log_size = 0;
+	pmdrec->ee_phy_size = 0;
 
-    if (pmdrec->md_log != NULL) {
-        kfree(pmdrec->md_log);
+    if (pmdrec->ee_log != NULL) {
+        kfree(pmdrec->ee_log);
         /*after this, another ee can enter*/
-        pmdrec->md_log = NULL;
+        pmdrec->ee_log = NULL;
     }
 }
 
-static int md_log_avail(void)
+static int ee_log_avail(void)
 {
-	return (aed_dev.mdrec.md_log != NULL);
+	return (aed_dev.eerec.ee_log != NULL);
 }
 
 /******************************************************************************
@@ -642,7 +676,7 @@ static int md_log_avail(void)
  *****************************************************************************/
 static int aed_ee_open(struct inode *inode, struct file *filp)
 {
-    md_destroy_log(); //Destroy last log record
+    ee_destroy_log(); //Destroy last log record
 	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s:%d:%d\n", __func__, MAJOR(inode->i_rdev), MINOR(inode->i_rdev));
 	return 0;
 }
@@ -656,18 +690,18 @@ static int aed_ee_release(struct inode *inode, struct file *filp)
 static unsigned int aed_ee_poll(struct file *file, struct poll_table_struct *ptable)
 {
 	// xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
-	if (md_log_avail()) {
+	if (ee_log_avail()) {
 		return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
 	}
 	else {
-		poll_wait(file, &aed_dev.mdwait, ptable);
+		poll_wait(file, &aed_dev.eewait, ptable);
 	}
 	return 0;
 }
 
 static ssize_t aed_ee_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-	return msg_copy_to_user(__func__, aed_dev.mdrec.msg, buf, count, f_pos);
+	return msg_copy_to_user(__func__, aed_dev.eerec.msg, buf, count, f_pos);
 }
 
 static ssize_t aed_ee_write(struct file *filp, const char __user *buf, size_t count,
@@ -681,7 +715,7 @@ static ssize_t aed_ee_write(struct file *filp, const char __user *buf, size_t co
 	// 2. destroy the previous response message
 	*f_pos = 0;
 
-	msg_destroy(&aed_dev.mdrec.msg);
+	msg_destroy(&aed_dev.eerec.msg);
 
 	// the request must be an *AE_Msg buffer
 	if (count != sizeof(AE_Msg)) {
@@ -698,39 +732,39 @@ static ssize_t aed_ee_write(struct file *filp, const char __user *buf, size_t co
 	msg_show(__func__, &msg);
 
 	if (msg.cmdType == AE_REQ) {
-		if (!md_log_avail()) {
-			md_gen_notavail_msg();
+		if (!ee_log_avail()) {
+			ee_gen_notavail_msg();
 			return count;
 		}
 		switch(msg.cmdId) {
 			case AE_REQ_CLASS:
-				md_gen_class_msg();
+				ee_gen_class_msg();
 				break;
 			case AE_REQ_TYPE:
-				md_gen_type_msg();
+				ee_gen_type_msg();
 				break;
 			case AE_REQ_DETAIL:
-				md_gen_detail_msg();
+				ee_gen_detail_msg();
 				break;
 			case AE_REQ_PROCESS:
-				md_gen_process_msg();
+				ee_gen_process_msg();
 				break;
 			case AE_REQ_BACKTRACE:
-				md_gen_notavail_msg();
+				ee_gen_notavail_msg();
 				break;
 			case AE_REQ_COREDUMP:
-				md_gen_coredump_msg();
+				ee_gen_coredump_msg();
 				break;
 			default:
 				xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "Unknown command id %d\n", msg.cmdId);
-				md_gen_notavail_msg();
+				ee_gen_notavail_msg();
 				break;
 		}
 	}
 	else if (msg.cmdType == AE_IND) {
 		switch(msg.cmdId) {
 			case AE_IND_LOG_CLOSE:
-				md_destroy_log();
+				ee_destroy_log();
 				break;
 			default:
 				// IGNORE
@@ -743,51 +777,26 @@ static ssize_t aed_ee_write(struct file *filp, const char __user *buf, size_t co
 	return count;
 }
 
-static int aed_proc_current_ee_coredump(char *page, char **start,
-					off_t off, int count,
-					int *eof, void *data)
-{
-	int len = 0;
-	// xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s phy %p size %d off %d count %d\n", __func__, aed_dev.mdrec.md_phy, aed_dev.mdrec.md_phy_size, (int)off, count);
-
-	if (aed_dev.mdrec.md_phy != NULL) {
-		if (off >= aed_dev.mdrec.md_phy_size) {
-		  return 0;
-		}
-
-		len = count;
-		if (len > aed_dev.mdrec.md_phy_size - off) {
-		  len = aed_dev.mdrec.md_phy_size - off;
-		}
-		memcpy(page, (char *)aed_dev.mdrec.md_phy + off, len);
-		*start = (char *)len;
-		if (off + len == aed_dev.mdrec.md_phy_size)
-		  *eof = 1;
-	}
-	else {
-		len = sprintf(page, "No current modem exception memory dump\n");
-		*eof = 1;
-	}
-	return len;
-}
-
 /******************************************************************************
  * AED KE File operations
  *****************************************************************************/
 static int aed_ke_open(struct inode *inode, struct file *filp)
 {
 	struct aee_oops *oops_open = NULL;
+	int major = MAJOR(inode->i_rdev);
+	int minor = MINOR(inode->i_rdev);
+	unsigned char *devname = filp->f_path.dentry->d_iname;
+	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s:(%s)%d:%d\n", 
+		    __func__, devname, major, minor);
 
-    ke_destroy_log();//Destroy last log record
-    xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s:%d:%d\n", 
-                __func__, MAJOR(inode->i_rdev), MINOR(inode->i_rdev));
-
-    oops_open = ipanic_oops_copy();
-    if (oops_open == NULL){
-        return 0;
-    }
-   	/* The panic log only occur on system startup, so check it now */
-	ke_gen_ind_msg(oops_open);
+	if (strstr(devname, "aed1")) { /* aed_ke_open is also used by other device */
+		oops_open = ipanic_oops_copy();
+		if (oops_open == NULL){
+			return 0;
+		}
+		/* The panic log only occur on system startup, so check it now */
+		ke_queue_request(oops_open);
+	}
 	return 0;
 }
 
@@ -802,7 +811,7 @@ static unsigned int aed_ke_poll(struct file *file, struct poll_table_struct *pta
 {
 	//xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "%s\n", __func__);
 
-	if (ke_log_avail()) {
+	if (ke_log_avail()) {	  
 		return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
 	}
 	else {
@@ -811,139 +820,98 @@ static unsigned int aed_ke_poll(struct file *file, struct poll_table_struct *pta
 	return 0;
 }
 
-static int aed_proc_current_ke_console(char *page, char **start,
-				       off_t off, int count,
-				       int *eof, void *data)
-{
-	int len = 0;
-	if (aed_dev.kerec.lastlog) {
-		struct aee_oops *oops = aed_dev.kerec.lastlog;
-		if (off > oops->console_len) {
-		  return 0;
-		}
 
-		len = count;
-		if (len > oops->console_len - off) {
-		  len = oops->console_len - off;
-		}
-		memcpy(page, oops->console + off, len);
-		*start = (char *)len;
-		if (off + len == oops->console_len)
-		  *eof = 1;
-	}
-	else {
-		len = sprintf(page, "No current kernel exception console\n");
-		*eof = 1;
-	}
-	return len;
+struct current_ke_buffer {
+  void *data;
+  ssize_t size;
+};
+
+static void *current_ke_start(struct seq_file *m, loff_t *pos)
+{
+  struct current_ke_buffer *ke_buffer;
+  int index;
+
+  ke_buffer = m->private;
+  if (ke_buffer == NULL)
+    return NULL;
+  index = *pos * (PAGE_SIZE - 1);
+  if (index < ke_buffer->size)
+    return ke_buffer->data + index;
+  return NULL;
 }
 
-static int aed_proc_current_ke_userspaceInfo(char *page, char **start,
-				       off_t off, int count,
-				       int *eof, void *data)
+static void *current_ke_next(struct seq_file *m, void *p, loff_t *pos)
 {
-	int len = 0;
-	if (aed_dev.kerec.lastlog) {
-		struct aee_oops *oops = aed_dev.kerec.lastlog;
-		if (off > oops->userspace_info_len) {
-		  return 0;
-		}
-
-		len = count;
-		if (len > oops->userspace_info_len - off) {
-		  len = oops->userspace_info_len - off;
-		}
-		memcpy(page, oops->userspace_info + off, len);
-		*start = (char *)len;
-		if (off + len == oops->userspace_info_len)
-		  *eof = 1;
-	}
-	else {
-		len = sprintf(page, "No current kernel aed_proc_current_ke_userspaceInfo\n");
-		*eof = 1;
-	}
-	return len;
+  struct current_ke_buffer *ke_buffer;
+  int index;
+  ke_buffer = m->private;
+  if (ke_buffer == NULL)
+    return NULL;
+  ++*pos;
+  index = *pos * (PAGE_SIZE - 1);
+  if (index < ke_buffer->size)
+    return ke_buffer->data + index;
+  return NULL;
 }
 
-static int aed_proc_current_ke_android_main(char *page, char **start,
-				       off_t off, int count,
-				       int *eof, void *data)
+static void current_ke_stop(struct seq_file *m, void *p)
 {
-	int len = 0;
-	if (aed_dev.kerec.lastlog) {
-		struct aee_oops *oops = aed_dev.kerec.lastlog;
-		if (off > oops->android_main_len) {
-		  return 0;
-		}
-
-		len = count;
-		if (len > oops->android_main_len - off) {
-		  len = oops->android_main_len - off;
-		}
-		memcpy(page, oops->android_main + off, len);
-		*start = (char *)len;
-		if (off + len == oops->android_main_len)
-		  *eof = 1;
-	}
-	else {
-		len = sprintf(page, "No current kernel exception android main\n");
-		*eof = 1;
-	}
-	return len;
+  return;
 }
 
-static int aed_proc_current_ke_android_radio(char *page, char **start,
-				       off_t off, int count,
-				       int *eof, void *data)
+static int current_ke_show(struct seq_file *m, void *p)
 {
-	int len = 0;
-	if (aed_dev.kerec.lastlog) {
-		struct aee_oops *oops = aed_dev.kerec.lastlog;
-		if (off > oops->android_radio_len) {
-		  return 0;
-		}
-
-		len = count;
-		if (len > oops->android_radio_len - off) {
-		  len = oops->android_radio_len - off;
-		}
-		memcpy(page, oops->android_radio + off, len);
-		*start = (char *)len;
-		if (off + len == oops->android_radio_len)
-		  *eof = 1;
-	}
-	else {
-		len = sprintf(page, "No current kernel exception android radio\n");
-		*eof = 1;
-	}
-	return len;
+  int len;
+  struct current_ke_buffer *ke_buffer;
+  ke_buffer = m->private;
+  if (ke_buffer == NULL)
+    return 0;
+  if ((int)p >= (int)ke_buffer->data + ke_buffer->size)
+    return 0;
+  len = (int)ke_buffer->data + ke_buffer->size - (int)p;
+  len = len < PAGE_SIZE ? len : (PAGE_SIZE - 1);
+  if (seq_write(m, p, len)) {
+    len = 0;
+    return -1;
+  }
+  return 0;
 }
-static int aed_proc_current_ke_android_system(char *page, char **start,
-				       off_t off, int count,
-				       int *eof, void *data)
-{
-	int len = 0;
-	if (aed_dev.kerec.lastlog) {
-		struct aee_oops *oops = aed_dev.kerec.lastlog;
-		if (off > oops->android_system_len) {
-		  return 0;
-		}
 
-		len = count;
-		if (len > oops->android_system_len - off) {
-		  len = oops->android_system_len - off;
-		}
-		memcpy(page, oops->android_system + off, len);
-		*start = (char *)len;
-		if (off + len == oops->android_system_len)
-		  *eof = 1;
-	}
-	else {
-		len = sprintf(page, "No current kernel exception android system\n");
-		*eof = 1;
-	}
-	return len;
+static const struct seq_operations current_ke_op = {
+	.start	= current_ke_start,
+	.next	= current_ke_next,
+	.stop	= current_ke_stop,
+	.show	= current_ke_show
+};
+
+#define AED_CURRENT_KE_OPEN(ENTRY) \
+static int current_ke_##ENTRY##_open(struct inode *inode, struct file *file) \
+{ \
+  int ret; \
+  struct aee_oops *oops; \
+  struct seq_file *m; \
+  struct current_ke_buffer *ke_buffer; \
+  ret = seq_open_private(file, &current_ke_op, sizeof(struct current_ke_buffer)); \
+  if (ret == 0) { \
+    oops = aed_dev.kerec.lastlog; \
+    m = file->private_data; \
+    if (!oops) \
+      return ret; \
+    ke_buffer = (struct current_ke_buffer*)m->private; \
+    ke_buffer->data = oops->ENTRY; \
+    ke_buffer->size = oops->ENTRY##_len;\
+  } \
+  return ret; \
 }
+
+#define AED_PROC_CURRENT_KE_FOPS(ENTRY) \
+static const struct file_operations proc_current_ke_##ENTRY##_fops = { \
+	.open		= current_ke_##ENTRY##_open, \
+	.read		= seq_read, \
+	.llseek		= seq_lseek, \
+	.release	= seq_release, \
+}
+
 
 static ssize_t aed_ke_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
@@ -953,13 +921,13 @@ static ssize_t aed_ke_read(struct file *filp, char __user *buf, size_t count, lo
 static ssize_t aed_ke_write(struct file *filp, const char __user *buf, size_t count,
 			    loff_t *f_pos)
 {
-	AE_Msg msg;
-    int rsize;
+  AE_Msg msg;
+  int rsize;
 
 	// recevied a new request means the previous response is unavilable
 	// 1. set position to be zero
 	// 2. destroy the previous response message
-	*f_pos = 0;
+  *f_pos = 0;
     msg_destroy(&aed_dev.kerec.msg);
 
     // the request must be an *AE_Msg buffer
@@ -1010,7 +978,8 @@ static ssize_t aed_ke_write(struct file *filp, const char __user *buf, size_t co
 	else if (msg.cmdType == AE_IND) {
 		switch(msg.cmdId) {
 			case AE_IND_LOG_CLOSE:
-				ke_destroy_log();
+			  /* real release operation move to ke_worker(): ke_destroy_log();*/
+			  up(&aed_ke_sem);
 				break;
 			default:
 				// IGNORE
@@ -1023,6 +992,36 @@ static ssize_t aed_ke_write(struct file *filp, const char __user *buf, size_t co
     return count;
 }
 
+static long aed_ioctl_bt(unsigned long arg) {
+	int ret = 0;
+	struct aee_ioctl ioctl;
+	struct aee_process_bt bt;
+	
+	if (copy_from_user(&ioctl, (struct aee_ioctl __user *)arg, sizeof(struct aee_ioctl))) {
+		ret = -EFAULT;
+		return ret;
+	}
+	bt.pid = ioctl.pid;
+	ret = aed_get_process_bt(&bt);
+	if (ret == 0) {
+		ioctl.detail = 0xAEE00001;
+		ioctl.size = bt.nr_entries;
+		if (copy_to_user((struct aee_ioctl __user *)arg, &ioctl, sizeof(struct aee_ioctl))) {
+			ret = -EFAULT;
+			return ret;
+		}
+		if (!ioctl.out) {
+			ret = -EFAULT;
+		}
+		else if (copy_to_user((struct aee_bt_frame __user *)ioctl.out, bt.entries, sizeof(struct aee_bt_frame) * AEE_NR_FRAME)) {
+			ret = -EFAULT;
+		}
+	}
+	return ret;
+}
+
+
+
 /*
  * aed process daemon and other command line may access me 
  * concurrently
@@ -1031,36 +1030,54 @@ DEFINE_SEMAPHORE(aed_dal_sem);
 static long aed_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
+	if (cmd == AEEIOCTL_GET_PROCESS_BT)
+		return aed_ioctl_bt(arg);
+    
 	
 	if(down_interruptible(&aed_dal_sem) < 0 ) {
 		return -ERESTARTSYS;
 	}
 
 	switch (cmd) {
+	case AEEIOCTL_SET_AEE_MODE:
+	{
+		if (copy_from_user(&aee_mode, (void __user *)arg, sizeof(aee_mode))) {
+			ret = -EFAULT;
+			goto EXIT;
+		}
+		xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "set aee mode = %d\n", aee_mode);
+		break;
+	}
 	case AEEIOCTL_DAL_SHOW:
 	{
-
-        /*It's troublesome to allocate more than 1KB size on stack*/
+		/*It's troublesome to allocate more than 1KB size on stack*/
 		struct aee_dal_show *dal_show = kzalloc(sizeof(struct aee_dal_show),  
                                                 GFP_KERNEL);
-        if(dal_show == NULL) {
-            ret = -EFAULT;
+		if (dal_show == NULL) {
+			ret = -EFAULT;
 			goto EXIT;
-        }
+		}
 
 		if (copy_from_user(dal_show, (struct aee_dal_show __user *)arg,
 				   sizeof(struct aee_dal_show))) {
 			ret = -EFAULT;
 			goto OUT;
 		}
+
+		if (aee_mode >= AEE_MODE_CUSTOMER_ENG) {
+			xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "DAL_SHOW not allowed (mode %d)\n", aee_mode);
+			goto OUT;
+		}
 		
 		/* Try to prevent overrun */
 		dal_show->msg[sizeof(dal_show->msg) - 1] = 0;
+        #ifdef CONFIG_MTK_FB
 		DAL_Printf("%s", dal_show->msg);
+        #endif
 
-   OUT: 
-        kfree(dal_show);
-        dal_show = NULL;
+	OUT: 
+		kfree(dal_show);
+		dal_show = NULL;
 		goto EXIT;
 	}
 	
@@ -1070,173 +1087,261 @@ static long aed_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		struct aee_dal_setcolor dal_setcolor;
 		dal_setcolor.foreground = 0x00ff00;			/*green*/
 		dal_setcolor.background = 0xff0000;			/*red*/
+
+        #ifdef CONFIG_MTK_FB
 		DAL_SetColor(dal_setcolor.foreground, dal_setcolor.background);
-		
 		DAL_Clean();
+        #endif
 		break;
 	}
 	
 	case AEEIOCTL_SETCOLOR:
 	{
-
 		struct aee_dal_setcolor dal_setcolor;
 		
+		if (aee_mode >= AEE_MODE_CUSTOMER_ENG) {
+			xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "SETCOLOR not allowed (mode %d)\n", aee_mode);
+			goto EXIT;
+		}
+
 		if (copy_from_user(&dal_setcolor, (struct aee_dal_setcolor __user *)arg,
 				   sizeof(struct aee_dal_setcolor))) {
 			ret = -EFAULT;
 			goto EXIT;
 		}
-		
+        
+		#ifdef CONFIG_MTK_FB
 		DAL_SetColor(dal_setcolor.foreground, dal_setcolor.background);
+		DAL_SetScreenColor(dal_setcolor.screencolor);
+        #endif
 		break;
 	}
-	
-	case AEEIOCTL_GET_PROCESS_BT:
+
+	case AEEIOCTL_GET_THREAD_REG:
 	{
-		struct aee_process_bt *bt;
+		struct aee_thread_reg *tmp;
 
-		printk("%s: get process backtrace ioctl\n", __func__);
+		printk("%s: get thread registers ioctl\n", __func__);
 
-		bt = kzalloc(sizeof(struct aee_process_bt), GFP_KERNEL);
-		if (bt == NULL) {
+		tmp = kzalloc(sizeof(struct aee_thread_reg), GFP_KERNEL);
+		if (tmp == NULL) {
 			ret = -ENOMEM;
-            goto EXIT;
+			goto EXIT;
 		}
 
-		if (copy_from_user(bt, (struct aee_process_bt __user *)arg, sizeof(struct aee_process_bt))) {
-			kfree(bt);
+		if (copy_from_user(tmp, (struct aee_thread_reg __user *)arg, sizeof(struct aee_thread_reg))) {
+			kfree(tmp);
 			ret = -EFAULT;
 			goto EXIT;
 		}
 
-		ret = aed_get_process_bt(bt);
-		if (ret == 0) {
-			if (copy_to_user((struct aee_process_bt __user *)arg, bt, sizeof(struct aee_process_bt))) {
-				kfree(bt);
+		if (tmp->tid > 0) {
+			struct task_struct *task;
+			struct pt_regs *user_ret = NULL;
+			task = find_task_by_vpid(tmp->tid);
+			if (task == NULL) {
+				kfree(tmp);
+				ret = -EINVAL;
+				goto EXIT;
+			}
+			user_ret = task_pt_regs(task);
+			if (NULL == user_ret) {
+				kfree(tmp);
+				ret = -EINVAL;
+				goto EXIT;
+			}
+			memcpy(&(tmp->regs), user_ret, sizeof(struct pt_regs));
+			if (copy_to_user((struct aee_thread_reg __user *)arg, tmp, sizeof(struct aee_thread_reg))) {
+				kfree(tmp);
 				ret = -EFAULT;
 				goto EXIT;
 			}
+		
 		}
-		kfree(bt);
+		else {
+			printk("%s: get thread registers ioctl tid invalid\n", __func__);
+			kfree(tmp);
+			ret = -EINVAL;
+			goto EXIT;
+		}
+
+		kfree(tmp);
 
 		break;
 	}
-    case AEEIOCTL_GET_SMP_INFO:
+    
+	case AEEIOCTL_CHECK_SUID_DUMPABLE:
 	{
-        int smp_info;
-        
-#ifdef CONFIG_SMP
-        smp_info =1;
-#else
-        smp_info =0;
-#endif
-        if (copy_to_user((void __user *)arg, &smp_info, sizeof(smp_info))) {
+		int pid;
+
+		printk("%s: check suid dumpable ioctl\n", __func__);
+
+		if (copy_from_user(&pid, (void __user *)arg, sizeof(int))) {
 			ret = -EFAULT;
 			goto EXIT;
-		}     
+		}
+
+		if (pid > 0) {
+			struct task_struct *task;
+			int dumpable = -1;
+			task = find_task_by_vpid(pid);
+			if (task == NULL) {
+				printk("%s: process:%d task null\n", __func__, pid);
+				ret = -EINVAL;
+				goto EXIT;
+			}
+			if (task->mm == NULL) {
+				printk("%s: process:%d task mm null\n", __func__, pid);
+				ret = -EINVAL;
+				goto EXIT;
+			}
+			dumpable = get_dumpable(task->mm);
+			if (dumpable == 0) {
+				printk("%s: set process:%d dumpable\n", __func__, pid);
+				set_dumpable(task->mm, 1);
+			}
+			else
+				printk("%s: get process:%d dumpable:%d\n", __func__, pid, dumpable);
+		
+		}
+		else {
+			printk("%s: check suid dumpable ioctl pid invalid\n", __func__);
+			ret = -EINVAL;
+		}
+
 		break;
-    }
-        default:
+	}
+
+    case AEEIOCTL_SET_FORECE_RED_SCREEN:
+	{
+		if (copy_from_user(&force_red_screen, (void __user *)arg, sizeof(force_red_screen))) {
+			ret = -EFAULT;
+			goto EXIT;
+		}
+		printk("force aee red screen = %d\n", force_red_screen);
+		break;
+	}
+
+	default:
 		ret = -EINVAL;
 	}
-	
+
 EXIT:
 	up(&aed_dal_sem);
 	return ret;
 }
 
-
-static void kernel_exception(const int db_opt, const char *module, const char *msg)
+static void kernel_reportAPI(const AE_DEFECT_ATTR attr,const int db_opt, const char *module, const char *msg)
 {
 	struct aee_oops *oops;
 
-	oops = aee_oops_create(AE_DEFECT_EXCEPTION, AE_KERNEL_PROBLEM_REPORT, module);
-	oops->detail = (char *)msg;
-	oops->detail_len = strlen(msg) + 1;
-	oops->dump_option = db_opt;
-    
-	xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "%s,%s,%s,0x%x", __func__, module, msg, db_opt);
-	ke_gen_ind_msg(oops);
+	oops = aee_oops_create(attr, AE_KERNEL_PROBLEM_REPORT, module);
+    if(NULL !=oops){
+        oops->detail = (char *)msg;
+    	oops->detail_len = strlen(msg) + 1;
+    	oops->dump_option = db_opt;
+        
+    	xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "%s,%s,%s,0x%x\n", __func__, module, msg, db_opt);
+	ke_queue_request(oops);
+    }
 }
 
-static void kernel_warning(const int db_opt, const char *module, const char *msg) 
+#ifndef PARTIAL_BUILD
+void aee_kernel_dal_api(const char *file, const int line, const char *msg)
 {
-	struct aee_oops *oops;
-
-	oops = aee_oops_create(AE_DEFECT_WARNING, AE_KERNEL_PROBLEM_REPORT, module);
-	oops->detail = (char *)msg;
-	oops->detail_len = strlen(msg) + 1;
-	oops->dump_option = db_opt;
-
-	xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "%s,%s,%s,0x%x", __func__, module, msg, db_opt);
-	ke_gen_ind_msg(oops);
+#if defined (CONFIG_MTK_AEE_AED) && defined (CONFIG_MTK_FB)
+	if (down_interruptible(&aed_dal_sem) < 0 ) {
+		xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "ERROR : aee_kernel_dal_api() get aed_dal_sem fail ");
+		return;
+	}
+	xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "aee_kernel_dal_api : <%s:%d> %s ", file, line, msg);
+	if (msg != NULL) {
+		struct aee_dal_setcolor dal_setcolor;
+		struct aee_dal_show *dal_show = kzalloc(sizeof(struct aee_dal_show), GFP_KERNEL);
+		if (dal_show == NULL) {
+			xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "ERROR : aee_kernel_dal_api() kzalloc fail\n ");
+			up(&aed_dal_sem);
+			return;
+		}
+		if (((aee_mode == AEE_MODE_MTK_ENG) && (force_red_screen == AEE_FORCE_NOT_SET)) 
+			|| ((aee_mode < AEE_MODE_CUSTOMER_ENG) && (force_red_screen == AEE_FORCE_RED_SCREEN))) {
+			dal_setcolor.foreground = 0xff00ff; // fg: purple
+			dal_setcolor.background = 0x00ff00; // bg: green
+			DAL_SetColor(dal_setcolor.foreground, dal_setcolor.background);
+			dal_setcolor.screencolor = 0xff0000; // screen:red
+			DAL_SetScreenColor(dal_setcolor.screencolor);
+			strncpy(dal_show->msg, msg, sizeof(dal_show->msg) - 1);
+			dal_show->msg[sizeof(dal_show->msg) - 1] = 0;
+			DAL_Printf("%s", dal_show->msg);
+			kfree(dal_show);
+		} else {
+			xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "DAL not allowed (mode %d)\n", aee_mode);
+		}
+	}	
+	up(&aed_dal_sem);
+#endif
 }
-
-static void kernel_reminding(const int db_opt, const char *module, const char *msg) 
+#else
+void aee_kernel_dal_api(const char *file, const int line, const char *msg)
 {
-	struct aee_oops *oops;
-
-	oops = aee_oops_create(AE_DEFECT_REMINDING, AE_KERNEL_PROBLEM_REPORT, module);
-	oops->detail = (char *)msg;
-    oops->detail_len = strlen(msg) + 1;
-	oops->dump_option = db_opt;
-    
-	xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "%s,%s,%s,0x%x", __func__, module, msg, db_opt);
-	ke_gen_ind_msg(oops);
+	xlog_printk(ANDROID_LOG_INFO, AEK_LOG_TAG, "aee_kernel_dal_api : <%s:%d> %s ", file, line, msg);
+	return;
 }
+#endif
+EXPORT_SYMBOL(aee_kernel_dal_api);
 
-static void md_exception2(const int *log, int log_size, const int *phy, int phy_size, const char *detail)
+static void external_exception(const char *assert_type, const int *log, int log_size, const int *phy, int phy_size, const char *detail)
 {
-    
-    int *md_log = NULL;
+    int *ee_log = NULL;
     unsigned long flags = 0;
 
     xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, 
-                "%s log size %d phy ptr %p size %d\n", __func__,
-                log_size, phy, phy_size);
+                "%s : [%s] log size %d phy ptr %p size %d\n", __func__,
+                assert_type, log_size, phy, phy_size);
 
-    if (log_size) {
-		aed_dev.mdrec.md_log_size = log_size;
-		md_log = (int*)kmalloc(log_size, GFP_KERNEL);
-		memcpy(md_log, log, log_size);
-	}
-	else {
-		aed_dev.mdrec.md_log_size = 16;
-		md_log = (int*)kzalloc(aed_dev.mdrec.md_log_size, GFP_KERNEL);
+    if ((log_size > 0) && (log != NULL)) {
+		aed_dev.eerec.ee_log_size = log_size;
+		ee_log = (int*)kmalloc(log_size, GFP_ATOMIC);
+		if(NULL != ee_log)
+            memcpy(ee_log, log, log_size);
+	} else {
+		aed_dev.eerec.ee_log_size = 16;
+		ee_log = (int*)kzalloc(aed_dev.eerec.ee_log_size, GFP_ATOMIC);
 	}
 
+    if(NULL == ee_log){
+        xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "%s : memory alloc() fail\n", __func__);
+		return;
+    }
+    
     /*
        Don't lock the whole function for the time is uncertain.
-       we rely on the fact that md_log is not null if race here!
+       we rely on the fact that ee_log is not null if race here!
       */
     spin_lock_irqsave(&aed_device_lock, flags);
     
-    if (aed_dev.mdrec.md_log == NULL) {
-
-        aed_dev.mdrec.md_log = md_log;
-    }
-    else
-    {
+    if (aed_dev.eerec.ee_log == NULL) {
+        aed_dev.eerec.ee_log = ee_log;
+    } else {
         /*no EE before aee_ee_write destroy the ee log*/
-        kfree(md_log);
+        kfree(ee_log);
         spin_unlock_irqrestore(&aed_device_lock, flags);
         xlog_printk(ANDROID_LOG_WARN, AEK_LOG_TAG, "%s: More than one EE message queued\n", __func__);
         return;
     }
     spin_unlock_irqrestore(&aed_device_lock, flags);
 
-    xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "md_exception2\n") ;
-	aed_dev.mdrec.assert_type[0] = 0 ;
-	memset(aed_dev.mdrec.exp_filename, 0, sizeof(aed_dev.mdrec.exp_filename));
-	strncpy (aed_dev.mdrec.exp_filename, detail, sizeof(aed_dev.mdrec.exp_filename)-1) ;
-		
-	aed_dev.mdrec.exp_linenum = 0;
-	aed_dev.mdrec.fatal1 = 0;
-	aed_dev.mdrec.fatal2 = 0;
+	memset(aed_dev.eerec.assert_type, 0, sizeof(aed_dev.eerec.assert_type));
+	strncpy(aed_dev.eerec.assert_type, assert_type, sizeof(aed_dev.eerec.assert_type)-1);
+	memset(aed_dev.eerec.exp_filename, 0, sizeof(aed_dev.eerec.exp_filename));
+	strncpy(aed_dev.eerec.exp_filename, detail, sizeof(aed_dev.eerec.exp_filename)-1);
+    xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "EE [%s] \n", aed_dev.eerec.assert_type);
 
-	
+	aed_dev.eerec.exp_linenum = 0;
+	aed_dev.eerec.fatal1 = 0;
+	aed_dev.eerec.fatal2 = 0;	
 
-	/* Check if we can dump modem memory */
+	/* Check if we can dump memory */
 	if (in_interrupt()) {
 		/* kernel vamlloc cannot be used in interrupt context */
 		xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "Modem exception occur in interrupt context, no modem coredump");
@@ -1248,36 +1353,70 @@ static void md_exception2(const int *log, int log_size, const int *phy, int phy_
 	}
 
 	if (phy_size > 0) {
-		aed_dev.mdrec.md_phy = (int*)vmalloc_user(phy_size);
-		if (aed_dev.mdrec.md_phy != NULL) {
-			memcpy(aed_dev.mdrec.md_phy, phy, phy_size);
-			aed_dev.mdrec.md_phy_size = phy_size;
+		aed_dev.eerec.ee_phy = (int*)vmalloc_user(phy_size);
+		if (aed_dev.eerec.ee_phy != NULL) {
+			memcpy(aed_dev.eerec.ee_phy, phy, phy_size);
+			aed_dev.eerec.ee_phy_size = phy_size;
 		}
 		else {
-			xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "Losing md phy mem due to vmalloc return NULL");
-			aed_dev.mdrec.md_phy_size = 0;
+			xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "Losing ee phy mem due to vmalloc return NULL\n");
+			aed_dev.eerec.ee_phy_size = 0;
 		}
 	}
 	else {
-		aed_dev.mdrec.md_phy = NULL;
-		aed_dev.mdrec.md_phy_size = 0;
+		aed_dev.eerec.ee_phy = NULL;
+		aed_dev.eerec.ee_phy_size = 0;
 	}
-	md_gen_ind_msg();
-	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "md_exception2 out\n") ;
-	wake_up(&aed_dev.mdwait);
+	ee_gen_ind_msg();
+	xlog_printk(ANDROID_LOG_DEBUG, AEK_LOG_TAG, "external_exception out\n") ;
+	wake_up(&aed_dev.eewait);
 }
 
+static bool rr_reported;
+module_param(rr_reported, bool, S_IRUGO | S_IWUSR);
 
 static struct aee_kernel_api kernel_api = {
-	.kernel_exception 	= kernel_exception,
-	.kernel_warning 	= kernel_warning,
-	.kernel_reminding   = kernel_reminding,
-	.md_exception1      = NULL,
-	.md_exception2      = md_exception2
+	.kernel_reportAPI 	= kernel_reportAPI,
+	.md_exception       = external_exception,
+	.combo_exception    = external_exception
 };
-extern int aee_register_api(struct aee_kernel_api *aee_api);
+extern int ksysfs_bootinfo_init(void);
+extern void ksysfs_bootinfo_exit(void);
 
-void aee_bug(const char *source, const char *msg);
+AED_CURRENT_KE_OPEN(console);
+AED_PROC_CURRENT_KE_FOPS(console);
+AED_CURRENT_KE_OPEN(userspace_info);
+AED_PROC_CURRENT_KE_FOPS(userspace_info);
+AED_CURRENT_KE_OPEN(android_main);
+AED_PROC_CURRENT_KE_FOPS(android_main);
+AED_CURRENT_KE_OPEN(android_radio);
+AED_PROC_CURRENT_KE_FOPS(android_radio);
+AED_CURRENT_KE_OPEN(android_system);
+AED_PROC_CURRENT_KE_FOPS(android_system);
+AED_CURRENT_KE_OPEN(mmprofile);
+AED_PROC_CURRENT_KE_FOPS(mmprofile);
+AED_CURRENT_KE_OPEN(mini_rdump);
+AED_PROC_CURRENT_KE_FOPS(mini_rdump);
+
+
+static int current_ke_ee_coredump_open(struct inode *inode, struct file *file)
+{
+  int ret = seq_open_private(file, &current_ke_op, sizeof(struct current_ke_buffer));
+  if (ret == 0) {
+    struct aed_eerec *eerec = &aed_dev.eerec;
+    struct seq_file *m = file->private_data;
+    struct current_ke_buffer *ee_buffer;
+    if (!eerec)
+      return ret;
+    ee_buffer = (struct current_ke_buffer*)m->private;
+    ee_buffer->data = eerec->ee_phy;
+    ee_buffer->size = eerec->ee_phy_size;
+  }
+  return ret;
+}
+//AED_CURRENT_KE_OPEN(ee_coredump);
+AED_PROC_CURRENT_KE_FOPS(ee_coredump);
+
 
 static int aed_proc_init(void) 
 {
@@ -1287,63 +1426,20 @@ static int aed_proc_init(void)
 	  return -ENOMEM;
 	}
 
-	aed_proc_current_ke_console_file = create_proc_read_entry(CURRENT_KE_CONSOLE, 
-								  0444, aed_proc_dir, 
-								  aed_proc_current_ke_console,
-								  NULL);
-	if (aed_proc_current_ke_console_file == NULL) {
-		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "aed create_proc_read_entry failed at %s\n", CURRENT_KE_CONSOLE);
-		return -ENOMEM;
-	}
-
-	aed_proc_current_ke_userspaceInfo_file = create_proc_read_entry(CURRENT_KE_USERSPACE_INFO, 
-								  0444, aed_proc_dir, 
-								  aed_proc_current_ke_userspaceInfo,
-								  NULL);
-	if (aed_proc_current_ke_userspaceInfo_file == NULL) {
-		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "aed aed_proc_current_ke_userspaceInfo_file failed at %s\n", CURRENT_KE_USERSPACE_INFO);
-		return -ENOMEM;
-	}
+	AED_PROC_ENTRY(current-ke-console, current_ke_console, S_IRUGO);
+	AED_PROC_ENTRY(current-ke-userspace_info, current_ke_userspace_info, S_IRUGO);
+	AED_PROC_ENTRY(current-ke-android_system, current_ke_android_system, S_IRUGO);
+	AED_PROC_ENTRY(current-ke-android_radio, current_ke_android_radio, S_IRUGO);
+	AED_PROC_ENTRY(current-ke-android_main, current_ke_android_main, S_IRUGO);
+	AED_PROC_ENTRY(current-ke-mmprofile, current_ke_mmprofile, S_IRUGO);
+	AED_PROC_ENTRY(current-ke-mini_rdump, current_ke_mini_rdump, S_IRUGO);
+	AED_PROC_ENTRY(current-ee-coredump, current_ke_ee_coredump, S_IRUGO);
 	
-	aed_proc_current_ke_android_main_file = create_proc_read_entry(CURRENT_KE_ANDROID_MAIN, 
-								  0444, aed_proc_dir, 
-								  aed_proc_current_ke_android_main,
-								  NULL);
-	if (aed_proc_current_ke_android_main_file == NULL) {
-		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "aed create_proc_read_entry failed at %s\n", CURRENT_KE_ANDROID_MAIN);
-		return -ENOMEM;
-	}
-	
-	aed_proc_current_ke_android_radio_file = create_proc_read_entry(CURRENT_KE_ANDROID_RADIO, 
-								  0444, aed_proc_dir, 
-								  aed_proc_current_ke_android_radio,
-								  NULL);
-	if (aed_proc_current_ke_android_radio_file == NULL) {
-		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "aed create_proc_read_entry failed at %s\n", CURRENT_KE_ANDROID_RADIO);
-		return -ENOMEM;
-	}	
-	
-	aed_proc_current_ke_android_system_file = create_proc_read_entry(CURRENT_KE_ANDROID_SYSTEM, 
-								  0444, aed_proc_dir, 
-								  aed_proc_current_ke_android_system,
-								  NULL);
-	if (aed_proc_current_ke_android_system_file == NULL) {
-		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "aed create_proc_read_entry failed at %s\n", CURRENT_KE_ANDROID_SYSTEM);
-		return -ENOMEM;
-	}	
-
-	aed_proc_current_ee_coredump_file = create_proc_read_entry(CURRENT_EE_COREDUMP, 
-								   0444, aed_proc_dir, 
-								   aed_proc_current_ee_coredump,
-								   NULL);
-	if (aed_proc_current_ee_coredump_file == NULL) {
-		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "aed create_proc_read_entry failed at %s\n", CURRENT_EE_COREDUMP);
-		return -ENOMEM;
-	}
-
 	aee_rr_proc_init(aed_proc_dir);
 
 	aed_proc_debug_init(aed_proc_dir);
+
+	dram_console_init(aed_proc_dir);
 
 	return 0;
 }
@@ -1354,6 +1450,8 @@ static int aed_proc_done(void)
 	remove_proc_entry(CURRENT_EE_COREDUMP, aed_proc_dir);
 
 	aed_proc_debug_done(aed_proc_dir);
+
+	dram_console_done(aed_proc_dir);
 
 	remove_proc_entry("aed", NULL);
 	return 0;
@@ -1382,17 +1480,23 @@ static struct file_operations aed_ke_fops = {
 	.unlocked_ioctl   = aed_ioctl,
 };
 
+// QHQ RT Monitor end
 static struct miscdevice aed_ee_dev = {
     .minor   = MISC_DYNAMIC_MINOR,
     .name    = "aed0",
     .fops    = &aed_ee_fops,
 };
 
+
+
 static struct miscdevice aed_ke_dev = {
     .minor   = MISC_DYNAMIC_MINOR,
     .name    = "aed1",
     .fops    = &aed_ke_fops,
 };
+
+
+
 
 static int __init aed_init(void)
 {
@@ -1401,10 +1505,16 @@ static int __init aed_init(void)
 	if (err != 0)
 		return err;
 
-	memset(&aed_dev.mdrec, 0, sizeof(struct aed_mdrec));
-	init_waitqueue_head(&aed_dev.mdwait);
+	err = ksysfs_bootinfo_init();
+	if (err != 0)
+	  return err;
+
+	memset(&aed_dev.eerec, 0, sizeof(struct aed_eerec));
+	init_waitqueue_head(&aed_dev.eewait);
 	memset(&aed_dev.kerec, 0, sizeof(struct aed_kerec));
 	init_waitqueue_head(&aed_dev.kewait);
+
+	INIT_WORK(&work, ke_worker);
 
 	aee_register_api(&kernel_api);
 
@@ -1421,6 +1531,9 @@ static int __init aed_init(void)
 		return err;
 	}
 
+	
+
+
 	return err;
 }
 
@@ -1435,14 +1548,19 @@ static void __exit aed_exit(void)
 	if (unlikely(err))
 		xlog_printk(ANDROID_LOG_ERROR, AEK_LOG_TAG, "xLog: failed to unregister aed(ke) device!\n");
 
-	md_destroy_log();
+	ee_destroy_log();
 	ke_destroy_log();
 
 	aed_proc_done();
+	ksysfs_bootinfo_exit();
 }
 
 module_init(aed_init);
 module_exit(aed_exit);
+
+
+
+
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("MediaTek AED Driver");

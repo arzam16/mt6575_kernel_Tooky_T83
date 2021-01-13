@@ -1,5 +1,2 @@
-obj-$(CONFIG_MTK_SERIAL) := uart.o
-obj-$(CONFIG_FIQ_DEBUGGER) += mt_fiq_debugger.o
-ifeq ($(MTK_DT_SUPPORT), yes)
-ccflags-y  += -DUART_EN_MTK_DT_SUPPORT
-endif
+obj-$(CONFIG_MTK_SERIAL) := platform_uart.o
+obj-$(CONFIG_FIQ_DEBUGGER) += platform_fiq_debugger.o

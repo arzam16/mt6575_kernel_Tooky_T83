@@ -34,6 +34,17 @@
 #ifdef CONFIG_ARCH_MT6577
 #define ENABLE_REN_ECO
 #endif
+/*                                         
+                           
+                                                                       
+                                                        
+ */
+/* #define GPT_HW_DEBUG */
+/*             
+ */
+
+#define GPT4_1MS_TICK       ((UINT32)13000)        // 1000000 / 76.92ns = 13000.520
+
 //#define GPT_HW_DEBUG
 /* GPT registers */
 #define GPT_IRQEN       (APMCU_GPTIMER_BASE + 0x0000)
@@ -786,6 +797,22 @@ void GPT_Free(GPT_NUM timerNum)
     spin_unlock_irqrestore(&free_gpt_lock, free_gpt_flags);
 }
 
+/************************return GPT4 count(before init clear) to record kernel start time between LK and kernel****************************/
+static UINT32 boot_time_value = 0;
+
+static UINT32 xgpt_boot_up_time(void)
+{
+	UINT32 tick;
+	tick = DRV_Reg32(GPT4_COUNT);
+	return ((tick + (GPT4_1MS_TICK - 1)) / GPT4_1MS_TICK);
+}
+UINT32 gpt_boot_time(void)
+{
+	return boot_time_value;
+}
+/**************************************************************************************************************************/
+
+
 /******************************************************************************
  *   GPT LISR to handle GPT1~6 interrupt
  *   In this function, it will schedule corresonding GPT tasklet
@@ -1059,15 +1086,16 @@ static void mtk_gpt_init(void)
     struct clock_event_device *evt = &mtk_gpt.clockevent;
     struct clocksource *cs = &mtk_gpt.clocksource;
     GPT_NUM numGPT;
+	
+/************************return GPT4 count(before init clear) to record kernel start time between LK and kernel****************************/
+	boot_time_value = xgpt_boot_up_time(); /*record the time when init GPT*/
+/***************************************************************************************************************************/
 
     evt->mult = div_sc(13000000, NSEC_PER_SEC, evt->shift);
     evt->max_delta_ns = clockevent_delta2ns(0xffffffff, evt);
     evt->min_delta_ns = clockevent_delta2ns(3, evt);
     evt->cpumask = cpumask_of(0);
     cs->mult = clocksource_hz2mult(13000000, cs->shift);
-
-
-
 
     spin_lock_irqsave(&g_gpt_lock, g_gpt_flags);
 
@@ -1157,6 +1185,8 @@ EXPORT_SYMBOL(GPT_Init);
 EXPORT_SYMBOL(GPT_Config);
 EXPORT_SYMBOL(GPT_Request);
 EXPORT_SYMBOL(GPT_Free);
+EXPORT_SYMBOL(gpt_boot_time);
+
 
 MODULE_DESCRIPTION("MT6577 GPT Driver v0.3");
 MODULE_LICENSE("GPL");

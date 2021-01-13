@@ -31,9 +31,9 @@
 
 #include <asm/cacheflush.h>
 #include <asm/io.h>
-#include "val_types.h"
-#include "val_api.h"
-#include "hal_types.h"
+#include "val_types_private.h"
+#include "val_api_private.h"
+#include "hal_types_private.h"
 #include "val_log.h"
 #include "mt_irq.h"
 
@@ -115,7 +115,7 @@ typedef struct
 } VAL_NON_CACHE_MEMORY_LIST_T;
 
 static VAL_INTMEM_T grTempIntMem;   //mutex : IntMemLock
-static VAL_VCODEC_HW_LOCK_T grVcodecHWLock; //mutex : VcodecHWLock
+//static VAL_VCODEC_HW_LOCK_T grVcodecHWLock; //mutex : VcodecHWLock
 
 typedef enum
 {
@@ -130,7 +130,7 @@ typedef enum
 static DEFINE_MUTEX(SysramUserLock);
 static DEFINE_MUTEX(EncEMILock);
 static DEFINE_MUTEX(DecEMILock);
-static DEFINE_MUTEX(VcodecHWLock);
+//static DEFINE_MUTEX(VcodecHWLock);
 static DEFINE_MUTEX(PWRLock);
 static DEFINE_MUTEX(HWLockEventTimeoutLock);
 static DEFINE_MUTEX(IntMemLock);
@@ -143,6 +143,8 @@ static DEFINE_MUTEX(VcodecHWUserLock);
 static DEFINE_SPINLOCK(OalHWContextLock);
 static DEFINE_SPINLOCK(LockHWCountLock);
 static DEFINE_SPINLOCK(ISRCountLock);
+static DEFINE_SPINLOCK(VcodecHWLock);
+
 
 static VAL_BOOL_T bIsOpened = VAL_FALSE;    //mutex : IsOpenedLock
 
@@ -167,8 +169,22 @@ extern unsigned long get_cpu_load(int cpu);
 //  HW LOCK
 #undef VENC_BASE
 #define VENC_BASE  0xc2085000
+#define VENC_REGION (0x2000)
 #undef VDEC_BASE
 #define VDEC_BASE  0xc2084000
+#define VDEC_REGION (0x2000)
+
+#define HW_BASE 0xf7fff000
+#define HW_REGION (0x2000)
+
+#undef MMSYS1_CONFIG_BASE
+#define MMSYS1_CONFIG_BASE         0xC2080000
+#define MMSYS1_CONFIG_BASE_REGION  (0x1000)
+
+#undef L2_BASE
+#define L2_BASE         0xF000E000
+#define L2_BASE_REGION  (0x1000)
+
 #define VENC_IRQ_ACK_addr         VENC_BASE + 0x78 
 #define DEC_VDEC_INT_STA_ADDR     VDEC_BASE + 0x10
 #define DEC_VDEC_INT_ACK_ADDR     VDEC_BASE + 0xc
@@ -187,6 +203,8 @@ static VAL_UINT32_T             grVcodecDriverUser[VCODEC_MULTIPLE_INSTANCE_NUM]
 
 static VAL_UINT32_T             gu4LockHWCount; //spinlock : LockHWCountLock
 static VAL_UINT32_T             gu4ISRCount;    //spinlock : ISRCountLock
+static VAL_VCODEC_HW_LOCK_T     grVcodecHWLock; //spinlock : VcodecHWLock
+
 #if defined(CONFIG_SMP)
 static VAL_UINT32_T   gPowerSavingCount = 0;
 #endif
@@ -815,12 +833,16 @@ void MT6575_Video_ISR(VCODEC_IRQ_ENUM a_VcodecIRQ)
     VAL_RESULT_T  eValRet;
     int index, i, maxnum;
     unsigned int reg_val;
-    unsigned long ulFlags, ulFlagsISR, ulFlagsLockHW;
+    unsigned long ulFlags, ulFlagsISR, ulFlagsLockHW, ulFlagsVcodecHWLock;
     VAL_UINT32_T u4IRQStatus = 0;
 
     VAL_UINT32_T u4TempISRCount = 0;
     VAL_UINT32_T u4TempLockHWCount = 0;
+    VAL_RESULT_T  eValHWLockRet = VAL_RESULT_INVALID_ISR;
     //----------------------
+#if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
+    VAL_UINT32_T u4I;
+#endif
 
     spin_lock_irqsave(&ISRCountLock, ulFlagsISR);
     gu4ISRCount++;
@@ -1007,12 +1029,12 @@ void MT6575_Video_ISR(VCODEC_IRQ_ENUM a_VcodecIRQ)
     	//*((volatile VAL_UINT32_T*)oal_hw_context[index].kva_Oal_HW_mem_reg + i*2 + 1) /*oal_hw_context[index].oalmem_status[i].u4ReadData*/);
     }
     
-    eValRet = eVideoSetEvent(&oal_hw_context[index].MT6575_IsrEvent, sizeof(VAL_EVENT_T));
+    eValRet = eVideoSetEvent(&oal_hw_context[index].IsrEvent, sizeof(VAL_EVENT_T));
     spin_unlock_irqrestore(&OalHWContextLock, ulFlags);
     
     if(VAL_RESULT_NO_ERROR != eValRet)
     {
-        MFV_LOGE("[MFV][ERROR] ISR set MT6575_IsrEvent error\n");
+        MFV_LOGE("[MFV][ERROR] ISR set IsrEvent error\n");
         //return;
     }            	
 
@@ -1022,6 +1044,57 @@ void MT6575_Video_ISR(VCODEC_IRQ_ENUM a_VcodecIRQ)
     VDO_HW_WRITE(KVA_VDEC_INT_ACK_ADDR, reg_val);
     // encoder
     VDO_HW_WRITE(KVA_ENC_INT_ACK_ADDR, 1);
+
+
+    
+#if 1
+        //mutex_lock(&VcodecHWLock);
+        spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
+
+#if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
+        //for (u4I = 0; u4I < grVcodecHWLock.u4VCodecThreadNum; u4I++)
+        //{
+            //if (grVcodecHWLock.u4VCodecThreadID[u4I] == current->pid)
+            //{
+                for (u4I = 0; u4I < VCODEC_THREAD_MAX_NUM; u4I++)
+                {
+                    grVcodecHWLock.u4VCodecThreadID[u4I] = -1;
+                }
+                grVcodecHWLock.u4VCodecThreadNum = VCODEC_THREAD_MAX_NUM;
+                grVcodecHWLock.rLockedTime.u4Sec = 0;
+                grVcodecHWLock.rLockedTime.u4uSec = 0;
+                disable_irq_nosync(MT_VENC_IRQ_ID); 
+                disable_irq_nosync(MT_VDEC_IRQ_ID);                     
+
+                eValHWLockRet = eVideoSetEvent(&MT6575_HWLockEvent, sizeof(VAL_EVENT_T));
+                if(VAL_RESULT_NO_ERROR != eValHWLockRet)
+                {
+                    MFV_LOGE("[MFV][ERROR] ISR set MT6575_HWLockEvent error\n");
+                }
+                //break;
+            //}
+        //}
+#else
+        //if ((grVcodecHWLock.u4LockHWTID1 == current->pid) || (grVcodecHWLock.u4LockHWTID2 == current->pid)) //normal case
+        //{
+            grVcodecHWLock.u4LockHWTID1 = -1;
+            grVcodecHWLock.u4LockHWTID2 = -1;
+            grVcodecHWLock.rLockedTime.u4Sec = 0;
+            grVcodecHWLock.rLockedTime.u4uSec = 0;
+            disable_irq_nosync(MT_VENC_IRQ_ID); 
+            disable_irq_nosync(MT_VDEC_IRQ_ID);
+
+            eValHWLockRet = eVideoSetEvent(&MT6575_HWLockEvent, sizeof(VAL_EVENT_T));
+            if(VAL_RESULT_NO_ERROR != eValHWLockRet)
+            {
+                MFV_LOGE("[MFV][ERROR] ISR set MT6575_HWLockEvent error\n");
+            }
+        //}
+#endif        
+
+        //mutex_unlock(&VcodecHWLock);
+        spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
+#endif
 
     //MFV_DEBUG("MT6575_Video_ISR-\n");    
 }
@@ -1299,7 +1372,7 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
     int index;
     int FirstUseHW = 0;
     VAL_ISR_T  val_isr;
-    unsigned long ulFlags, ulFlagsISR, ulFlagsLockHW;
+    unsigned long ulFlags, ulFlagsISR, ulFlagsLockHW, ulFlagsVcodecHWLock;
     VAL_VCODEC_CORE_LOADING_T rTempCoreLoading;
 #if defined(CONFIG_SMP)    
     VAL_VCODEC_CPU_OPP_LIMIT_T rCpuOppLimit;
@@ -1318,6 +1391,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
     VAL_UINT32_T u4I;
 #endif
+    
+    MFV_LOGE("===cmd=== = %d\n", cmd);
     
 	switch(cmd)
     {
@@ -1659,7 +1734,7 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
                 MFV_LOGE("[NOT ERROR][VCODEC_LOCKHW] First Use HW!!\n");   
                 FirstUseHW = 1;
                 eValHWLockRet = eVideoWaitEvent(&MT6575_HWLockEvent, sizeof(VAL_EVENT_T));
-                MT6575_HWLockEvent.u4TimeoutMs = 1000;
+                MT6575_HWLockEvent.u4TimeoutMs = 500;
             }
             else
             {
@@ -1667,7 +1742,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
             }
             mutex_unlock(&HWLockEventTimeoutLock);
 
-            mutex_lock(&VcodecHWLock);
+            //mutex_lock(&VcodecHWLock);
+            spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
             // one process try to lock twice
             if (grVcodecHWLock.u4VCodecThreadNum != VCODEC_THREAD_MAX_NUM)
@@ -1689,7 +1765,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
                     grVcodecHWLock.u4LockHWTID1, grVcodecHWLock.u4LockHWTID2, current->pid);
             }
 #endif
-            mutex_unlock(&VcodecHWLock);
+            //mutex_unlock(&VcodecHWLock);
+            spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
 
             if (FirstUseHW == 0)
             {
@@ -1704,7 +1781,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
                 }
                 else
                 {   
-                    mutex_lock(&VcodecHWLock);
+                    //mutex_lock(&VcodecHWLock);
+                    spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
                     if (grVcodecHWLock.u4VCodecThreadNum == VCODEC_THREAD_MAX_NUM)
 #else
@@ -1717,11 +1795,13 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
                     {
                         MFV_LOGE("[WARNING] someone use HW, and check timeout value!!\n");
                     }
-                    mutex_unlock(&VcodecHWLock);
+                    //mutex_unlock(&VcodecHWLock);
+                    spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
                 }
             }
             
-            mutex_lock(&VcodecHWLock);
+            //mutex_lock(&VcodecHWLock);
+            spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
             if (grVcodecHWLock.u4VCodecThreadNum == VCODEC_THREAD_MAX_NUM)     //No process use HW, so current process can use HW
@@ -1736,7 +1816,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
                 if (u4Index == -1)
                 {
                     MFV_LOGE("[ERROR][VCODEC_LOCKHW] No process use HW, so current process can use HW, u4Index = -1\n");
-                    mutex_unlock(&VcodecHWLock);
+                    //mutex_unlock(&VcodecHWLock);
+                    spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
                     return -EFAULT;
                 }
 
@@ -1818,7 +1899,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
         	            MFV_LOGE("[ERROR] Locked process - ID %d or %d fail, didn't call InitHWLock \n", 
                         grVcodecHWLock.u4LockHWTID1, grVcodecHWLock.u4LockHWTID2);
 #endif
-                        mutex_unlock(&VcodecHWLock);
+                        //mutex_unlock(&VcodecHWLock);
+                        spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
                         return -EFAULT;
                     }
                     else
@@ -1840,7 +1922,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
                     if (u4Index == -1)
                     {
                         MFV_LOGE("[ERROR] Locked process - ID %d fail, didn't call InitHWLock\n", current->pid);
-                        mutex_unlock(&VcodecHWLock);
+                        //mutex_unlock(&VcodecHWLock);
+                        spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
                         return -EFAULT;
                     }
 
@@ -1887,7 +1970,8 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
 #endif
             }
 
-            mutex_unlock(&VcodecHWLock);
+            //mutex_unlock(&VcodecHWLock);
+            spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
         }
 
         spin_lock_irqsave(&LockHWCountLock, ulFlagsLockHW);
@@ -1996,7 +2080,9 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
         
 		MFV_LOGD("index = %d, start wait VCODEC_WAITISR TID %d \n", index, current->pid);
 
-        mutex_lock(&VcodecHWLock);
+#if 0
+        //mutex_lock(&VcodecHWLock);
+        spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
         for (u4I = 0; u4I < grVcodecHWLock.u4VCodecThreadNum; u4I++)
@@ -2033,17 +2119,18 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
         }
 #endif
       
-        mutex_unlock(&VcodecHWLock);
+        //mutex_unlock(&VcodecHWLock);
+        spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
 
         if (bLockedHW == VAL_FALSE)
         {
             MFV_LOGE("[ERROR] DO NOT have HWLock, so return fail\n");
             spin_lock_irqsave(&OalHWContextLock, ulFlags);
-            oal_hw_context[index].MT6575_IsrEvent.u4TimeoutMs = 10;
+            oal_hw_context[index].IsrEvent.u4TimeoutMs = 10;
             spin_unlock_irqrestore(&OalHWContextLock, ulFlags);
-			//MFV_LOGD(" isrevent timeout =%x\n", oal_hw_context[index].MT6575_IsrEvent.u4TimeoutMs);
+			//MFV_LOGD(" isrevent timeout =%x\n", oal_hw_context[index].IsrEvent.u4TimeoutMs);
 			//MFV_LOGD("MT6575_Video_ISR+\n");
-            eValRet = eVideoWaitEvent(&oal_hw_context[index].MT6575_IsrEvent, sizeof(VAL_EVENT_T));
+            eValRet = eVideoWaitEvent(&oal_hw_context[index].IsrEvent, sizeof(VAL_EVENT_T));
 
             if(VAL_RESULT_INVALID_ISR == eValRet)
             {
@@ -2051,12 +2138,15 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
             }
             break;
         }
+#endif
 
     	if(copy_from_user(&val_isr, (void __user *)arg, sizeof(VAL_ISR_T)))
         {
-    		MFV_LOGE("[ERROR] copy_from_user fail\n");
 
-            mutex_lock(&VcodecHWLock);
+    		MFV_LOGE("[ERROR] copy_from_user fail\n");
+#if 0
+            //mutex_lock(&VcodecHWLock);
+            spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
             for (u4I = 0; u4I < grVcodecHWLock.u4VCodecThreadNum; u4I++)
@@ -2099,21 +2189,29 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
             }
 
 #endif
-            mutex_unlock(&VcodecHWLock);
-
+            //mutex_unlock(&VcodecHWLock);
+            spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
+#endif
             return -EFAULT;        			
     	} 
     	
-    	//MFV_LOGD(" isrevent timeout =%x\n", oal_hw_context[index].MT6575_IsrEvent.u4TimeoutMs);
+    	MFV_LOGD(" isrevent timeout =%x\n", oal_hw_context[index].IsrEvent.u4TimeoutMs);
     	spin_lock_irqsave(&OalHWContextLock, ulFlags);
-    	oal_hw_context[index].MT6575_IsrEvent.u4TimeoutMs = val_isr.u4TimeoutMs;
+    	oal_hw_context[index].IsrEvent.u4TimeoutMs = val_isr.u4TimeoutMs;
+        if(oal_hw_context[index].IsrEvent.u4TimeoutMs > 500)
+        {
+            oal_hw_context[index].IsrEvent.u4TimeoutMs = 500; //500ms, for CR ALPS01434893
+	    MFV_LOGW(" modify isrevent timeout to %d (ms)\n", oal_hw_context[index].IsrEvent.u4TimeoutMs);
+        }
         spin_unlock_irqrestore(&OalHWContextLock, ulFlags);
-		//MFV_LOGD(" isrevent timeout =%x\n", oal_hw_context[index].MT6575_IsrEvent.u4TimeoutMs);
+		//MFV_LOGD(" isrevent timeout =%x\n", oal_hw_context[index].IsrEvent.u4TimeoutMs);
 		//MFV_LOGD("MT6575_Video_ISR+\n");
-        eValRet = eVideoWaitEvent(&oal_hw_context[index].MT6575_IsrEvent, sizeof(VAL_EVENT_T));
+        eValRet = eVideoWaitEvent(&oal_hw_context[index].IsrEvent, sizeof(VAL_EVENT_T));
         MFV_LOGD("waitdone VCODEC_WAITISR TID %d \n", current->pid);
 
-        mutex_lock(&VcodecHWLock);
+#if 0
+        //mutex_lock(&VcodecHWLock);
+        spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
         for (u4I = 0; u4I < grVcodecHWLock.u4VCodecThreadNum; u4I++)
@@ -2156,8 +2254,9 @@ static long mflexvideo_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
         }
 #endif        
 
-        mutex_unlock(&VcodecHWLock);
-
+        //mutex_unlock(&VcodecHWLock);
+        spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
+#endif
         if(VAL_RESULT_INVALID_ISR == eValRet)
         {
             MFV_LOGE("[ERROR] WAIT_ISR_CMD TimeOut\n");
@@ -2438,7 +2537,7 @@ static int mflexvideo_open(struct inode *inode, struct file *file)
 static int mflexvideo_flush(struct file *file, fl_owner_t id)
 {
     int i, j;
-    unsigned long ulFlags, ulFlagsLockHW, ulFlagsISR;
+    unsigned long ulFlags, ulFlagsLockHW, ulFlagsISR, ulFlagsVcodecHWLock;
     
     //dump_stack();
     MFV_LOGD("[MFV_DEBUG] mflexvideo_flush, curr_tid =%d\n", current->pid);
@@ -2512,7 +2611,8 @@ static int mflexvideo_flush(struct file *file, fl_owner_t id)
         }
         mutex_unlock(&VcodecHWUserLock);
         
-        mutex_lock(&VcodecHWLock);
+        //mutex_lock(&VcodecHWLock);
+        spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
         grVcodecHWLock.u4VCodecThreadNum = VCODEC_THREAD_MAX_NUM;
         for (i = 0; i < VCODEC_THREAD_MAX_NUM; i++)
@@ -2525,7 +2625,8 @@ static int mflexvideo_flush(struct file *file, fl_owner_t id)
 #endif
         grVcodecHWLock.rLockedTime.u4Sec = 0;        
         grVcodecHWLock.rLockedTime.u4uSec = 0;
-        mutex_unlock(&VcodecHWLock);
+        //mutex_unlock(&VcodecHWLock);
+        spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
 
         mutex_lock(&SysramUserLock);
         gu4INTMEMCounter = 0;
@@ -2602,9 +2703,9 @@ static int mflexvideo_flush(struct file *file, fl_owner_t id)
 			}
 			
 			// event part
-			oal_hw_context[i].MT6575_IsrEvent.pvHandle = "ISR_EVENT";
-			oal_hw_context[i].MT6575_IsrEvent.u4HandleSize = sizeof("ISR_EVENT")+1;
-			oal_hw_context[i].MT6575_IsrEvent.u4TimeoutMs = 0xFFFFFFFF;  //1000;			
+			oal_hw_context[i].IsrEvent.pvHandle = "IsrEvent";
+			oal_hw_context[i].IsrEvent.u4HandleSize = sizeof("IsrEvent")+1;
+			oal_hw_context[i].IsrEvent.u4TimeoutMs = 0xFFFFFFFF;  //1000;			
 		}
         spin_unlock_irqrestore(&OalHWContextLock, ulFlags);
 
@@ -2648,13 +2749,49 @@ static int MT6575_Vcodec_write(struct file *filp, const char __user *buf, size_t
 
 static int MT6575_Vcodec_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	
+    VAL_UINT32_T u4I = 0;
+	long length;
+	unsigned int pfn;
+
+    
     MFV_LOGD("[MT6575_vcodec_mmap] \n");
 
 	MFV_LOGD("start = 0x%x, pgoff= 0x%x vm_end= 0x%x, vm_page_prot= 0x%x\n", 
 	    (unsigned int)vma->vm_start, (unsigned int)vma->vm_pgoff, (unsigned int)vma->vm_end, (unsigned int)vma->vm_page_prot );
 		
     vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);            
+
+    length = vma->vm_end - vma->vm_start;
+	pfn = vma->vm_pgoff<<PAGE_SHIFT;
+	
+	if(((length > VENC_REGION) || (pfn < VENC_BASE) || (pfn > VENC_BASE+VENC_REGION)) &&
+	   ((length > VDEC_REGION) || (pfn < VDEC_BASE) || (pfn > VDEC_BASE+VDEC_REGION)) &&
+	   ((length > MMSYS1_CONFIG_BASE_REGION) || (pfn < MMSYS1_CONFIG_BASE) || (pfn > MMSYS1_CONFIG_BASE+MMSYS1_CONFIG_BASE_REGION)) &&
+	   ((length > L2_BASE_REGION) || (pfn < L2_BASE) || (pfn > L2_BASE+L2_BASE_REGION)) &&
+	   ((length > HW_REGION) || (pfn < HW_BASE) || (pfn > HW_BASE+HW_REGION))
+      )
+	{
+	    VAL_UINT32_T u4Addr, u4Size;
+	    for(u4I = 0; u4I < VCODEC_MULTIPLE_INSTANCE_NUM_x_10; u4I++)
+        {
+            if ((grNonCacheMemoryList[u4I].u4KVA != 0xffffffff) && (grNonCacheMemoryList[u4I].u4KPA != 0xffffffff))
+            {
+                u4Addr = grNonCacheMemoryList[u4I].u4KPA;
+				u4Size = (grNonCacheMemoryList[u4I].u4Size + 0x1000 -1) & ~(0x1000-1);
+                if((length == u4Size) && (pfn == u4Addr))
+                {
+                    MFV_LOGD(" cache idx %d \n", u4I);
+                    break;
+                }
+            }
+	    }
+
+		if (u4I == VCODEC_MULTIPLE_INSTANCE_NUM_x_10)
+		{
+		    MFV_LOGE("[ERROR] mmap region error: Length(0x%x), pfn(0x%x)\n", length, pfn);
+		    return -EAGAIN;
+		}
+	}
 
     if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff, vma->vm_end - vma->vm_start, vma->vm_page_prot)) 
     {
@@ -2753,11 +2890,11 @@ static int mflexvideo_probe(struct platform_device *dev)
 
     ret = cdev_add(mflexvideo_cdev, mflexvideo_devno, 1);
 
-	mt_irq_set_polarity(MT_VDEC_IRQ_ID, MT65xx_POLARITY_LOW);
-	mt_irq_set_polarity(MT_VENC_IRQ_ID, MT65xx_POLARITY_LOW);
+	mt_irq_set_polarity(MT_VDEC_IRQ_ID, MT_POLARITY_LOW);
+	mt_irq_set_polarity(MT_VENC_IRQ_ID, MT_POLARITY_LOW);
 		
-    mt_irq_set_sens(MT_VDEC_IRQ_ID, MT65xx_LEVEL_SENSITIVE);
-    mt_irq_set_sens(MT_VENC_IRQ_ID, MT65xx_LEVEL_SENSITIVE);
+    mt_irq_set_sens(MT_VDEC_IRQ_ID, MT_LEVEL_SENSITIVE);
+    mt_irq_set_sens(MT_VENC_IRQ_ID, MT_LEVEL_SENSITIVE);
     
     //Register Interrupt 
     if (request_irq(MT_VDEC_IRQ_ID , (irq_handler_t)mt6575_video_intr_dlr, 0, MFLEXVIDEO_DEVNAME, NULL) < 0)
@@ -2790,7 +2927,7 @@ static int __init mflexvideo_driver_init(void)
     int i, j;
     VAL_RESULT_T  eValRet;
     VAL_RESULT_T  eValHWLockRet;
-    unsigned long ulFlags, ulFlagsISR, ulFlagsLockHW;
+    unsigned long ulFlags, ulFlagsISR, ulFlagsLockHW, ulFlagsVcodecHWLock;
     
     MFV_LOGD("+mflexvideo_driver_init\n");
 
@@ -2822,7 +2959,8 @@ static int __init mflexvideo_driver_init(void)
     }
     mutex_unlock(&IsOpenedLock);
 
-    mutex_lock(&VcodecHWLock);
+    //mutex_lock(&VcodecHWLock);
+    spin_lock_irqsave(&VcodecHWLock, ulFlagsVcodecHWLock);
 #if defined(CONFIG_SMP)   //VCODEC_MULTI_THREAD
         grVcodecHWLock.u4VCodecThreadNum = VCODEC_THREAD_MAX_NUM;
         for (i = 0; i < VCODEC_THREAD_MAX_NUM; i++)
@@ -2835,7 +2973,8 @@ static int __init mflexvideo_driver_init(void)
 #endif
     grVcodecHWLock.rLockedTime.u4Sec = 0;
     grVcodecHWLock.rLockedTime.u4uSec = 0;
-    mutex_unlock(&VcodecHWLock);
+    //mutex_unlock(&VcodecHWLock);
+    spin_unlock_irqrestore(&VcodecHWLock, ulFlagsVcodecHWLock);
 
     mutex_lock(&VcodecHWUserLock);
     for (i = 0; i < VCODEC_MULTIPLE_INSTANCE_NUM;i++)
@@ -2903,11 +3042,11 @@ static int __init mflexvideo_driver_init(void)
 		}
 		
 		// event part
-		oal_hw_context[i].MT6575_IsrEvent.pvHandle = "ISR_EVENT";
-		oal_hw_context[i].MT6575_IsrEvent.u4HandleSize = sizeof("ISR_EVENT")+1;
-		oal_hw_context[i].MT6575_IsrEvent.u4TimeoutMs = 0xFFFFFFFF;  //1000;	
+		oal_hw_context[i].IsrEvent.pvHandle = "IsrEvent";
+		oal_hw_context[i].IsrEvent.u4HandleSize = sizeof("IsrEvent")+1;
+		oal_hw_context[i].IsrEvent.u4TimeoutMs = 0xFFFFFFFF;  //1000;	
 		spin_unlock_irqrestore(&OalHWContextLock, ulFlags);
-        eValRet = eVideoCreateEvent(&(oal_hw_context[i].MT6575_IsrEvent), sizeof(VAL_EVENT_T));
+        eValRet = eVideoCreateEvent(&(oal_hw_context[i].IsrEvent), sizeof(VAL_EVENT_T));
         if(VAL_RESULT_NO_ERROR != eValRet)
         {
             MFV_LOGE("[MFV][ERROR] create isr event error\n"); 
@@ -2958,7 +3097,7 @@ static void __exit mflexvideo_driver_exit(void)
 		
     for(i=0; i< OALMEM_STATUS_NUM ; i++)
     {
-    	eValRet = eVideoCloseEvent(&(oal_hw_context[i].MT6575_IsrEvent), sizeof(VAL_EVENT_T) );
+    	eValRet = eVideoCloseEvent(&(oal_hw_context[i].IsrEvent), sizeof(VAL_EVENT_T) );
         if(VAL_RESULT_NO_ERROR != eValRet)
         {
             MFV_LOGE("[MFV][ERROR] close isr event error\n"); 

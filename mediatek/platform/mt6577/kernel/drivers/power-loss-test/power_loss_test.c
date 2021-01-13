@@ -11,8 +11,8 @@
 #include <asm/uaccess.h>
 
 #include "power_loss_test.h"
- 
 
+#define TAG                 "[MVG_TEST]:"
 #define PWR_LOSS_MT6575      
 //#define PWR_LOSS_MT6573      
 
@@ -64,7 +64,7 @@ static struct device* sg_pwr_loss_dev_file  = NULL;
 int pwr_loss_open(struct inode *inode, struct file *file)
 {
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: Open operation !\n");
+    printk(KERN_NOTICE "%s Power Loss Test: Open operation !\n", TAG);
 #endif
     return 0;
 }
@@ -72,7 +72,7 @@ int pwr_loss_open(struct inode *inode, struct file *file)
 int pwr_loss_release(struct inode *inode, struct file *file)
 {
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: Release operation !\n");
+    printk(KERN_NOTICE "%s Power Loss Test: Release operation !\n", TAG);
 #endif
     return 0;
 }
@@ -83,37 +83,37 @@ int pwr_loss_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     char l_buf[PWR_LOSS_CBUF_LEN] = {0};
    
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: IOCTL operation ! CMD=%d\n", cmd);
+    printk(KERN_NOTICE "%s Power Loss Test: IOCTL operation ! CMD=%d\n", TAG, cmd);
 #endif
     
     switch (cmd){
         case PRINT_REBOOT_TIMES:
             ret  = copy_from_user((int *)l_buf, (int *)arg, sizeof(int));
             if (ret != 0){
-                printk("Power Loss Test: IOCTL->PRINT_REBOOT_TIMES %d Bytes can't be copied \n", ret);
+                printk(KERN_ERR "%s Power Loss Test: IOCTL->PRINT_REBOOT_TIMES %d Bytes can't be copied \n", TAG, ret);
             }
-            printk("Power Loss Test: -----------System Reboot Successfully Times= %d---------------!\n", ((int *)l_buf)[0]);
+            printk(KERN_ERR "%s Power Loss Test: -----------System Reboot Successfully Times= %d---------------!\n", TAG, ((int *)l_buf)[0]);
             break;
         case PRINT_DATA_COMPARE_ERR:
-            printk("Power Loss Test: -----------Data Compare Error---------------!\n");
+            printk(KERN_ERR "%s Power Loss Test: -----------Data Compare Error---------------!\n", TAG);
             break;
         case PRINT_FILE_OPERATION_ERR:
-            printk("Power Loss Test: -----------File Operation Error---------------!\n");
+            printk(KERN_ERR "%s Power Loss Test: -----------File Operation Error---------------!\n", TAG);
             break;
         case PRINT_GENERAL_INFO:
             ret  = copy_from_user(l_buf,(int *)arg,(sizeof(l_buf[0])*(sizeof(l_buf))));
             if (ret != 0){
-                printk("Power Loss Test: IOCTL->PRINT_REBOOT_TIMES %d Bytes can't be copied \n", ret);
+                printk(KERN_ERR "%s Power Loss Test: IOCTL->PRINT_REBOOT_TIMES %d Bytes can't be copied \n", TAG, ret);
             }
             
             l_buf[(sizeof(l_buf[0])*(sizeof(l_buf)))-1] = '\0';
 
 #ifdef PWR_LOSS_DEBUG
-            printk("%s", l_buf);
+            printk(KERN_WARNING "%s %s", TAG, l_buf);
 #endif
             break;
         default:
-            printk("Power Loss Test: cmd code Error!\n");
+            printk(KERN_ERR "%s Power Loss Test: cmd code Error!\n", TAG);
             break;
     }
     
@@ -152,14 +152,14 @@ int pwr_loss_reset_thread(void *p)
     sleep_time %= PWR_LOSS_SLEEP_MAX_TIME;
 
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: sleep time =%d\n", sleep_time);
+    printk(KERN_NOTICE "%s Power Loss Test: sleep time =%d\n", TAG, sleep_time);
 #endif
 
     while (1){
-        printk("Power Loss Test: wait for reset...!\n");
+        printk(KERN_WARNING "%s Power Loss Test: wait for reset...!\n", TAG);
         set_current_state(TASK_UNINTERRUPTIBLE);
         ret = schedule_timeout(sleep_time);
-        printk("Power Loss Test: ret = %d, do reset now...\n",ret);
+        printk(KERN_ERR "%s Power Loss Test: ret = %d, do reset now...\n", TAG, ret);
 
 #ifdef PWR_LOSS_MT6575
     #ifdef CONFIG_MTK_MTD_NAND
@@ -168,7 +168,7 @@ int pwr_loss_reset_thread(void *p)
 #elif defined PWR_LOSS_MT6573
     #ifdef CONFIG_MTK_MTD_NAND
         if(!mt6573_nandchip_Reset()){
-            printk("NAND_MVG mt6573_nandchip_Reset Failed!\n");
+            printk(KERN_ERR "%s NAND_MVG mt6573_nandchip_Reset Failed!\n", TAG);
         }
     #endif 
 
@@ -196,14 +196,14 @@ int pwr_loss_reset_thread(void *p)
 #endif 
 
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: sleep time = 100sec\n");
+    printk(KERN_NOTICE "%s Power Loss Test: sleep time = 100sec\n", TAG);
 #endif
 
     while (1){
-        printk("Power Loss Test: wait for reset...!\n");
+        printk(KERN_WARNING "%s Power Loss Test: wait for reset...!\n", TAG);
         set_current_state(TASK_UNINTERRUPTIBLE);
         ret = schedule_timeout(PWR_LOSS_SLEEP_TIME);
-        printk("Power Loss Test: ret = %d, do reset now...\n",ret);
+        printk(KERN_ERR "%s Power Loss Test: ret = %d, do reset now...\n", TAG, ret);
 
 #ifdef PWR_LOSS_MT6575
     #ifdef CONFIG_MTK_MTD_NAND
@@ -212,7 +212,7 @@ int pwr_loss_reset_thread(void *p)
 #elif defined  PWR_LOSS_MT6573
     #ifdef CONFIG_MTK_MTD_NAND
         if(!mt6573_nandchip_Reset()){
-            printk("NAND_MVG mt6573_nandchip_Reset Failed!\n");
+            printk(KERN_ERR "%s NAND_MVG mt6573_nandchip_Reset Failed!\n", TAG);
         }
     #endif 
 
@@ -233,22 +233,22 @@ static int __init power_loss_init(void)
 {
     int err;
 
-    printk("Power Loss Test Module Init\n");
+    printk(KERN_NOTICE "%s Power Loss Test Module Init\n", TAG);
 
     err = alloc_chrdev_region(&sg_pwr_loss_devno, PWR_LOSS_FIRST_MINOR, PWR_LOSS_MAX_MINOR_COUNT, PWR_LOSS_DEVNAME);
     if (err != 0){
-        printk("Power Loss Test: alloc_chardev_region Failed!\n");
+        printk(KERN_ERR "%s Power Loss Test: alloc_chardev_region Failed!\n", TAG);
         return err;
     }
 
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: MAJOR =%d, MINOR=%d\n", 
+    printk(KERN_NOTICE "%s Power Loss Test: MAJOR =%d, MINOR=%d\n", TAG, 
                       MAJOR(sg_pwr_loss_devno), MINOR(sg_pwr_loss_devno));
 #endif
     
     sg_pwr_loss_dev = cdev_alloc();
     if (NULL == sg_pwr_loss_dev){
-        printk("Power Loss Test: cdev_alloc Failed\n");
+        printk(KERN_ERR "%s Power Loss Test: cdev_alloc Failed\n", TAG);
         goto out2;
     }
 
@@ -257,27 +257,27 @@ static int __init power_loss_init(void)
 
     err = cdev_add(sg_pwr_loss_dev, sg_pwr_loss_devno, 1);
     if (err != 0){
-        printk("Power Loss Test: cdev_add Failed!\n");
+        printk(KERN_ERR "%s Power Loss Test: cdev_add Failed!\n", TAG);
         goto out2;
     }
     
     sg_pwr_loss_dev_class = class_create(THIS_MODULE, PWR_LOSS_DEVNAME);
     if (NULL == sg_pwr_loss_dev_class){
-        printk("Power Loss Test: class_create Failed!\n");
+        printk(KERN_ERR "%s Power Loss Test: class_create Failed!\n", TAG);
         goto out1;
     }
 
     sg_pwr_loss_dev_file = device_create(sg_pwr_loss_dev_class, NULL, sg_pwr_loss_devno, NULL, PWR_LOSS_DEVNAME);
     if (NULL == sg_pwr_loss_dev_file){
-        printk("Power Loss Test: device_create Failed!\n");
+        printk(KERN_ERR "%s Power Loss Test: device_create Failed!\n", TAG);
         goto out;
     }
 
-    printk("Power Loss Test: Init Successfully!\n");
+    printk(KERN_ERR "%s Power Loss Test: Init Successfully!\n", TAG);
     
 #ifdef PWR_LOSS_SW_RESET
     kernel_thread(pwr_loss_reset_thread, NULL, CLONE_VM);    //CLONE_KERNEL
-    printk("Power Loss Test: kernel thread create Successful!\n");
+    printk(KERN_ERR "%s Power Loss Test: kernel thread create Successful!\n", TAG);
 #endif
 
     return 0;
@@ -294,7 +294,7 @@ out2:
 static void __exit power_loss_exit(void)
 {
 #ifdef PWR_LOSS_DEBUG
-    printk("Power Loss Test: Module Exit\n");
+    printk(KERN_NOTICE "%s Power Loss Test: Module Exit\n", TAG);
 #endif
 
     unregister_chrdev_region(sg_pwr_loss_devno, PWR_LOSS_MAX_MINOR_COUNT);
@@ -302,7 +302,7 @@ static void __exit power_loss_exit(void)
     device_destroy(sg_pwr_loss_dev_class, sg_pwr_loss_devno);
     class_destroy(sg_pwr_loss_dev_class);
     
-    printk("Power Loss Test:module exit Successfully!\n");
+    printk(KERN_ERR "%s Power Loss Test:module exit Successfully!\n", TAG);
 }
 
 module_init(power_loss_init);
